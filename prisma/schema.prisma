@@ -1,0 +1,128 @@
+// PBS Admin - Pet Behaviour Services Database Schema
+// This schema defines the complete data model for the PBS Admin application
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Client entity - Primary contact and billing information
+model Client {
+  clientId         Int      @id @default(autoincrement())
+  firstName        String
+  lastName         String
+  email            String
+  mobile           String
+  streetAddress    String?
+  city             String?
+  state            String?
+  postcode         String?
+  folderPath       String?
+  stripeCustomerId String?
+  notes            String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relationships
+  pets             Pet[]
+  events           Event[]
+  tasks            Task[]
+
+  // Indexes for performance
+  @@index([email])
+  @@index([mobile])
+  @@index([lastName, firstName])
+  @@index([city, state])
+}
+
+// Pet entity - Animal information linked to clients
+model Pet {
+  petId       Int      @id @default(autoincrement())
+  clientId    Int
+  name        String
+  species     String
+  breed       String?
+  sex         String?
+  dateOfBirth String?  // Stored as ISO 8601 string
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  client      Client   @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+
+  // Indexes
+  @@index([clientId])
+  @@index([name])
+}
+
+// Event entity - Bookings, consultations, training sessions, etc.
+model Event {
+  eventId           Int      @id @default(autoincrement())
+  clientId          Int
+  eventType         String   // "Booking", "Consultation", "TrainingSession", "Payment", "FollowUp", etc.
+  date              String   // ISO 8601 format, displayed in Australia/Melbourne timezone
+  notes             String?
+  calendlyEventUri  String   @default("")
+  calendlyStatus    String   @default("")
+  invoiceFilePath   String?
+  hostedInvoiceUrl  String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relationships
+  client            Client   @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  tasks             Task[]
+
+  // Parent/child event relationships
+  parentEventId     Int?
+  parentEvent       Event?   @relation("EventHierarchy", fields: [parentEventId], references: [eventId], onDelete: SetNull)
+  childEvents       Event[]  @relation("EventHierarchy")
+
+  // Indexes
+  @@index([clientId])
+  @@index([eventType])
+  @@index([date])
+  @@index([parentEventId])
+}
+
+// Task entity - Action items, automation triggers, and reminders
+model Task {
+  taskId           Int      @id @default(autoincrement())
+  clientId         Int?
+  eventId          Int?
+  description      String
+  dueDate          String   // ISO 8601 format, displayed in Australia/Melbourne timezone
+  status           String   // "Pending", "InProgress", "Blocked", "Done", "Canceled"
+  priority         Int      // 1 (highest) to 5 (lowest)
+  automatedAction  String   // Label of automation action (e.g., "CheckQuestionnaireReturned")
+  triggeredBy      String   // e.g., "Event:Booking", "Manual", "Schedule"
+  completedOn      String?  // ISO 8601 format, null if not completed
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relationships
+  client           Client?  @relation(fields: [clientId], references: [clientId], onDelete: SetNull)
+  event            Event?   @relation(fields: [eventId], references: [eventId], onDelete: SetNull)
+
+  // Parent/child task relationships
+  parentTaskId     Int?
+  parentTask       Task?    @relation("TaskHierarchy", fields: [parentTaskId], references: [taskId], onDelete: SetNull)
+  childTasks       Task[]   @relation("TaskHierarchy")
+
+  // Indexes
+  @@index([clientId])
+  @@index([eventId])
+  @@index([dueDate])
+  @@index([status])
+  @@index([priority])
+  @@index([parentTaskId])
+}
