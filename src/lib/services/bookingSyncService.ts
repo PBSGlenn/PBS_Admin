@@ -16,6 +16,7 @@ import {
 import {
   createEvent,
 } from './eventService';
+import { onEventCreated } from '../automation/engine';
 import type { Client, Pet } from '../types';
 import { formatISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
@@ -283,6 +284,10 @@ export async function importWebsiteBooking(
         : undefined,
       parentEventId: undefined,
     });
+
+    // Trigger automation for the newly created Booking event
+    // This will auto-create the questionnaire check task
+    await onEventCreated(bookingEvent);
 
     return {
       success: true,
