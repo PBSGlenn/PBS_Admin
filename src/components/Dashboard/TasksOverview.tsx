@@ -1,7 +1,8 @@
 // PBS Admin - Tasks Overview Component
 // Displays pending and in-progress tasks with overdue highlighting
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -12,25 +13,94 @@ import {
   TableHeader,
   TableRow,
 } from "../ui/table";
-import { getTasksForDashboard, markTaskDone } from "@/lib/services/taskService";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { getTasksForDashboard, markTaskDone, deleteTask, getTaskById } from "@/lib/services/taskService";
 import { formatDate, isTaskOverdue } from "@/lib/utils/dateUtils";
 import { getPriorityColor } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, Edit, Trash2, Mail } from "lucide-react";
+import { TaskForm } from "../Task/TaskForm";
+import type { Task } from "@/lib/types";
 
 export function TasksOverview() {
-  const { data: tasks, isLoading, error, refetch } = useQuery({
+  const queryClient = useQueryClient();
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedClientName, setSelectedClientName] = useState<string>("");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const { data: tasks, isLoading, error } = useQuery({
     queryKey: ["tasks", "dashboard"],
     queryFn: getTasksForDashboard,
   });
 
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: deleteTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
+      setIsDialogOpen(false);
+      setSelectedTask(null);
+    },
+    onError: (error) => {
+      alert(`Failed to delete task: ${error}`);
+    },
+  });
+
+  // Mark done mutation
+  const markDoneMutation = useMutation({
+    mutationFn: markTaskDone,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
+    },
+    onError: (error) => {
+      alert(`Failed to mark task as done: ${error}`);
+    },
+  });
+
+  const handleRowClick = async (taskId: number, clientName: string) => {
+    try {
+      const task = await getTaskById(taskId);
+      if (task) {
+        setSelectedTask(task);
+        setSelectedClientName(clientName);
+        setIsDialogOpen(true);
+      }
+    } catch (error) {
+      console.error("Failed to load task:", error);
+    }
+  };
+
   const handleMarkDone = async (taskId: number, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent row click
-    try {
-      await markTaskDone(taskId);
-      refetch();
-    } catch (error) {
-      console.error("Failed to mark task as done:", error);
+    markDoneMutation.mutate(taskId);
+  };
+
+  const handleDelete = () => {
+    if (!selectedTask) return;
+    if (window.confirm(`Are you sure you want to delete this task? This action cannot be undone.`)) {
+      deleteMutation.mutate(selectedTask.taskId);
     }
+  };
+
+  const handleSendReminder = async () => {
+    if (!selectedTask) return;
+    // TODO: Implement email reminder functionality
+    alert("Email reminder functionality coming soon!");
+  };
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    setSelectedTask(null);
+    setSelectedClientName("");
+  };
+
+  const handleTaskSaved = () => {
+    // Invalidate dashboard query to refresh the list
+    queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
+    handleCloseDialog();
+  };
+
+  const isQuestionnaireTask = (task: Task | null) => {
+    return task?.automatedAction === "CheckQuestionnaireReturned";
   };
 
   return (
@@ -73,10 +143,7 @@ export function TasksOverview() {
                     className={`cursor-pointer h-10 ${
                       overdue ? "bg-destructive/5" : ""
                     }`}
-                    onClick={() => {
-                      // TODO: Navigate to task detail
-                      console.log("View task:", task.taskId);
-                    }}
+                    onClick={() => handleRowClick(task.taskId, task.clientName || "")}
                   >
                     <TableCell className="font-medium text-xs max-w-[200px] truncate py-1">
                       {task.description}
@@ -149,6 +216,61 @@ export function TasksOverview() {
           </Table>
         </div>
       )}
+
+      {/* Task Detail Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={(open) => !open && handleCloseDialog()}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between pr-8">
+              <div>
+                <span>Task Details</span>
+                {selectedClientName && (
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    - {selectedClientName}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isQuestionnaireTask(selectedTask) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSendReminder}
+                    className="h-8 text-xs"
+                  >
+                    <Mail className="h-3.5 w-3.5 mr-1.5" />
+                    Send Reminder
+                  </Button>
+                )}
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="h-8 text-xs"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  Delete
+                </Button>
+              </div>
+            </DialogTitle>
+            <DialogDescription>
+              {isQuestionnaireTask(selectedTask)
+                ? "Questionnaire return task - Edit details or send a reminder to the client."
+                : "View or edit task details below."}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedTask && (
+            <TaskForm
+              clientId={selectedTask.clientId || undefined}
+              eventId={selectedTask.eventId || undefined}
+              task={selectedTask}
+              onClose={handleCloseDialog}
+              onSave={handleTaskSaved}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

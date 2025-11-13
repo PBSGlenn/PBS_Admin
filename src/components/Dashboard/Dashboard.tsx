@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Badge } from "../ui/badge";
 import { ClientsList } from "./ClientsList";
 import { UpcomingBookings } from "./UpcomingBookings";
 import { TasksOverview } from "./TasksOverview";
@@ -10,12 +11,15 @@ import { WebsiteBookingsSync } from "./WebsiteBookingsSync";
 import { QuestionnaireSync } from "./QuestionnaireSync";
 import { ClientForm } from "../Client/ClientForm";
 import { ClientView } from "../Client/ClientView";
+import { useTaskNotifications } from "../../hooks/useTaskNotifications";
+import { Bell } from "lucide-react";
 
 type View = "dashboard" | "new-client" | "view-client";
 
 export function Dashboard() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const { notificationCount } = useTaskNotifications();
 
   const handleNewClient = () => {
     setSelectedClient(null);
@@ -63,9 +67,23 @@ export function Dashboard() {
     <div className="flex h-screen bg-background">
       {/* Left Pane - Clients List */}
       <div className="w-1/2 border-r border-border flex flex-col">
-        <div className="px-4 py-3 border-b border-border">
-          <h1 className="text-xl font-bold">PBS Admin</h1>
-          <p className="text-xs text-muted-foreground">Pet Behaviour Services</p>
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">PBS Admin</h1>
+            <p className="text-xs text-muted-foreground">Pet Behaviour Services</p>
+          </div>
+          {/* Notification Bell */}
+          {notificationCount > 0 && (
+            <div className="relative">
+              <Bell className="h-5 w-5 text-muted-foreground" />
+              <Badge
+                variant="destructive"
+                className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+              >
+                {notificationCount}
+              </Badge>
+            </div>
+          )}
         </div>
         <ClientsList onNewClient={handleNewClient} onEditClient={handleEditClient} />
       </div>

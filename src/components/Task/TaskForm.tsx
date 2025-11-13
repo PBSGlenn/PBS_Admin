@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { createTask, updateTask } from "@/lib/services/taskService";
 import { TASK_STATUSES, TASK_PRIORITIES } from "@/lib/types";
 import type { Task, TaskInput } from "@/lib/types";
+import { TASK_TEMPLATES, getTemplateFormValues } from "@/lib/taskTemplates";
 import { Save, X } from "lucide-react";
 import { format } from "date-fns";
 
@@ -36,6 +37,9 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
       return "";
     }
   };
+
+  // Task template selection state
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("general");
 
   // Form state
   const [formData, setFormData] = useState({
@@ -153,6 +157,19 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
     }
   };
 
+  // Handle task template selection
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplate(templateId);
+
+    // Only auto-populate if NOT editing an existing task
+    if (!isEditing) {
+      const templateValues = getTemplateFormValues(templateId);
+      setFormData(templateValues);
+      // Clear any validation errors when template changes
+      setErrors({});
+    }
+  };
+
   // Handle field changes with real-time validation
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -181,11 +198,40 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid gap-4">
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="grid gap-3">
+        {/* Task Type Selection (only show when creating new task) */}
+        {!isEditing && (
+          <div className="space-y-1.5">
+            <Label htmlFor="taskType" className="text-xs">
+              Task Type
+            </Label>
+            <Select
+              value={selectedTemplate}
+              onValueChange={handleTemplateChange}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select task type" />
+              </SelectTrigger>
+              <SelectContent>
+                {TASK_TEMPLATES.map(template => (
+                  <SelectItem key={template.id} value={template.id} className="text-xs">
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedTemplate !== 'general' && (
+              <p className="text-[10px] text-muted-foreground">
+                {TASK_TEMPLATES.find(t => t.id === selectedTemplate)?.description}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Description */}
-        <div className="space-y-2">
-          <Label htmlFor="description" className="text-sm">
+        <div className="space-y-1.5">
+          <Label htmlFor="description" className="text-xs">
             Description <span className="text-destructive">*</span>
           </Label>
           <Textarea
@@ -194,17 +240,17 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
             onChange={(e) => handleChange("description", e.target.value)}
             rows={3}
             placeholder="What needs to be done?"
-            className={`text-sm min-h-[60px] ${errors.description ? "border-destructive" : ""}`}
+            className={`text-xs min-h-[60px] ${errors.description ? "border-destructive" : ""}`}
           />
           {errors.description && (
-            <p className="text-xs text-destructive">{errors.description}</p>
+            <p className="text-[10px] text-destructive">{errors.description}</p>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           {/* Due Date */}
-          <div className="space-y-2">
-            <Label htmlFor="dueDate" className="text-sm">
+          <div className="space-y-1.5">
+            <Label htmlFor="dueDate" className="text-xs">
               Due Date & Time <span className="text-destructive">*</span>
             </Label>
             <Input
@@ -212,67 +258,67 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
               type="datetime-local"
               value={formData.dueDate}
               onChange={(e) => handleChange("dueDate", e.target.value)}
-              className={`h-9 ${errors.dueDate ? "border-destructive" : ""}`}
+              className={`h-8 text-xs ${errors.dueDate ? "border-destructive" : ""}`}
             />
             {errors.dueDate && (
-              <p className="text-xs text-destructive">{errors.dueDate}</p>
+              <p className="text-[10px] text-destructive">{errors.dueDate}</p>
             )}
           </div>
 
           {/* Priority */}
-          <div className="space-y-2">
-            <Label htmlFor="priority" className="text-sm">
+          <div className="space-y-1.5">
+            <Label htmlFor="priority" className="text-xs">
               Priority <span className="text-destructive">*</span>
             </Label>
             <Select
               value={formData.priority}
               onValueChange={(value) => handleChange("priority", value)}
             >
-              <SelectTrigger className={`h-9 ${errors.priority ? "border-destructive" : ""}`}>
+              <SelectTrigger className={`h-8 text-xs ${errors.priority ? "border-destructive" : ""}`}>
                 <SelectValue placeholder="Select priority" />
               </SelectTrigger>
               <SelectContent>
                 {TASK_PRIORITIES.map(priority => (
-                  <SelectItem key={priority} value={priority.toString()}>
+                  <SelectItem key={priority} value={priority.toString()} className="text-xs">
                     {priority} {priority === 1 ? "(Highest)" : priority === 5 ? "(Lowest)" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {errors.priority && (
-              <p className="text-xs text-destructive">{errors.priority}</p>
+              <p className="text-[10px] text-destructive">{errors.priority}</p>
             )}
           </div>
         </div>
 
         {/* Status */}
-        <div className="space-y-2">
-          <Label htmlFor="status" className="text-sm">
+        <div className="space-y-1.5">
+          <Label htmlFor="status" className="text-xs">
             Status <span className="text-destructive">*</span>
           </Label>
           <Select
             value={formData.status}
             onValueChange={(value) => handleChange("status", value)}
           >
-            <SelectTrigger className={`h-9 ${errors.status ? "border-destructive" : ""}`}>
+            <SelectTrigger className={`h-8 text-xs ${errors.status ? "border-destructive" : ""}`}>
               <SelectValue placeholder="Select status" />
             </SelectTrigger>
             <SelectContent>
               {TASK_STATUSES.map(status => (
-                <SelectItem key={status} value={status}>
+                <SelectItem key={status} value={status} className="text-xs">
                   {status}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {errors.status && (
-            <p className="text-xs text-destructive">{errors.status}</p>
+            <p className="text-[10px] text-destructive">{errors.status}</p>
           )}
         </div>
 
         {/* Triggered By */}
-        <div className="space-y-2">
-          <Label htmlFor="triggeredBy" className="text-sm">
+        <div className="space-y-1.5">
+          <Label htmlFor="triggeredBy" className="text-xs">
             Triggered By <span className="text-destructive">*</span>
           </Label>
           <Input
@@ -280,45 +326,47 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
             value={formData.triggeredBy}
             onChange={(e) => handleChange("triggeredBy", e.target.value)}
             placeholder="e.g., Manual, Event:Booking, Schedule"
-            className={`h-9 ${errors.triggeredBy ? "border-destructive" : ""}`}
+            className={`h-8 text-xs ${errors.triggeredBy ? "border-destructive" : ""}`}
           />
           {errors.triggeredBy && (
-            <p className="text-xs text-destructive">{errors.triggeredBy}</p>
+            <p className="text-[10px] text-destructive">{errors.triggeredBy}</p>
           )}
         </div>
 
         {/* Automated Action (Optional) */}
-        <div className="space-y-2">
-          <Label htmlFor="automatedAction" className="text-sm">Automated Action</Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="automatedAction" className="text-xs">Automated Action</Label>
           <Input
             id="automatedAction"
             value={formData.automatedAction}
             onChange={(e) => handleChange("automatedAction", e.target.value)}
             placeholder="e.g., CheckQuestionnaireReturned"
-            className="h-9"
+            className="h-8 text-xs"
           />
-          <p className="text-xs text-muted-foreground">Optional: Label of automation that will/did run</p>
+          <p className="text-[10px] text-muted-foreground">Optional: Label of automation that will/did run</p>
         </div>
       </div>
 
       {/* Form Actions */}
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2 pt-1.5">
         <Button
           type="button"
           variant="outline"
           onClick={onClose}
           size="sm"
           disabled={isPending}
+          className="h-7 text-xs"
         >
-          <X className="h-3.5 w-3.5 mr-1.5" />
+          <X className="h-3 w-3 mr-1" />
           Cancel
         </Button>
         <Button
           type="submit"
           disabled={!isFormValid || isPending}
           size="sm"
+          className="h-7 text-xs"
         >
-          <Save className="h-3.5 w-3.5 mr-1.5" />
+          <Save className="h-3 w-3 mr-1" />
           {isPending ? (isEditing ? "Updating..." : "Creating...") : (isEditing ? "Update Task" : "Create Task")}
         </Button>
       </div>
