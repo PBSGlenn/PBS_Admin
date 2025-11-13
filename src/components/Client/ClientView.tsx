@@ -69,6 +69,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [createdFolderPath, setCreatedFolderPath] = useState<string>("");
   const [defaultBasePath, setDefaultBasePath] = useState<string>("");
+  const [currentFolderPath, setCurrentFolderPath] = useState<string>(client?.folderPath || "");
 
   // Load default folder path on mount
   useEffect(() => {
@@ -155,10 +156,10 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
   // Handle folder button click - either open existing folder or show creation dialog
   const handleFolderButtonClick = async () => {
-    if (client.folderPath) {
+    if (currentFolderPath) {
       // If folder path exists, open it
       try {
-        await invoke("plugin:opener|open_path", { path: client.folderPath });
+        await invoke("plugin:opener|open_path", { path: currentFolderPath });
       } catch (error) {
         console.error("Failed to open folder:", error);
         alert(`Could not open folder: ${error}`);
@@ -180,6 +181,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
         // Update client with folder path
         await updateClient(client.clientId, { folderPath });
+
+        // Update local state to immediately reflect the change
+        setCurrentFolderPath(folderPath);
 
         // Refresh client data
         queryClient.invalidateQueries({ queryKey: ["clients"] });
@@ -228,14 +232,14 @@ export function ClientView({ client, onClose }: ClientViewProps) {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <form onSubmit={handleSubmit} className="space-y-2">
             {/* Basic Information */}
             <Card>
-              <CardHeader className="py-3 px-4">
+              <CardHeader className="py-2 px-4">
                 <CardTitle className="text-sm">Basic Information</CardTitle>
                 <CardDescription className="text-xs">Required client contact details</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3 px-4 pb-4">
+              <CardContent className="grid grid-cols-2 gap-2 px-4 pb-3">
                 <div className="space-y-1">
                   <Label htmlFor="firstName" className="text-xs">
                     First Name <span className="text-destructive">*</span>
@@ -302,11 +306,11 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
             {/* Address Information */}
             <Card>
-              <CardHeader className="py-3 px-4">
+              <CardHeader className="py-2 px-4">
                 <CardTitle className="text-sm">Address</CardTitle>
                 <CardDescription className="text-xs">Optional address information</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3 px-4 pb-4">
+              <CardContent className="space-y-2 px-4 pb-3">
                 <div className="space-y-1">
                   <Label htmlFor="streetAddress" className="text-xs">Street Address</Label>
                   <Input
@@ -362,11 +366,11 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
             {/* Notes */}
             <Card>
-              <CardHeader className="py-3 px-4">
+              <CardHeader className="py-2 px-4">
                 <CardTitle className="text-sm">Notes</CardTitle>
                 <CardDescription className="text-xs">Additional information about this client</CardDescription>
               </CardHeader>
-              <CardContent className="px-4 pb-4">
+              <CardContent className="px-4 pb-3">
                 <Textarea
                   id="notes"
                   value={formData.notes}
@@ -387,7 +391,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
                 size="sm"
                 className="h-8"
               >
-                {client.folderPath ? (
+                {currentFolderPath ? (
                   <>
                     <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
                     Open Folder
@@ -429,7 +433,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
       {/* Right Pane - Related Data */}
       <div className="w-1/2 flex flex-col overflow-hidden">
-        <div className="p-4 space-y-4 overflow-auto">
+        <div className="p-3 space-y-2 overflow-auto">
           {/* Pets Table */}
           <PetsTable clientId={client.clientId} />
 

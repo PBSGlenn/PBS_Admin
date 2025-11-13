@@ -144,7 +144,7 @@ export function EventsTable({ clientId }: EventsTableProps) {
   return (
     <>
       <Card>
-        <CardHeader className="py-3 px-4">
+        <CardHeader className="py-2 px-4">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Events</CardTitle>
@@ -162,37 +162,37 @@ export function EventsTable({ clientId }: EventsTableProps) {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="px-4 pb-4">
+        <CardContent className="px-4 pb-3">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground py-4 text-center">
+            <div className="text-xs text-muted-foreground py-4 text-center">
               Loading events...
             </div>
           ) : events.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-4 text-center">
+            <div className="text-xs text-muted-foreground py-4 text-center">
               No events recorded yet. Click "Add Event" to get started.
             </div>
           ) : (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Type</TableHead>
-                    <TableHead className="text-xs">Date & Time</TableHead>
-                    <TableHead className="text-xs">Notes</TableHead>
-                    <TableHead className="text-xs w-[120px]">Actions</TableHead>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-[11px] h-8 py-1.5">Type</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Date & Time</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Notes</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5 w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {events.map((event) => (
-                    <TableRow key={event.eventId}>
-                      <TableCell className="text-sm font-medium">
+                    <TableRow key={event.eventId} className="h-10">
+                      <TableCell className="text-[11px] font-medium py-1.5">
                         {event.eventType}
                       </TableCell>
-                      <TableCell className="text-sm">{formatDateTime(event.date)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-[11px] py-1.5">{formatDateTime(event.date)}</TableCell>
+                      <TableCell className="text-[11px] text-muted-foreground py-1.5">
                         {truncateNotes(event.notes)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-1.5">
                         <div className="flex items-center gap-1">
                           {isQuestionnaireEvent(event) && (
                             <Button

@@ -10,9 +10,9 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Questionnaire Reconciliation System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, questionnaire reconciliation system, and compact dashboard UI implemented.
+**Status**: ✅ MVP Complete + Questionnaire Reconciliation System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, questionnaire reconciliation system, and compact, consistent UI with reduced font sizes throughout.
 
-**Last Updated**: 2025-11-12
+**Last Updated**: 2025-11-13
 
 **Next Session**: Continue testing questionnaire reconciliation workflow. Add custom controls to QuestionnaireReceived event modal. Link review tasks to reconciliation UI.
 
@@ -1402,6 +1402,14 @@ npm test -- --watch
   - Button, Input, Card, Table, Badge, Dialog, Select, Textarea, Label
   - RichTextEditor (Tiptap-based) with formatting toolbar
   - Toggle, Separator (Radix UI)
+- **UI Design and Consistency** - Compact, data-dense interface
+  - Dashboard-style font sizes throughout (11px/text-[11px] for table content)
+  - Reduced table row heights (h-10) and padding (py-1.5)
+  - Compact form controls (h-8 inputs, h-7 buttons)
+  - Consistent spacing (space-y-2, gap-2)
+  - Rich text editor styled at 11px to match tables
+  - Badge text at 10px for compact status indicators
+  - Maximizes information density while maintaining readability
 - **Date Handling** - Australia/Melbourne timezone throughout
 - **Form validation** with real-time feedback
 - **Phone number utilities** - Formatting and validation for Australian mobiles

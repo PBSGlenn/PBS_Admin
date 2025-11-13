@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
@@ -14,15 +15,17 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle, Bug } from 'lucide-react';
 import {
   fetchUnsyncedBookings,
   syncAllWebsiteBookings,
   type WebsiteBooking,
   type BookingSyncResult,
 } from '@/lib/services/bookingSyncService';
+import { diagnoseBookings } from '@/lib/services/diagnosticBookings';
 
 export function WebsiteBookingsSync() {
+  const queryClient = useQueryClient();
   const [bookings, setBookings] = useState<WebsiteBooking[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -53,8 +56,20 @@ export function WebsiteBookingsSync() {
       const result = await syncAllWebsiteBookings();
       setSyncResults(result.results);
       setLastSync(new Date());
-      // Reload bookings to update the list
-      await loadBookings();
+
+      // Remove successfully synced bookings from local state immediately
+      const successfulBookingIds = result.results
+        .filter(r => r.success)
+        .map(r => r.bookingId);
+
+      setBookings(prevBookings =>
+        prevBookings.filter(b => !successfulBookingIds.includes(b.id))
+      );
+
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['pets'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     } catch (error) {
       console.error('Sync failed:', error);
     } finally {
@@ -86,6 +101,12 @@ export function WebsiteBookingsSync() {
     }
   };
 
+  const handleDiagnose = async () => {
+    console.log('Running booking sync diagnostic...');
+    await diagnoseBookings();
+    console.log('Check the browser console for detailed results');
+  };
+
   return (
     <div className="space-y-2">
       {/* Header with actions */}
@@ -103,6 +124,15 @@ export function WebsiteBookingsSync() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDiagnose}
+            className="h-7 px-2"
+            title="Run diagnostic to check Supabase connection"
+          >
+            <Bug className="h-3 w-3" />
+          </Button>
           <Button
             size="sm"
             variant="outline"

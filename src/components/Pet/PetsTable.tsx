@@ -66,7 +66,7 @@ export function PetsTable({ clientId }: PetsTableProps) {
   return (
     <>
       <Card>
-        <CardHeader className="py-3 px-4">
+        <CardHeader className="py-2 px-4">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Pets</CardTitle>
@@ -77,46 +77,46 @@ export function PetsTable({ clientId }: PetsTableProps) {
             <Button
               size="sm"
               onClick={() => setIsAddDialogOpen(true)}
-              className="h-8"
+              className="h-7"
             >
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Add Pet
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="px-4 pb-4">
+        <CardContent className="px-4 pb-3">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground py-4 text-center">
+            <div className="text-xs text-muted-foreground py-4 text-center">
               Loading pets...
             </div>
           ) : pets.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-4 text-center">
+            <div className="text-xs text-muted-foreground py-4 text-center">
               No pets registered yet. Click "Add Pet" to get started.
             </div>
           ) : (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Name</TableHead>
-                    <TableHead className="text-xs">Species</TableHead>
-                    <TableHead className="text-xs">Breed</TableHead>
-                    <TableHead className="text-xs">Sex</TableHead>
-                    <TableHead className="text-xs">Age</TableHead>
-                    <TableHead className="text-xs w-[80px]">Actions</TableHead>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-[11px] h-8 py-1.5">Name</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Species</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Breed</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Sex</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Age</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5 w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pets.map((pet) => (
-                    <TableRow key={pet.petId}>
-                      <TableCell className="text-sm font-medium">
+                    <TableRow key={pet.petId} className="h-10">
+                      <TableCell className="text-[11px] font-medium py-1.5">
                         {pet.name}
                       </TableCell>
-                      <TableCell className="text-sm">{pet.species}</TableCell>
-                      <TableCell className="text-sm">{pet.breed || "—"}</TableCell>
-                      <TableCell className="text-sm">{pet.sex || "—"}</TableCell>
-                      <TableCell className="text-sm">{displayAge(pet.dateOfBirth)}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-[11px] py-1.5">{pet.species}</TableCell>
+                      <TableCell className="text-[11px] py-1.5">{pet.breed || "—"}</TableCell>
+                      <TableCell className="text-[11px] py-1.5">{pet.sex || "—"}</TableCell>
+                      <TableCell className="text-[11px] py-1.5">{displayAge(pet.dateOfBirth)}</TableCell>
+                      <TableCell className="py-1.5">
                         <div className="flex items-center gap-1">
                           <Button
                             variant="ghost"

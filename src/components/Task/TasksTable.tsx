@@ -120,7 +120,7 @@ export function TasksTable({ clientId }: TasksTableProps) {
   return (
     <>
       <Card>
-        <CardHeader className="py-3 px-4">
+        <CardHeader className="py-2 px-4">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">Tasks</CardTitle>
@@ -138,44 +138,44 @@ export function TasksTable({ clientId }: TasksTableProps) {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="px-4 pb-4">
+        <CardContent className="px-4 pb-3">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground py-4 text-center">
+            <div className="text-xs text-muted-foreground py-4 text-center">
               Loading tasks...
             </div>
           ) : tasks.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-4 text-center">
+            <div className="text-xs text-muted-foreground py-4 text-center">
               No tasks assigned yet. Click "Add Task" to get started.
             </div>
           ) : (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Description</TableHead>
-                    <TableHead className="text-xs">Due Date</TableHead>
-                    <TableHead className="text-xs">Priority</TableHead>
-                    <TableHead className="text-xs">Status</TableHead>
-                    <TableHead className="text-xs w-[100px]">Actions</TableHead>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-[11px] h-8 py-1.5">Description</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Due Date</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Priority</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5">Status</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5 w-[100px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tasks.map((task) => (
-                    <TableRow key={task.taskId} className={isOverdue(task) ? "bg-red-50" : ""}>
-                      <TableCell className="text-sm font-medium">
+                    <TableRow key={task.taskId} className={isOverdue(task) ? "bg-red-50 h-10" : "h-10"}>
+                      <TableCell className="text-[11px] font-medium py-1.5">
                         {truncateDescription(task.description)}
                         {isOverdue(task) && (
-                          <Badge variant="destructive" className="ml-2 text-xs">Overdue</Badge>
+                          <Badge variant="destructive" className="ml-2 text-[10px]">Overdue</Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm">{formatDateTime(task.dueDate)}</TableCell>
-                      <TableCell className="text-sm">{getPriorityDisplay(task.priority)}</TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadgeVariant(task.status)} className="text-xs">
+                      <TableCell className="text-[11px] py-1.5">{formatDateTime(task.dueDate)}</TableCell>
+                      <TableCell className="text-[11px] py-1.5">{getPriorityDisplay(task.priority)}</TableCell>
+                      <TableCell className="py-1.5">
+                        <Badge variant={getStatusBadgeVariant(task.status)} className="text-[10px]">
                           {task.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-1.5">
                         <div className="flex items-center gap-1">
                           {task.status !== "Done" && task.status !== "Canceled" && (
                             <Button

@@ -223,7 +223,14 @@ export async function importWebsiteBooking(
     }
 
     // 4. Create "Booking" event
-    const consultationDateTime = `${booking.consultation_date}T${booking.consultation_time}:00`;
+    // Handle time with or without seconds (HH:mm or HH:mm:ss)
+    const timeWithSeconds = booking.consultation_time.includes(':')
+      ? (booking.consultation_time.split(':').length === 3
+          ? booking.consultation_time
+          : `${booking.consultation_time}:00`)
+      : `${booking.consultation_time}:00:00`;
+
+    const consultationDateTime = `${booking.consultation_date}T${timeWithSeconds}`;
     const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
     const isoDate = formatISO(zonedDate);
 
@@ -310,29 +317,43 @@ export async function importWebsiteBooking(
  */
 export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
   try {
-    // Try to fetch with synced filter first
-    let query = supabase
+    // First, try to fetch with synced_to_admin filter
+    const queryWithSync = supabase
       .from('bookings')
       .select('*')
       .eq('status', 'confirmed')
+      .or('synced_to_admin.is.null,synced_to_admin.eq.false')
       .order('created_at', { ascending: true });
 
-    // Try to filter by synced_to_admin if column exists
-    try {
-      query = query.or('synced_to_admin.is.null,synced_to_admin.eq.false');
-    } catch (e) {
-      // Column might not exist yet, just fetch all confirmed bookings
-      console.log('synced_to_admin column may not exist, fetching all confirmed bookings');
+    const { data: dataWithSync, error: errorWithSync } = await queryWithSync;
+
+    // If column doesn't exist (error code 42703), retry without the filter
+    if (errorWithSync && errorWithSync.code === '42703') {
+      console.log('synced_to_admin column does not exist, fetching all confirmed bookings');
+
+      const queryWithoutSync = supabase
+        .from('bookings')
+        .select('*')
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: true });
+
+      const { data: dataWithoutSync, error: errorWithoutSync } = await queryWithoutSync;
+
+      if (errorWithoutSync) {
+        console.error('Supabase query error:', errorWithoutSync);
+        return [];
+      }
+
+      return (dataWithoutSync || []) as WebsiteBooking[];
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Supabase query error:', error);
+    // If different error, log it and return empty
+    if (errorWithSync) {
+      console.error('Supabase query error:', errorWithSync);
       return [];
     }
 
-    return (data || []) as WebsiteBooking[];
+    return (dataWithSync || []) as WebsiteBooking[];
   } catch (error) {
     console.error('Failed to fetch bookings from Supabase:', error);
     return [];
@@ -341,6 +362,7 @@ export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
 
 /**
  * Mark a booking as synced in Supabase
+ * Note: If synced_to_admin column doesn't exist, this returns true without error
  */
 export async function markBookingAsSynced(bookingId: string): Promise<boolean> {
   try {
@@ -350,6 +372,13 @@ export async function markBookingAsSynced(bookingId: string): Promise<boolean> {
       .eq('id', bookingId);
 
     if (error) {
+      // If column doesn't exist (error code 42703), just return true
+      // This allows the sync to work even without the column
+      if (error.code === '42703') {
+        console.log('synced_to_admin column does not exist, skipping sync marker');
+        return true;
+      }
+
       console.error('Failed to mark booking as synced:', error);
       return false;
     }

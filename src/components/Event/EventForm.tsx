@@ -159,36 +159,36 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid gap-4">
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="grid gap-3">
         {/* Event Type */}
-        <div className="space-y-2">
-          <Label htmlFor="eventType" className="text-sm">
+        <div className="space-y-1.5">
+          <Label htmlFor="eventType" className="text-xs">
             Event Type <span className="text-destructive">*</span>
           </Label>
           <Select
             value={formData.eventType}
             onValueChange={(value) => handleChange("eventType", value)}
           >
-            <SelectTrigger className={`h-9 ${errors.eventType ? "border-destructive" : ""}`}>
+            <SelectTrigger className={`h-8 text-xs ${errors.eventType ? "border-destructive" : ""}`}>
               <SelectValue placeholder="Select event type" />
             </SelectTrigger>
             <SelectContent>
               {EVENT_TYPES.map(type => (
-                <SelectItem key={type} value={type}>
+                <SelectItem key={type} value={type} className="text-xs">
                   {type}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {errors.eventType && (
-            <p className="text-xs text-destructive">{errors.eventType}</p>
+            <p className="text-[10px] text-destructive">{errors.eventType}</p>
           )}
         </div>
 
         {/* Date and Time */}
-        <div className="space-y-2">
-          <Label htmlFor="date" className="text-sm">
+        <div className="space-y-1.5">
+          <Label htmlFor="date" className="text-xs">
             Date & Time <span className="text-destructive">*</span>
           </Label>
           <Input
@@ -196,16 +196,16 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
             type="datetime-local"
             value={formData.date}
             onChange={(e) => handleChange("date", e.target.value)}
-            className={`h-9 ${errors.date ? "border-destructive" : ""}`}
+            className={`h-8 text-xs ${errors.date ? "border-destructive" : ""}`}
           />
           {errors.date && (
-            <p className="text-xs text-destructive">{errors.date}</p>
+            <p className="text-[10px] text-destructive">{errors.date}</p>
           )}
         </div>
 
         {/* Notes */}
-        <div className="space-y-2">
-          <Label htmlFor="notes" className="text-sm">Notes</Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="notes" className="text-xs">Notes</Label>
           <RichTextEditor
             content={formData.notes}
             onChange={(content) => handleChange("notes", content)}
@@ -215,23 +215,25 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
       </div>
 
       {/* Form Actions */}
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2 pt-1.5">
         <Button
           type="button"
           variant="outline"
           onClick={onClose}
           size="sm"
           disabled={isPending}
+          className="h-7 text-xs"
         >
-          <X className="h-3.5 w-3.5 mr-1.5" />
+          <X className="h-3 w-3 mr-1" />
           Cancel
         </Button>
         <Button
           type="submit"
           disabled={!isFormValid || isPending}
           size="sm"
+          className="h-7 text-xs"
         >
-          <Save className="h-3.5 w-3.5 mr-1.5" />
+          <Save className="h-3 w-3 mr-1" />
           {isPending ? (isEditing ? "Updating..." : "Creating...") : (isEditing ? "Update Event" : "Create Event")}
         </Button>
       </div>
