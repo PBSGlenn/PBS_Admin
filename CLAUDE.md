@@ -10,11 +10,11 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Task Templates & Notifications - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with inline editing. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, and compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + Email Template System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, and compact, consistent UI with reduced font sizes throughout.
 
 **Last Updated**: 2025-11-14
 
-**Next Session**: Implement email reminder functionality for questionnaire return tasks. Consider system tray background service for persistent notifications.
+**Next Session**: Consider system tray background service for persistent notifications. Explore automated email delivery for reminders (SMTP integration).
 
 ---
 
@@ -33,6 +33,7 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 | **Date Handling** | date-fns + date-fns-tz | Timezone-aware date operations |
 | **Notifications** | Sonner | Toast notifications for in-app alerts |
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
+| **Email Templates** | localStorage + Variable System | Customizable templates with dynamic content |
 | **External Services** | Supabase, Jotform API | Booking sync, questionnaire downloads |
 
 ---
@@ -53,12 +54,17 @@ PBS_Admin/
 │
 ├── src/                    # React frontend
 │   ├── components/         # UI components
-│   │   ├── Dashboard/      # ✅ ClientsList, UpcomingBookings, TasksOverview
+│   │   ├── Dashboard/      # ✅ ClientsList, UpcomingBookings, TasksOverview (with email integration)
 │   │   ├── Client/         # ✅ ClientForm, ClientView, FolderCreationDialog, FolderSuccessDialog
 │   │   ├── Pet/            # ✅ PetForm, PetsTable (integrated into ClientView)
 │   │   ├── Event/          # ✅ EventForm, EventsTable (with automation hooks)
 │   │   ├── Task/           # ✅ TaskForm, TasksTable (priority/status tracking)
+│   │   ├── EmailTemplateManager/  # ✅ Full email template management UI
+│   │   │   └── EmailTemplateManager.tsx  # ✅ Create/edit/duplicate/delete templates
 │   │   └── ui/             # ✅ shadcn/ui components (Button, Input, Dialog, Select, etc.)
+│   │       ├── email-draft-dialog.tsx  # ✅ Email preview and editing dialog
+│   │       ├── tabs.tsx    # ✅ Radix UI tabs component
+│   │       └── dropdown-menu.tsx  # ✅ Radix UI dropdown menu component
 │   ├── lib/
 │   │   ├── automation/     # ✅ Rules engine with 4 active automation workflows
 │   │   │   ├── types.ts    # ✅ Automation type definitions
@@ -74,6 +80,7 @@ PBS_Admin/
 │   │   │   └── notificationService.ts # ✅ Task notification queries
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
 │   │   ├── taskTemplates.ts # ✅ Predefined task templates with preset values
+│   │   ├── emailTemplates.ts # ✅ Email template definitions and management functions
 │   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils)
 │   │   ├── constants.ts    # ✅ Application constants
 │   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin
@@ -357,6 +364,123 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 - `@tiptap/extension-underline` - Underline support
 - `@tiptap/extension-text-align` - Text alignment
 - `@tiptap/extension-placeholder` - Placeholder text
+
+---
+
+### Email Template System
+
+**Purpose**: Customizable email templates for client communications with variable substitution and draft preview.
+
+**Technology**: localStorage persistence + variable replacement system
+
+**Features**:
+- 5 default templates (Dog/Cat questionnaire reminders, protocol send, follow-up, general)
+- Create, edit, duplicate, delete, and reset templates
+- Variable substitution with {{variableName}} syntax
+- Draft preview and editing before sending
+- Support for both web-based (Gmail) and desktop email clients
+- Template manager UI accessible via Settings menu
+
+**Template Structure**:
+```typescript
+interface EmailTemplate {
+  id: string;              // Unique identifier
+  name: string;            // Display name
+  subject: string;         // Email subject line (supports variables)
+  body: string;            // Email body content (supports variables)
+  variables: string[];     // List of available variables
+  description: string;     // Template description
+}
+```
+
+**Available Variables**:
+- `{{clientFirstName}}` - Client's first name
+- `{{clientLastName}}` - Client's last name
+- `{{clientEmail}}` - Client's email
+- `{{petName}}` - Pet's name
+- `{{petSpecies}}` - Dog or Cat
+- `{{consultationDate}}` - Consultation date
+- `{{formUrl}}` - Jotform URL
+- `{{formType}}` - Dog or Cat
+- `{{currentDate}}` - Today's date
+- `{{dueDate}}` - Task due date
+
+**Template Management**:
+```typescript
+import {
+  getAllTemplates,
+  saveCustomTemplate,
+  deleteCustomTemplate,
+  resetToDefaultTemplate,
+  processTemplate
+} from "@/lib/emailTemplates";
+
+// Get all templates (merged defaults + custom)
+const templates = getAllTemplates();
+
+// Save or update custom template
+saveCustomTemplate(template);
+
+// Delete custom template
+deleteCustomTemplate(templateId);
+
+// Reset customized default to original
+resetToDefaultTemplate(templateId);
+
+// Process template with variables
+const emailContent = processTemplate(template.body, {
+  clientFirstName: "Sarah",
+  petName: "Max",
+  consultationDate: "15 Nov 2025"
+});
+```
+
+**Email Draft Dialog**:
+```typescript
+import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
+
+<EmailDraftDialog
+  isOpen={isOpen}
+  onClose={() => setIsOpen(false)}
+  onSend={(to, subject, body) => {
+    // Open mailto: link for desktop clients
+    const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailtoLink, '_blank');
+  }}
+  initialTo={client.email}
+  initialSubject={processedSubject}
+  initialBody={processedBody}
+  clientName={client.firstName + ' ' + client.lastName}
+/>
+```
+
+**Features**:
+- Editable To, Subject, and Body fields
+- Character count display
+- Copy to clipboard for web-based email clients (Gmail)
+- Open in email app for desktop clients (Outlook, Thunderbird, Mail)
+- Edit tracking indicator
+
+**Accessing Template Manager**:
+1. Click Settings (gear icon) in Dashboard header
+2. Select "Email Templates" from dropdown menu
+3. Two-pane layout: Template list (left) + Preview/Edit (right)
+4. Search, filter, and manage templates
+5. Preview shows Subject and Body with variable highlighting
+6. Variables tab shows all available template variables
+
+**Storage**: Custom templates stored in localStorage key `pbs_admin_email_templates`
+
+**Template Merging Logic**:
+- Default templates defined in code (EMAIL_TEMPLATES array)
+- Custom templates stored in localStorage
+- Custom templates with same ID as defaults override them
+- Reset function restores default version by deleting custom override
+
+**Packages**:
+- `@radix-ui/react-tabs` - Template preview tabs
+- `@radix-ui/react-dropdown-menu` - Settings menu
+- `@radix-ui/react-icons` - UI icons
 
 ---
 
@@ -1402,13 +1526,30 @@ npm test -- --watch
   - TasksTable with overdue alerts, priority colors, quick "Mark Done" action
   - Dashboard task management: Click to view/edit/delete tasks
     - Task detail dialog with client name display
-    - "Send Reminder" button for questionnaire tasks (email integration pending)
+    - "Send Reminder" button for questionnaire tasks with email integration
     - Safe spacing between close button and delete button
   - In-app notifications for due/overdue tasks
     - Toast notifications: error (overdue), warning (due today), info (due tomorrow)
     - 5-minute polling interval with 30-second initial delay
     - Notification bell with badge count in Dashboard header
     - Deduplication to prevent repeat notifications
+- **Email Template System** - Comprehensive template management and email integration
+  - 5 default templates: Dog/Cat questionnaire reminders, protocol send, follow-up, general
+  - Email Template Manager: Full CRUD for templates
+    - Create, edit, duplicate, delete, and reset templates
+    - Two-pane layout with search and filtering
+    - Preview tab shows processed template
+    - Variables tab shows available template variables
+    - Accessible via Settings menu in Dashboard
+  - Email Draft Dialog: Preview and edit before sending
+    - Editable To, Subject, and Body fields
+    - Copy to clipboard for Gmail/web-based clients
+    - Open in email app for desktop clients (Outlook, Mail)
+    - Character count and edit tracking
+  - Variable substitution system with {{variableName}} syntax
+  - localStorage persistence for custom templates
+  - Template merging: Custom templates override defaults by ID
+  - Reset to default functionality for customized templates
 - **Automation Rules Engine** - Fully functional with 4 active workflows
   - Rule 1: Booking → Questionnaire Check Task (48 hours before)
   - Rule 2: Consultation Complete → Protocol Send Task
@@ -1418,6 +1559,8 @@ npm test -- --watch
 - **UI Components** - Complete shadcn/ui component library
   - Button, Input, Card, Table, Badge, Dialog, Select, Textarea, Label
   - RichTextEditor (Tiptap-based) with formatting toolbar
+  - EmailDraftDialog for email preview and editing
+  - Tabs, DropdownMenu (Radix UI)
   - Toggle, Separator (Radix UI)
 - **UI Design and Consistency** - Compact, data-dense interface
   - Dashboard-style font sizes throughout (11px/text-[11px] for table content)
@@ -1454,7 +1597,8 @@ npm test -- --watch
   - localStorage tracking to prevent duplicate downloads
 
 📋 **TODO - Future Enhancements**:
-- Email integration for task reminders (SMTP or email service)
+- ✅ Email integration for task reminders (Completed - Template system with draft preview)
+- SMTP integration for automated email delivery (optional future enhancement)
 - System tray background service for persistent notifications
 - Legacy data import tool
 - Backup/restore functionality
@@ -1572,4 +1716,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2025-11-14
-**Version**: 1.5.0 (MVP Enhanced - Task Templates + In-app Notifications + Dashboard Task Management + All Previous Features)
+**Version**: 1.6.0 (MVP Complete - Email Template System + Dashboard Task Management + Task Templates + In-app Notifications + All Previous Features)
