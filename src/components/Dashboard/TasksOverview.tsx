@@ -20,6 +20,8 @@ import { formatDate, isTaskOverdue } from "@/lib/utils/dateUtils";
 import { getPriorityColor } from "@/lib/utils";
 import { Check, Edit, Trash2, Mail } from "lucide-react";
 import { TaskForm } from "../Task/TaskForm";
+import { EmailDraftDialog } from "../ui/email-draft-dialog";
+import { getQuestionnaireReminderTemplate, processTemplate } from "@/lib/emailTemplates";
 import type { Task } from "@/lib/types";
 
 export function TasksOverview() {
@@ -27,6 +29,8 @@ export function TasksOverview() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string>("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEmailDraftOpen, setIsEmailDraftOpen] = useState(false);
+  const [emailDraft, setEmailDraft] = useState({ to: "", subject: "", body: "" });
 
   const { data: tasks, isLoading, error } = useQuery({
     queryKey: ["tasks", "dashboard"],
@@ -111,50 +115,65 @@ export function TasksOverview() {
       const dogFormId = import.meta.env.VITE_JOTFORM_DOG_FORM_ID || "212500923595050";
       const catFormId = import.meta.env.VITE_JOTFORM_CAT_FORM_ID || "241828180919868";
 
-      // Check if client has a cat (simple check - could be enhanced)
-      const hasCat = client.pets?.some(pet => pet.species?.toLowerCase() === 'cat');
+      // Check if client has a cat (or both - prefer the first pet)
+      const firstPet = client.pets?.[0];
+      const hasCat = firstPet?.species?.toLowerCase() === 'cat';
       const formId = hasCat ? catFormId : dogFormId;
-      const formType = hasCat ? "Cat" : "Dog";
       const formUrl = `https://form.jotform.com/${formId}`;
+      const petName = firstPet?.name || 'your pet';
+      const petSpecies = hasCat ? 'cat' : 'dog';
 
-      // Create email content
-      const subject = `Reminder: ${formType} Behaviour Questionnaire - Pet Behaviour Services`;
+      // Get email template
+      const template = getQuestionnaireReminderTemplate(petSpecies);
+      if (!template) {
+        alert("Email template not found");
+        return;
+      }
 
-      const body = `Dear ${client.firstName},
+      // Process template with variables
+      const variables = {
+        clientFirstName: client.firstName,
+        clientLastName: client.lastName,
+        clientEmail: client.email,
+        petName: petName,
+        petSpecies: petSpecies,
+        consultationDate: consultationDate || 'your upcoming consultation',
+        formUrl: formUrl,
+        formType: hasCat ? 'Cat' : 'Dog',
+        currentDate: new Date().toLocaleDateString('en-AU')
+      };
 
-Thank you for booking your consultation with Pet Behaviour Services${consultationDate ? ` on ${consultationDate}` : ''}.
+      const processedSubject = processTemplate(template.subject, variables);
+      const processedBody = processTemplate(template.body, variables);
 
-To help us provide the best possible service, please complete our ${formType} Behaviour Questionnaire before your consultation:
-
-${formUrl}
-
-The questionnaire takes approximately 15-20 minutes to complete and provides valuable information about your pet's behaviour, history, and current concerns.
-
-Please ensure you submit the questionnaire at least 48 hours before your consultation to allow us time to review your responses.
-
-If you have any questions or concerns, please don't hesitate to contact us.
-
-Best regards,
-Pet Behaviour Services`;
-
-      // Create mailto link
-      const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-      // Open default email client
-      window.open(mailtoLink, '_blank');
-
-      // Optional: Show confirmation
-      setTimeout(() => {
-        if (confirm("Email client opened. Did you send the reminder?")) {
-          // Could mark task as "reminder sent" or add a note
-          console.log("Reminder sent to", client.email);
-        }
-      }, 1000);
+      // Set draft and open preview dialog
+      setEmailDraft({
+        to: client.email,
+        subject: processedSubject,
+        body: processedBody
+      });
+      setIsEmailDraftOpen(true);
 
     } catch (error) {
-      console.error("Failed to send reminder:", error);
+      console.error("Failed to prepare reminder:", error);
       alert("Failed to prepare reminder email. Please try again.");
     }
+  };
+
+  const handleSendEmail = (to: string, subject: string, body: string) => {
+    // Create mailto link
+    const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    // Open default email client
+    window.open(mailtoLink, '_blank');
+
+    // Optional: Show confirmation
+    setTimeout(() => {
+      if (confirm("Email client opened. Did you send the reminder?")) {
+        // Could mark task as "reminder sent" or add a note
+        console.log("Reminder sent to", to);
+      }
+    }, 1000);
   };
 
   const handleCloseDialog = () => {
@@ -341,6 +360,17 @@ Pet Behaviour Services`;
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Email Draft Preview Dialog */}
+      <EmailDraftDialog
+        isOpen={isEmailDraftOpen}
+        onClose={() => setIsEmailDraftOpen(false)}
+        onSend={handleSendEmail}
+        initialTo={emailDraft.to}
+        initialSubject={emailDraft.subject}
+        initialBody={emailDraft.body}
+        clientName={selectedClientName}
+      />
     </div>
   );
 }
