@@ -140,10 +140,11 @@ Pet Behaviour Services`,
 ];
 
 /**
- * Get email template by ID
+ * Get email template by ID (checks custom templates first, then defaults)
  */
 export function getEmailTemplate(templateId: string): EmailTemplate | undefined {
-  return EMAIL_TEMPLATES.find(t => t.id === templateId);
+  const allTemplates = getAllTemplates();
+  return allTemplates.find(t => t.id === templateId);
 }
 
 /**
@@ -171,21 +172,74 @@ export function getQuestionnaireReminderTemplate(species: string): EmailTemplate
 }
 
 /**
- * Save custom template (for future implementation with localStorage or database)
+ * Get all templates (default + custom)
  */
-export function saveCustomTemplate(template: EmailTemplate): void {
-  // TODO: Implement saving to localStorage or database
-  // For now, templates are hardcoded but this function provides the interface
-  // for future enhancement to allow user-editable templates
-  console.log('Saving template:', template);
-  // localStorage.setItem(`email_template_${template.id}`, JSON.stringify(template));
+export function getAllTemplates(): EmailTemplate[] {
+  const customTemplates = loadCustomTemplates();
+  const customIds = new Set(customTemplates.map(t => t.id));
+
+  // Filter out default templates that have been overridden by custom ones
+  const filteredDefaults = EMAIL_TEMPLATES.filter(t => !customIds.has(t.id));
+
+  return [...customTemplates, ...filteredDefaults];
 }
 
 /**
- * Load custom templates (for future implementation)
+ * Save custom template to localStorage
+ */
+export function saveCustomTemplate(template: EmailTemplate): void {
+  try {
+    const customTemplates = loadCustomTemplates();
+    const index = customTemplates.findIndex(t => t.id === template.id);
+
+    if (index >= 0) {
+      customTemplates[index] = template;
+    } else {
+      customTemplates.push(template);
+    }
+
+    localStorage.setItem('pbs_admin_email_templates', JSON.stringify(customTemplates));
+  } catch (error) {
+    console.error('Failed to save template:', error);
+  }
+}
+
+/**
+ * Load custom templates from localStorage
  */
 export function loadCustomTemplates(): EmailTemplate[] {
-  // TODO: Load from localStorage or database
-  // For now, return empty array
+  try {
+    const stored = localStorage.getItem('pbs_admin_email_templates');
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Failed to load custom templates:', error);
+  }
   return [];
+}
+
+/**
+ * Delete a custom template
+ */
+export function deleteCustomTemplate(templateId: string): boolean {
+  try {
+    const customTemplates = loadCustomTemplates();
+    const filtered = customTemplates.filter(t => t.id !== templateId);
+
+    if (filtered.length < customTemplates.length) {
+      localStorage.setItem('pbs_admin_email_templates', JSON.stringify(filtered));
+      return true;
+    }
+  } catch (error) {
+    console.error('Failed to delete template:', error);
+  }
+  return false;
+}
+
+/**
+ * Reset a template to default (removes custom override)
+ */
+export function resetToDefaultTemplate(templateId: string): boolean {
+  return deleteCustomTemplate(templateId);
 }

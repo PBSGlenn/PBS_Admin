@@ -11,10 +11,20 @@ import { WebsiteBookingsSync } from "./WebsiteBookingsSync";
 import { QuestionnaireSync } from "./QuestionnaireSync";
 import { ClientForm } from "../Client/ClientForm";
 import { ClientView } from "../Client/ClientView";
+import { EmailTemplateManager } from "../EmailTemplateManager/EmailTemplateManager";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
-import { Bell } from "lucide-react";
+import { Bell, Settings, Mail } from "lucide-react";
+import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
-type View = "dashboard" | "new-client" | "view-client";
+type View = "dashboard" | "new-client" | "view-client" | "email-templates";
 
 export function Dashboard() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
@@ -62,6 +72,33 @@ export function Dashboard() {
     );
   }
 
+  // Show email template manager
+  if (currentView === "email-templates") {
+    return (
+      <div className="h-screen flex flex-col">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentView("dashboard")}
+              className="h-8 text-xs"
+            >
+              ← Back to Dashboard
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold">Email Template Manager</h1>
+              <p className="text-xs text-muted-foreground">Customize your email templates</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <EmailTemplateManager />
+        </div>
+      </div>
+    );
+  }
+
   // Show dashboard
   return (
     <div className="flex h-screen bg-background">
@@ -72,18 +109,39 @@ export function Dashboard() {
             <h1 className="text-xl font-bold">PBS Admin</h1>
             <p className="text-xs text-muted-foreground">Pet Behaviour Services</p>
           </div>
-          {/* Notification Bell */}
-          {notificationCount > 0 && (
-            <div className="relative">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <Badge
-                variant="destructive"
-                className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
-              >
-                {notificationCount}
-              </Badge>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Notification Bell */}
+            {notificationCount > 0 && (
+              <div className="relative">
+                <Bell className="h-5 w-5 text-muted-foreground" />
+                <Badge
+                  variant="destructive"
+                  className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+                >
+                  {notificationCount}
+                </Badge>
+              </div>
+            )}
+            {/* Settings Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-xs">Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setCurrentView("email-templates")}
+                >
+                  <Mail className="h-3.5 w-3.5 mr-2" />
+                  Email Templates
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <ClientsList onNewClient={handleNewClient} onEditClient={handleEditClient} />
       </div>
