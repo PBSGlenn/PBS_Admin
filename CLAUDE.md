@@ -10,11 +10,11 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Questionnaire Reconciliation System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, questionnaire reconciliation system, and compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + Task Templates & Notifications - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with inline editing. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, and compact, consistent UI with reduced font sizes throughout.
 
-**Last Updated**: 2025-11-13
+**Last Updated**: 2025-11-14
 
-**Next Session**: Continue testing questionnaire reconciliation workflow. Add custom controls to QuestionnaireReceived event modal. Link review tasks to reconciliation UI.
+**Next Session**: Implement email reminder functionality for questionnaire return tasks. Consider system tray background service for persistent notifications.
 
 ---
 
@@ -31,6 +31,7 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 | **Styling** | Tailwind CSS 3.x | Utility-first styling |
 | **Data Fetching** | TanStack Query v5 | Server state management |
 | **Date Handling** | date-fns + date-fns-tz | Timezone-aware date operations |
+| **Notifications** | Sonner | Toast notifications for in-app alerts |
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
 | **External Services** | Supabase, Jotform API | Booking sync, questionnaire downloads |
 
@@ -69,11 +70,15 @@ PBS_Admin/
 │   │   │   ├── eventService.ts      # ✅ Event CRUD operations
 │   │   │   ├── taskService.ts       # ✅ Task CRUD operations
 │   │   │   ├── bookingSyncService.ts  # ✅ Website booking import from Supabase
-│   │   │   └── jotformService.ts    # ✅ Questionnaire sync from Jotform API
+│   │   │   ├── jotformService.ts    # ✅ Questionnaire sync from Jotform API
+│   │   │   └── notificationService.ts # ✅ Task notification queries
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
+│   │   ├── taskTemplates.ts # ✅ Predefined task templates with preset values
 │   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils)
 │   │   ├── constants.ts    # ✅ Application constants
 │   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin
+│   ├── hooks/
+│   │   └── useTaskNotifications.ts  # ✅ Polling hook for task notifications
 │   ├── App.tsx
 │   └── main.tsx
 │
@@ -1391,7 +1396,19 @@ npm test -- --watch
   - "Note" event type for client creation tracking
 - **Task Management** - Complete CRUD with priority/status tracking
   - TaskForm with description, due date, priority (1-5), status, triggered by
+  - Task Templates: 5 predefined templates for quick task creation
+    - General Task, Questionnaire Return Follow-up, Protocol Send, Follow-up Call, Training Session Prep
+    - Auto-populates all fields based on template selection
   - TasksTable with overdue alerts, priority colors, quick "Mark Done" action
+  - Dashboard task management: Click to view/edit/delete tasks
+    - Task detail dialog with client name display
+    - "Send Reminder" button for questionnaire tasks (email integration pending)
+    - Safe spacing between close button and delete button
+  - In-app notifications for due/overdue tasks
+    - Toast notifications: error (overdue), warning (due today), info (due tomorrow)
+    - 5-minute polling interval with 30-second initial delay
+    - Notification bell with badge count in Dashboard header
+    - Deduplication to prevent repeat notifications
 - **Automation Rules Engine** - Fully functional with 4 active workflows
   - Rule 1: Booking → Questionnaire Check Task (48 hours before)
   - Rule 2: Consultation Complete → Protocol Send Task
@@ -1437,10 +1454,10 @@ npm test -- --watch
   - localStorage tracking to prevent duplicate downloads
 
 📋 **TODO - Future Enhancements**:
-- Task Detail window (detailed view with relationships)
+- Email integration for task reminders (SMTP or email service)
+- System tray background service for persistent notifications
 - Legacy data import tool
 - Backup/restore functionality
-- Dashboard integration (connect upcoming events/tasks to overview)
 - UX enhancements (keyboard shortcuts, persistence, search)
 - README with setup instructions
 - Test Plan documentation
@@ -1554,5 +1571,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2025-11-10
-**Version**: 1.4.0 (MVP Enhanced - Full CRUD + 4 Automation Workflows + Folder Management + Rich Text Notes + Age Calculator + Website Booking Integration + Jotform Questionnaire Sync + Compact Dashboard UI)
+**Last Updated**: 2025-11-14
+**Version**: 1.5.0 (MVP Enhanced - Task Templates + In-app Notifications + Dashboard Task Management + All Previous Features)
