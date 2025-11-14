@@ -14,7 +14,8 @@ import {
 import { Label } from "./label";
 import { Input } from "./input";
 import { Textarea } from "./textarea";
-import { Mail, Send, Edit2 } from "lucide-react";
+import { Mail, Send, Edit2, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
 export interface EmailDraftDialogProps {
   isOpen: boolean;
@@ -39,10 +40,29 @@ export function EmailDraftDialog({
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
   const [isEditing, setIsEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleSend = () => {
     onSend(to, subject, body);
     onClose();
+  };
+
+  const handleCopyToClipboard = async () => {
+    try {
+      const emailContent = `To: ${to}
+Subject: ${subject}
+
+${body}`;
+
+      await navigator.clipboard.writeText(emailContent);
+      setCopied(true);
+      toast.success("Email copied to clipboard!");
+
+      setTimeout(() => setCopied(false), 3000);
+    } catch (error) {
+      console.error("Failed to copy:", error);
+      toast.error("Failed to copy to clipboard");
+    }
   };
 
   const handleCancel = () => {
@@ -152,7 +172,7 @@ export function EmailDraftDialog({
 
         <DialogFooter className="flex items-center justify-between">
           <div className="text-xs text-muted-foreground">
-            This will open your email client with the message ready to send
+            Copy to paste into Gmail or send via desktop email client
           </div>
           <div className="flex gap-2">
             <Button
@@ -164,13 +184,32 @@ export function EmailDraftDialog({
               Cancel
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyToClipboard}
+              className="h-8 text-xs"
+              disabled={!to || !subject || !body}
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copy Email
+                </>
+              )}
+            </Button>
+            <Button
               size="sm"
               onClick={handleSend}
               className="h-8 text-xs"
               disabled={!to || !subject || !body}
             >
               <Send className="h-3.5 w-3.5 mr-1.5" />
-              Send Email
+              Open in Email App
             </Button>
           </div>
         </DialogFooter>
