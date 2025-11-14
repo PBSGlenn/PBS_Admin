@@ -15,6 +15,7 @@ import {
 } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { getTasksForDashboard, markTaskDone, deleteTask, getTaskById } from "@/lib/services/taskService";
+import { getClientById } from "@/lib/services/clientService";
 import { formatDate, isTaskOverdue } from "@/lib/utils/dateUtils";
 import { getPriorityColor } from "@/lib/utils";
 import { Check, Edit, Trash2, Mail } from "lucide-react";
@@ -82,9 +83,78 @@ export function TasksOverview() {
   };
 
   const handleSendReminder = async () => {
-    if (!selectedTask) return;
-    // TODO: Implement email reminder functionality
-    alert("Email reminder functionality coming soon!");
+    if (!selectedTask || !selectedTask.clientId) return;
+
+    try {
+      // Get client details for email
+      const client = await getClientById(selectedTask.clientId);
+      if (!client || !client.email) {
+        alert("Cannot send reminder: Client email not found");
+        return;
+      }
+
+      // Get consultation date if available
+      let consultationDate = "";
+      if (selectedTask.dueDate) {
+        // Due date is typically 48 hours before consultation
+        const dueDate = new Date(selectedTask.dueDate);
+        const consultDate = new Date(dueDate.getTime() + (48 * 60 * 60 * 1000));
+        consultationDate = consultDate.toLocaleDateString('en-AU', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      }
+
+      // Determine which form link to send (default to dog if no pet info available)
+      const dogFormId = import.meta.env.VITE_JOTFORM_DOG_FORM_ID || "212500923595050";
+      const catFormId = import.meta.env.VITE_JOTFORM_CAT_FORM_ID || "241828180919868";
+
+      // Check if client has a cat (simple check - could be enhanced)
+      const hasCat = client.pets?.some(pet => pet.species?.toLowerCase() === 'cat');
+      const formId = hasCat ? catFormId : dogFormId;
+      const formType = hasCat ? "Cat" : "Dog";
+      const formUrl = `https://form.jotform.com/${formId}`;
+
+      // Create email content
+      const subject = `Reminder: ${formType} Behaviour Questionnaire - Pet Behaviour Services`;
+
+      const body = `Dear ${client.firstName},
+
+Thank you for booking your consultation with Pet Behaviour Services${consultationDate ? ` on ${consultationDate}` : ''}.
+
+To help us provide the best possible service, please complete our ${formType} Behaviour Questionnaire before your consultation:
+
+${formUrl}
+
+The questionnaire takes approximately 15-20 minutes to complete and provides valuable information about your pet's behaviour, history, and current concerns.
+
+Please ensure you submit the questionnaire at least 48 hours before your consultation to allow us time to review your responses.
+
+If you have any questions or concerns, please don't hesitate to contact us.
+
+Best regards,
+Pet Behaviour Services`;
+
+      // Create mailto link
+      const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      // Open default email client
+      window.open(mailtoLink, '_blank');
+
+      // Optional: Show confirmation
+      setTimeout(() => {
+        if (confirm("Email client opened. Did you send the reminder?")) {
+          // Could mark task as "reminder sent" or add a note
+          console.log("Reminder sent to", client.email);
+        }
+      }, 1000);
+
+    } catch (error) {
+      console.error("Failed to send reminder:", error);
+      alert("Failed to prepare reminder email. Please try again.");
+    }
   };
 
   const handleCloseDialog = () => {
