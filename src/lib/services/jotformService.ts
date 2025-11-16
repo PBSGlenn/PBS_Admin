@@ -423,8 +423,40 @@ export async function processQuestionnaire(
       client.folderPath
     );
 
-    // Find existing pet or note that we should update pet data
-    const pet = await findExistingPet(client.clientId, parsed.pet.name);
+    // Update client address if questionnaire has address data
+    if (parsed.address) {
+      const shouldUpdateAddress =
+        !client.streetAddress ||
+        !client.city ||
+        !client.state ||
+        !client.postcode;
+
+      if (shouldUpdateAddress) {
+        await updateClient(client.clientId, {
+          streetAddress: parsed.address.street || client.streetAddress,
+          city: parsed.address.city || client.city,
+          state: parsed.address.state || client.state,
+          postcode: parsed.address.postcode || client.postcode,
+        });
+        console.log('✓ Updated client address from questionnaire');
+      }
+    }
+
+    // Find existing pet and update with questionnaire data
+    let pet = await findExistingPet(client.clientId, parsed.pet.name);
+
+    if (pet) {
+      // Update pet details with questionnaire data
+      await updatePet(pet.petId, {
+        breed: parsed.pet.breed || pet.breed,
+        sex: parsed.pet.sex || pet.sex,
+        // Note: We don't update dateOfBirth from age string here to avoid overwriting existing accurate data
+        notes: pet.notes
+          ? `${pet.notes}\n\nQuestionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`
+          : `Questionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`,
+      });
+      console.log('✓ Updated pet details from questionnaire');
+    }
 
     // Create "Questionnaire Received" event
     const event = await createEvent({
