@@ -112,7 +112,24 @@ export async function findQuestionnaireFile(
 export async function readQuestionnaireFile(filePath: string): Promise<QuestionnaireData> {
   try {
     const content = await invoke<string>('read_text_file', { filePath });
-    const data = JSON.parse(content) as QuestionnaireData;
+    const rawData = JSON.parse(content);
+
+    // Handle both old and new formats
+    let data = rawData as QuestionnaireData;
+
+    // Migrate old format: address as object → string
+    if (data.client.address && typeof data.client.address === 'object') {
+      const addr = data.client.address as any;
+      data.client.address = `${addr.street || ''}, ${addr.city || ''}, ${addr.state || ''}, ${addr.postcode || ''}`.trim();
+    }
+
+    // Migrate old format: formType lowercase → capitalized
+    if (data.formType === 'dog' as any) {
+      data.formType = 'Dog';
+    } else if (data.formType === 'cat' as any) {
+      data.formType = 'Cat';
+    }
+
     return data;
   } catch (error) {
     console.error('Failed to read questionnaire file:', error);
@@ -275,28 +292,28 @@ function comparePet(pet: Pet | null, questionnaireData: QuestionnaireData): Fiel
       label: 'Pet Name',
       currentValue: pet?.name || null,
       questionnaireValue: qPet.name,
-      status: compareValues(pet?.name, qPet.name),
+      status: compareValues(pet?.name || null, qPet.name),
     },
     {
       field: 'species',
       label: 'Species',
       currentValue: pet?.species || null,
       questionnaireValue: qPet.species,
-      status: compareValues(pet?.species, qPet.species),
+      status: compareValues(pet?.species || null, qPet.species),
     },
     {
       field: 'breed',
       label: 'Breed',
       currentValue: pet?.breed || null,
       questionnaireValue: qPet.breed || null,
-      status: compareValues(pet?.breed, qPet.breed),
+      status: compareValues(pet?.breed || null, qPet.breed || null),
     },
     {
       field: 'sex',
       label: 'Sex',
       currentValue: pet?.sex || null,
       questionnaireValue: mapSexValue(qPet.sex),
-      status: compareValues(pet?.sex, mapSexValue(qPet.sex)),
+      status: compareValues(pet?.sex || null, mapSexValue(qPet.sex)),
     },
     {
       field: 'age',
@@ -371,7 +388,7 @@ export async function applyClientUpdates(
   selectedFields: string[],
   questionnaireData: QuestionnaireData
 ): Promise<Client> {
-  const updates: Partial<Client> = {};
+  const updates: Record<string, any> = {};
   const parsedAddress = parseAddress(questionnaireData.client.address);
 
   for (const field of selectedFields) {
@@ -389,16 +406,16 @@ export async function applyClientUpdates(
         updates.mobile = questionnaireData.client.phone;
         break;
       case 'streetAddress':
-        updates.streetAddress = parsedAddress.streetAddress;
+        updates.streetAddress = parsedAddress.streetAddress || undefined;
         break;
       case 'city':
-        updates.city = parsedAddress.city;
+        updates.city = parsedAddress.city || undefined;
         break;
       case 'state':
-        updates.state = parsedAddress.state;
+        updates.state = parsedAddress.state || undefined;
         break;
       case 'postcode':
-        updates.postcode = parsedAddress.postcode;
+        updates.postcode = parsedAddress.postcode || undefined;
         break;
     }
   }
@@ -414,7 +431,7 @@ export async function applyPetUpdates(
   selectedFields: string[],
   questionnaireData: QuestionnaireData
 ): Promise<Pet> {
-  const updates: Partial<Pet> = {};
+  const updates: Record<string, any> = {};
   const qPet = questionnaireData.pet;
 
   for (const field of selectedFields) {

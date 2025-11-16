@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   reconcileQuestionnaire,
   applyClientUpdates,
@@ -34,6 +33,7 @@ export function QuestionnaireReconciliation({
 }: QuestionnaireReconciliationProps) {
   const [reconciliation, setReconciliation] = useState<ReconciliationResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedClientFields, setSelectedClientFields] = useState<string[]>([]);
   const [selectedPetFields, setSelectedPetFields] = useState<string[]>([]);
   const [applying, setApplying] = useState(false);
@@ -45,7 +45,12 @@ export function QuestionnaireReconciliation({
   async function loadReconciliation() {
     try {
       setLoading(true);
+      setError(null);
+
+      console.log('[QuestionnaireReconciliation] Loading from:', questionnaireFilePath);
       const result = await reconcileQuestionnaire(clientId, questionnaireFilePath);
+      console.log('[QuestionnaireReconciliation] Reconciliation result:', result);
+
       setReconciliation(result);
 
       // Pre-select fields with new data (not different or missing)
@@ -59,7 +64,10 @@ export function QuestionnaireReconciliation({
       setSelectedClientFields(autoSelectClient);
       setSelectedPetFields(autoSelectPet);
     } catch (error) {
-      console.error('Failed to load reconciliation:', error);
+      console.error('[QuestionnaireReconciliation] Failed to load reconciliation:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setError(errorMessage);
+      setReconciliation(null);
     } finally {
       setLoading(false);
     }
@@ -196,6 +204,20 @@ export function QuestionnaireReconciliation({
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading questionnaire data...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 space-y-4">
+        <AlertCircle className="w-12 h-12 text-red-600" />
+        <div className="text-center">
+          <p className="text-lg font-semibold text-red-600 mb-2">Failed to load questionnaire data</p>
+          <p className="text-sm text-gray-600">{error}</p>
+          <p className="text-xs text-gray-500 mt-2">File: {questionnaireFilePath}</p>
+        </div>
+        <Button variant="outline" onClick={onClose}>Close</Button>
       </div>
     );
   }
