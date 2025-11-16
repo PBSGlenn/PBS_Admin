@@ -323,9 +323,12 @@ async function downloadSubmissionFiles(
       ? `${parsed.address.street}, ${parsed.address.city}, ${parsed.address.state}, ${parsed.address.postcode}`
       : '';
 
+    // Capitalize formType for reconciliation service compatibility
+    const formType = parsed.formType === 'dog' ? 'Dog' : 'Cat';
+
     const jsonContent = JSON.stringify({
       submissionId: parsed.submissionId,
-      formType: parsed.formType,
+      formType: formType,
       submittedAt: parsed.submittedAt,
       client: {
         firstName: parsed.firstName,
@@ -438,10 +441,10 @@ export async function processQuestionnaire(
 
       if (shouldUpdateAddress) {
         await updateClient(client.clientId, {
-          streetAddress: parsed.address.street || client.streetAddress,
-          city: parsed.address.city || client.city,
-          state: parsed.address.state || client.state,
-          postcode: parsed.address.postcode || client.postcode,
+          streetAddress: parsed.address.street || client.streetAddress || undefined,
+          city: parsed.address.city || client.city || undefined,
+          state: parsed.address.state || client.state || undefined,
+          postcode: parsed.address.postcode || client.postcode || undefined,
         });
         console.log('✓ Updated client address from questionnaire');
       }
@@ -453,8 +456,8 @@ export async function processQuestionnaire(
     if (pet) {
       // Update pet details with questionnaire data
       await updatePet(pet.petId, {
-        breed: parsed.pet.breed || pet.breed,
-        sex: parsed.pet.sex || pet.sex,
+        breed: parsed.pet.breed || pet.breed || undefined,
+        sex: parsed.pet.sex || pet.sex || undefined,
         // Note: We don't update dateOfBirth from age string here to avoid overwriting existing accurate data
         notes: pet.notes
           ? `${pet.notes}\n\nQuestionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`

@@ -96,6 +96,7 @@ export const EVENT_TYPES = [
   "TrainingSession",
   "Payment",
   "FollowUp",
+  "QuestionnaireReceived",
   "Note",
 ] as const;
 
