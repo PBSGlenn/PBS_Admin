@@ -318,6 +318,11 @@ async function downloadSubmissionFiles(
     const jsonFileName = `questionnaire_${parsed.submissionId}_${Date.now()}.json`;
     const jsonPath = `${clientFolderPath}\\${jsonFileName}`;
 
+    // Format address as a string for reconciliation service compatibility
+    const addressString = parsed.address
+      ? `${parsed.address.street}, ${parsed.address.city}, ${parsed.address.state}, ${parsed.address.postcode}`
+      : '';
+
     const jsonContent = JSON.stringify({
       submissionId: parsed.submissionId,
       formType: parsed.formType,
@@ -327,7 +332,7 @@ async function downloadSubmissionFiles(
         lastName: parsed.lastName,
         email: parsed.email,
         phone: parsed.phone,
-        address: parsed.address,
+        address: addressString,
       },
       pet: parsed.pet,
       allAnswers: parsed.allAnswers,
