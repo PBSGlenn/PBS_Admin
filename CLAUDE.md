@@ -10,9 +10,9 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Email Template System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, and compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, **AI-powered bulk task importer from consultation transcripts**, and compact, consistent UI with reduced font sizes throughout.
 
-**Last Updated**: 2025-11-14
+**Last Updated**: 2025-11-19
 
 **Next Session**: Consider system tray background service for persistent notifications. Explore automated email delivery for reminders (SMTP integration).
 
@@ -58,7 +58,7 @@ PBS_Admin/
 │   │   ├── Client/         # ✅ ClientForm, ClientView, FolderCreationDialog, FolderSuccessDialog
 │   │   ├── Pet/            # ✅ PetForm, PetsTable (integrated into ClientView)
 │   │   ├── Event/          # ✅ EventForm, EventsTable (with automation hooks)
-│   │   ├── Task/           # ✅ TaskForm, TasksTable (priority/status tracking)
+│   │   ├── Task/           # ✅ TaskForm, TasksTable (priority/status tracking), BulkTaskImporter
 │   │   ├── EmailTemplateManager/  # ✅ Full email template management UI
 │   │   │   └── EmailTemplateManager.tsx  # ✅ Create/edit/duplicate/delete templates
 │   │   └── ui/             # ✅ shadcn/ui components (Button, Input, Dialog, Select, etc.)
@@ -343,6 +343,7 @@ calculateAge("2024-11-01");  // → "6 days"
 - Lists: Bullet lists, Numbered lists
 - Text alignment: Left, Center, Right
 - Placeholder support
+- Maximum height constraint (300px) with automatic scrollbars for long content
 
 **Usage**:
 ```typescript
@@ -357,6 +358,12 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 
 **Storage**: HTML format in database
 **Display**: Plain text in tables (HTML stripped automatically)
+
+**Height Constraint**:
+- Editor content limited to 300px max-height (prevents dialog overflow)
+- Vertical scrollbar appears automatically when content exceeds height
+- Ensures form controls remain visible in modal dialogs
+- Implemented in `rich-text-editor.css` with `max-height` and `overflow-y: auto`
 
 **Packages**:
 - `@tiptap/react` - React integration
@@ -779,6 +786,97 @@ interface Action {
    - Success dialog with "Open Folder" button
    - ClientView button changes from "Create Folder" to "Open Folder"
    - Folder opens in Windows File Explorer via Tauri opener plugin
+
+---
+
+## AI Integration
+
+### Bulk Task Importer
+
+**Purpose**: Import AI-extracted tasks from consultation transcripts directly into PBS Admin.
+
+**Technology**: JSON parsing + date calculation utilities
+
+**Workflow**:
+1. Record consultation (iPhone voice memo, Zoom with Fathom, etc.)
+2. Get transcript (manually or via Fathom)
+3. Paste transcript into ChatGPT or Claude with task extraction prompt
+4. Copy JSON output from AI
+5. In PBS Admin, click green "Import Tasks" button on Consultation event
+6. Paste JSON, review/edit tasks, and import
+
+**Features**:
+- Auto-parses JSON with real-time validation
+- Calculates due dates from consultation date + offset strings
+- Preview table with editable fields (description, offset, priority)
+- Remove unwanted tasks before importing
+- Bulk creates all tasks linked to consultation event and client
+- Automatically refreshes Dashboard and Client view
+
+**Access**:
+- Green checklist icon (📋) appears on all **Consultation** events in EventsTable
+- Opens BulkTaskImporter dialog for that specific consultation
+- Pre-fills consultation date and client information
+
+**JSON Format**:
+```json
+[
+  {
+    "description": "Email behavior modification protocol to client",
+    "dueDateOffset": "3 days",
+    "priority": 1,
+    "context": "Optional context for reference (not saved)"
+  },
+  {
+    "description": "Schedule in-home follow-up visit",
+    "dueDateOffset": "1 week",
+    "priority": 2,
+    "context": "Monday or Friday late afternoon preferred"
+  }
+]
+```
+
+**Date Offset Utilities** ([dateOffsetUtils.ts](src/lib/utils/dateOffsetUtils.ts)):
+- `calculateDueDate(baseDate, offset)` - Converts offset to ISO date
+- `isValidOffset(offset)` - Validates offset format
+- `formatOffset(offset)` - Normalizes display format
+
+**Supported Offset Formats**:
+- Hours: "24 hours", "48 hours"
+- Days: "1 day", "3 days", "7 days"
+- Weeks: "1 week", "2 weeks"
+- Months: "1 month", "2 months"
+
+**Task Creation**:
+- All tasks created with status "Pending"
+- TriggeredBy: "Consultation"
+- AutomatedAction: "Manual"
+- Linked to consultation event and client
+
+**AI Task Extraction Prompt**:
+Standardized prompt for extracting practitioner tasks from consultation transcripts with:
+- Task granularity guidelines (not too broad, not too granular)
+- Priority definitions (1-5 scale based on urgency)
+- Standardized date offset formats
+- Validation rules (only practitioner tasks, no client homework)
+- Quality checks to prevent manufactured tasks
+
+**Query Invalidation**:
+- Invalidates `["tasks", clientId]` for client view refresh
+- Invalidates `["tasks", "dashboard"]` for Dashboard refresh
+- Invalidates `["client", clientId]` for client summary refresh
+
+**Implementation Files**:
+- [BulkTaskImporter.tsx](src/components/Task/BulkTaskImporter.tsx) - Main component
+- [dateOffsetUtils.ts](src/lib/utils/dateOffsetUtils.ts) - Date calculation utilities
+- [EventsTable.tsx](src/components/Event/EventsTable.tsx) - Integration point (green button)
+
+**Future Enhancements**:
+1. Direct API integration with Claude/ChatGPT for one-click processing
+2. Automatic transcription with Whisper API for voice memos
+3. Fathom API integration for automatic transcript fetching
+4. Template library for common consultation task sets
+5. Task templates based on consultation type (aggression, anxiety, etc.)
 
 ---
 
@@ -1715,5 +1813,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2025-11-14
-**Version**: 1.6.0 (MVP Complete - Email Template System + Dashboard Task Management + Task Templates + In-app Notifications + All Previous Features)
+**Last Updated**: 2025-11-19
+**Version**: 1.7.0 (AI Integration - Bulk Task Importer for consultation transcripts with JSON parsing, date offset calculation, and editable preview)

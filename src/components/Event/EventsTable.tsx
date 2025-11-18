@@ -9,10 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { EventForm } from "./EventForm";
 import { QuestionnaireReconciliation } from "../Client/QuestionnaireReconciliation";
+import { BulkTaskImporter } from "../Task/BulkTaskImporter";
 import { getEventsByClientId, deleteEvent } from "@/lib/services/eventService";
 import { getClientById } from "@/lib/services/clientService";
 import type { Event } from "@/lib/types";
-import { Plus, Edit, Trash2, FileCheck } from "lucide-react";
+import { Plus, Edit, Trash2, FileCheck, ListChecks } from "lucide-react";
 import { format } from "date-fns";
 
 export interface EventsTableProps {
@@ -25,6 +26,7 @@ export function EventsTable({ clientId }: EventsTableProps) {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [reconciliationEvent, setReconciliationEvent] = useState<Event | null>(null);
   const [questionnaireFilePath, setQuestionnaireFilePath] = useState<string>("");
+  const [importTasksEvent, setImportTasksEvent] = useState<Event | null>(null);
 
   // Fetch events for this client
   const { data: events = [], isLoading } = useQuery({
@@ -67,6 +69,11 @@ export function EventsTable({ clientId }: EventsTableProps) {
   // Check if event is a questionnaire event
   const isQuestionnaireEvent = (event: Event): boolean => {
     return event.eventType === "QuestionnaireReceived";
+  };
+
+  // Check if event is a consultation event
+  const isConsultationEvent = (event: Event): boolean => {
+    return event.eventType === "Consultation";
   };
 
   // Extract submission ID from questionnaire event notes
@@ -206,6 +213,18 @@ export function EventsTable({ clientId }: EventsTableProps) {
                               <span className="sr-only">Review Questionnaire</span>
                             </Button>
                           )}
+                          {isConsultationEvent(event) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setImportTasksEvent(event)}
+                              className="h-7 w-7 p-0 text-green-600 hover:text-green-700"
+                              title="Import Tasks from AI"
+                            >
+                              <ListChecks className="h-3.5 w-3.5" />
+                              <span className="sr-only">Import Tasks</span>
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -284,6 +303,18 @@ export function EventsTable({ clientId }: EventsTableProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Task Importer Dialog */}
+      {importTasksEvent && client && (
+        <BulkTaskImporter
+          isOpen={!!importTasksEvent}
+          onClose={() => setImportTasksEvent(null)}
+          clientId={clientId}
+          eventId={importTasksEvent.eventId}
+          consultationDate={importTasksEvent.date}
+          clientName={`${client.firstName} ${client.lastName}`}
+        />
+      )}
     </>
   );
 }

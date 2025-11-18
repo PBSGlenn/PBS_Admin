@@ -2,6 +2,8 @@
 
 .rich-text-editor-content {
   background-color: hsl(var(--background));
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .rich-text-editor-content .ProseMirror {
