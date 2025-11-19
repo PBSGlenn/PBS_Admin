@@ -402,11 +402,13 @@ export function ReportGeneratorDialog({
                       </Button>
                     </div>
                     {isEditingReport ? (
-                      <Textarea
-                        value={generatedReport.report}
-                        onChange={(e) => setGeneratedReport({ ...generatedReport, report: e.target.value })}
-                        className="flex-1 min-h-0 font-mono text-sm resize-none p-4 border rounded-md"
-                      />
+                      <div className="flex-1 overflow-auto">
+                        <Textarea
+                          value={generatedReport.report}
+                          onChange={(e) => setGeneratedReport({ ...generatedReport, report: e.target.value })}
+                          className="w-full min-h-full font-mono text-sm resize-none p-4 border rounded-md"
+                        />
+                      </div>
                     ) : (
                       <div className="flex-1 overflow-auto">
                         <div className="prose prose-sm max-w-none p-4 border rounded-md bg-background">
@@ -444,15 +446,17 @@ export function ReportGeneratorDialog({
                         </div>
                         <div className="flex-1 min-h-0 flex flex-col">
                           <Label htmlFor="email-body" className="text-xs mb-1">Body</Label>
-                          <Textarea
-                            id="email-body"
-                            value={generatedReport.followUpEmail.body}
-                            onChange={(e) => setGeneratedReport({
-                              ...generatedReport,
-                              followUpEmail: { ...generatedReport.followUpEmail, body: e.target.value }
-                            })}
-                            className="flex-1 min-h-0 font-mono text-sm resize-none p-4 border rounded-md"
-                          />
+                          <div className="flex-1 overflow-auto">
+                            <Textarea
+                              id="email-body"
+                              value={generatedReport.followUpEmail.body}
+                              onChange={(e) => setGeneratedReport({
+                                ...generatedReport,
+                                followUpEmail: { ...generatedReport.followUpEmail, body: e.target.value }
+                              })}
+                              className="w-full min-h-full font-mono text-sm resize-none p-4 border rounded-md"
+                            />
+                          </div>
                         </div>
                       </div>
                     ) : (
