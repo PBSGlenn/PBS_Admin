@@ -10,10 +10,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { generateConsultationReport, estimateTokenCost } from "@/lib/services/reportGenerationService";
 import { createEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
+import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
-import { FileText, Loader2, AlertCircle, CheckCircle2, Upload, FolderOpen } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, Upload, FolderOpen, FileType } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { dateToISO } from "@/lib/utils/dateUtils";
 
@@ -53,6 +54,10 @@ export function ReportGeneratorDialog({
   const [error, setError] = useState<string | null>(null);
   const [savedFilePath, setSavedFilePath] = useState<string | null>(null);
   const [savedFileName, setSavedFileName] = useState<string | null>(null);
+  const [savedVersion, setSavedVersion] = useState<number>(1);
+  const [isConvertingDocx, setIsConvertingDocx] = useState(false);
+  const [docxFilePath, setDocxFilePath] = useState<string | null>(null);
+  const [docxFileName, setDocxFileName] = useState<string | null>(null);
 
   // Format consultation date for display
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
@@ -151,6 +156,7 @@ export function ReportGeneratorDialog({
 
       setSavedFilePath(reportFilePath);
       setSavedFileName(reportFileName);
+      setSavedVersion(version);
 
       // Create "Report Generated" event
       await createEvent({
@@ -198,6 +204,53 @@ export function ReportGeneratorDialog({
     } catch (err) {
       console.error("Failed to open file:", err);
       setError(`Failed to open file: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
+
+  // Convert MD to DOCX with letterhead template
+  const handleConvertToDocx = async () => {
+    if (!savedFilePath || !clientFolderPath) return;
+
+    setIsConvertingDocx(true);
+    setError(null);
+
+    try {
+      // Check if template exists
+      const templateExists = await checkTemplateExists("consultation-report-template.docx");
+
+      if (!templateExists) {
+        setError("Template not found. Please place 'consultation-report-template.docx' in Documents/PBS_Admin/Templates/");
+        setIsConvertingDocx(false);
+        return;
+      }
+
+      // Convert MD to DOCX
+      const result = await convertReportToDocx({
+        mdFilePath: savedFilePath,
+        clientId,
+        clientSurname,
+        consultationDate: dateForFilename,
+        version: savedVersion,
+        clientFolderPath,
+      });
+
+      if (result.success) {
+        setDocxFilePath(result.docxFilePath);
+        setDocxFileName(result.docxFileName);
+
+        // Invalidate queries
+        queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+        queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+
+        alert(`DOCX created successfully!\n\nFile: ${result.docxFileName}`);
+      } else {
+        setError(`Failed to convert to DOCX: ${result.error}`);
+      }
+    } catch (err) {
+      console.error("DOCX conversion error:", err);
+      setError(`Failed to convert to DOCX: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsConvertingDocx(false);
     }
   };
 
@@ -364,6 +417,16 @@ export function ReportGeneratorDialog({
                 </p>
               </div>
 
+              {docxFileName && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-green-900">DOCX Created</p>
+                    <p className="text-[10px] text-green-700 font-mono">{docxFileName}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 mt-auto">
                 <Button
                   type="button"
@@ -375,6 +438,28 @@ export function ReportGeneratorDialog({
                   <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
                   Open MD File
                 </Button>
+                {!docxFileName && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={handleConvertToDocx}
+                    size="sm"
+                    disabled={isConvertingDocx}
+                    className="h-8 text-xs"
+                  >
+                    {isConvertingDocx ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Converting...
+                      </>
+                    ) : (
+                      <>
+                        <FileType className="h-3.5 w-3.5 mr-1.5" />
+                        Convert to DOCX
+                      </>
+                    )}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   onClick={handleClose}

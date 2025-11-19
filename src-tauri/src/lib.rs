@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::Path;
 use std::io::Write;
+use std::process::Command;
 use reqwest::blocking::get;
 
 #[tauri::command]
@@ -178,6 +179,56 @@ fn list_files(directory: String, pattern: Option<String>) -> Result<Vec<String>,
     Ok(files)
 }
 
+#[tauri::command]
+fn get_templates_path() -> Result<String, String> {
+    // Get user's Documents folder
+    match dirs::document_dir() {
+        Some(docs_path) => {
+            let templates_path = docs_path.join("PBS_Admin").join("Templates");
+
+            // Ensure the directory exists
+            if !templates_path.exists() {
+                fs::create_dir_all(&templates_path)
+                    .map_err(|e| format!("Failed to create templates directory: {}", e))?;
+            }
+
+            Ok(templates_path.to_string_lossy().to_string())
+        },
+        None => Err("Could not find Documents folder".to_string()),
+    }
+}
+
+#[tauri::command]
+fn run_pandoc(input_path: String, output_path: String, template_path: Option<String>) -> Result<String, String> {
+    // Build pandoc command
+    let mut cmd = Command::new("pandoc");
+
+    // Add input file
+    cmd.arg(&input_path);
+
+    // Add output file
+    cmd.arg("-o");
+    cmd.arg(&output_path);
+
+    // Add reference document (template) if provided
+    if let Some(template) = template_path {
+        cmd.arg("--reference-doc");
+        cmd.arg(&template);
+    }
+
+    // Execute command
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to execute pandoc: {}. Is pandoc installed?", e))?;
+
+    // Check if command succeeded
+    if output.status.success() {
+        Ok(output_path.clone())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Pandoc conversion failed: {}", error_msg))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -188,11 +239,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             create_folder,
             get_default_client_records_path,
+            get_templates_path,
             read_text_file,
             write_text_file,
             write_binary_file,
             download_file,
-            list_files
+            list_files,
+            run_pandoc
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
