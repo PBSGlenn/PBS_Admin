@@ -1,7 +1,7 @@
 // PBS Admin - Report Generator Dialog Component
 // Generate consultation reports using Claude API
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
@@ -91,6 +91,54 @@ export function ReportGeneratorDialog({
       return 1;
     }
   };
+
+  // Check for existing MD file when dialog opens
+  const checkForExistingReport = async () => {
+    if (!clientFolderPath) return;
+
+    try {
+      const files = await readDir(clientFolderPath);
+      const reportFiles = files.filter(f =>
+        f.name.startsWith(`${clientSurname.toLowerCase()}_${dateForFilename}_consultation-report_v`) &&
+        f.name.endsWith('.md')
+      );
+
+      if (reportFiles.length > 0) {
+        // Find the most recent version
+        const filesWithVersions = reportFiles.map(f => {
+          const match = f.name.match(/_v(\d+)\.md$/);
+          const version = match ? parseInt(match[1]) : 0;
+          return { file: f, version };
+        });
+
+        filesWithVersions.sort((a, b) => b.version - a.version);
+        const latestFile = filesWithVersions[0];
+
+        // Set state to show the success screen
+        const filePath = `${clientFolderPath}\\${latestFile.file.name}`;
+        setSavedFilePath(filePath);
+        setSavedFileName(latestFile.file.name);
+        setSavedVersion(latestFile.version);
+      }
+    } catch (error) {
+      console.error("Failed to check for existing report:", error);
+    }
+  };
+
+  // Check for existing report when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      checkForExistingReport();
+    } else {
+      // Reset state when dialog closes
+      setTranscript("");
+      setSavedFilePath(null);
+      setSavedFileName(null);
+      setError(null);
+      setDocxFilePath(null);
+      setDocxFileName(null);
+    }
+  }, [isOpen]);
 
   // Handle file upload
   const handleFileUpload = async () => {
