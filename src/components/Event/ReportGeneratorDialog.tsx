@@ -12,6 +12,8 @@ import { EmailDraftDialog } from "../ui/email-draft-dialog";
 import { generateConsultationReport, estimateTokenCost, type GeneratedReport } from "@/lib/services/reportGenerationService";
 import { createEvent } from "@/lib/services/eventService";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import { FileText, Send, Loader2, AlertCircle, CheckCircle2, Upload } from "lucide-react";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
@@ -60,7 +62,8 @@ export function ReportGeneratorDialog({
   // Handle file upload
   const handleFileUpload = async () => {
     try {
-      const selected = await invoke<string[]>("plugin:dialog|open", {
+      const selected = await open({
+        multiple: false,
         filters: [
           {
             name: "Text",
@@ -69,10 +72,8 @@ export function ReportGeneratorDialog({
         ],
       });
 
-      if (selected && selected.length > 0) {
-        const content = await invoke<string>("plugin:fs|read_text_file", {
-          path: selected[0],
-        });
+      if (selected) {
+        const content = await readTextFile(selected);
         setTranscript(content);
       }
     } catch (error) {
