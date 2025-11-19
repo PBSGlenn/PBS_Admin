@@ -344,6 +344,7 @@ export function EventsTable({ clientId }: EventsTableProps) {
           onClose={() => setReportGeneratorEvent(null)}
           clientId={clientId}
           clientName={`${client.firstName} ${client.lastName}`}
+          clientSurname={client.lastName}
           clientEmail={client.email}
           eventId={reportGeneratorEvent.eventId}
           eventDate={reportGeneratorEvent.date}
