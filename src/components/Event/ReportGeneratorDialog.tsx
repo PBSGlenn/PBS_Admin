@@ -207,15 +207,15 @@ export function ReportGeneratorDialog({
     <>
       <Dialog open={isOpen && !showEmailDraft} onOpenChange={onClose}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Generate Consultation Report</DialogTitle>
-            <DialogDescription>
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-base">Generate Consultation Report</DialogTitle>
+            <DialogDescription className="text-[11px]">
               Use AI to generate a professional consultation report and follow-up email
             </DialogDescription>
           </DialogHeader>
 
           {/* Consultation Info */}
-          <div className="grid grid-cols-3 gap-3 p-3 bg-muted/50 rounded-md text-xs">
+          <div className="grid grid-cols-3 gap-2 px-3 py-1.5 bg-muted/50 rounded-md text-[10px]">
             <div>
               <span className="text-muted-foreground">Client:</span>{" "}
               <span className="font-medium">{clientName}</span>
@@ -231,12 +231,12 @@ export function ReportGeneratorDialog({
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-3">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-2">
             {!generatedReport ? (
               // Step 1: Input transcript
-              <div className="space-y-3 flex-1 flex flex-col">
+              <div className="space-y-2 flex-1 flex flex-col">
                 {localStorage.getItem(draftKey) && (
-                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md text-[11px] text-blue-700">
+                  <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md text-[11px] text-blue-700">
                     <AlertCircle className="h-3.5 w-3.5" />
                     <span>
                       You have an unsaved draft for this consultation.{" "}
@@ -291,7 +291,7 @@ export function ReportGeneratorDialog({
                 )}
 
                 {error && (
-                  <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive rounded-md">
+                  <div className="flex items-start gap-2 px-2 py-1.5 bg-destructive/10 border border-destructive rounded-md">
                     <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-xs font-medium text-destructive">Error</p>
@@ -357,7 +357,7 @@ export function ReportGeneratorDialog({
               </div>
             ) : (
               // Step 2: Preview and save
-              <div className="space-y-3 flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="space-y-1.5 flex-1 min-h-0 flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between">
                   {!isEditingReport && !isEditingEmail && (
                     <div className="flex items-center gap-1 text-[10px] text-green-600">
@@ -384,13 +384,13 @@ export function ReportGeneratorDialog({
                 </div>
 
                 <Tabs defaultValue="report" className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-2 h-8">
                     <TabsTrigger value="report" className="text-xs">Report Preview</TabsTrigger>
                     <TabsTrigger value="email" className="text-xs">Follow-up Email</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="report" className="flex-1 min-h-0 overflow-hidden mt-2 flex flex-col">
-                    <div className="flex justify-end mb-2">
+                  <TabsContent value="report" className="flex-1 min-h-0 overflow-hidden mt-1 flex flex-col">
+                    <div className="flex justify-end mb-1">
                       <Button
                         type="button"
                         variant="outline"
@@ -416,8 +416,8 @@ export function ReportGeneratorDialog({
                     )}
                   </TabsContent>
 
-                  <TabsContent value="email" className="flex-1 min-h-0 overflow-hidden mt-2 flex flex-col">
-                    <div className="flex justify-end mb-2">
+                  <TabsContent value="email" className="flex-1 min-h-0 overflow-hidden mt-1 flex flex-col">
+                    <div className="flex justify-end mb-1">
                       <Button
                         type="button"
                         variant="outline"
@@ -471,7 +471,7 @@ export function ReportGeneratorDialog({
                 </Tabs>
 
                 {error && (
-                  <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive rounded-md">
+                  <div className="flex items-start gap-2 px-2 py-1.5 bg-destructive/10 border border-destructive rounded-md">
                     <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-xs font-medium text-destructive">Error</p>
