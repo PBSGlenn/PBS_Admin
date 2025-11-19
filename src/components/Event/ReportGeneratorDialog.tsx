@@ -1,7 +1,7 @@
 // PBS Admin - Report Generator Dialog Component
 // Generate consultation reports and follow-up emails using Claude API
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -15,9 +15,10 @@ import { createEvent } from "@/lib/services/eventService";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
-import { FileText, Send, Loader2, AlertCircle, CheckCircle2, Upload } from "lucide-react";
+import { FileText, Send, Loader2, AlertCircle, CheckCircle2, Upload, FileDown } from "lucide-react";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
+import { exportToPDF } from "@/lib/utils/pdfExport";
 
 export interface ReportGeneratorDialogProps {
   isOpen: boolean;
@@ -57,6 +58,10 @@ export function ReportGeneratorDialog({
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  // Ref for PDF export
+  const reportPreviewRef = useRef<HTMLDivElement>(null);
 
   // Draft localStorage key
   const draftKey = `report_draft_${eventId}`;
@@ -201,6 +206,63 @@ export function ReportGeneratorDialog({
   const handleEmailSent = () => {
     setShowEmailDraft(false);
     onClose();
+  };
+
+  // Export report to PDF
+  const handleExportPDF = async () => {
+    if (!generatedReport || !reportPreviewRef.current || !clientFolderPath) {
+      setError("Cannot export PDF: No report generated or client folder not set");
+      return;
+    }
+
+    setIsExportingPDF(true);
+    setError(null);
+
+    try {
+      // Generate PDF from the preview content
+      const pdfBlob = await exportToPDF(reportPreviewRef.current, {
+        filename: 'consultation-report.pdf',
+        title: 'Consultation Report',
+        clientName,
+        petName: `${petName} (${petSpecies})`,
+        consultationDate: formattedDate,
+      });
+
+      // Convert blob to array buffer
+      const arrayBuffer = await pdfBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // Generate filename with timestamp
+      const timestamp = format(new Date(), "yyyyMMdd-HHmmss");
+      const pdfFileName = `consultation-report-${timestamp}.pdf`;
+      const pdfFilePath = `${clientFolderPath}\\${pdfFileName}`;
+
+      // Save PDF file using Tauri command
+      await invoke("write_binary_file", {
+        filePath: pdfFilePath,
+        data: Array.from(uint8Array),
+      });
+
+      // Create "Report Exported" event
+      await createEvent({
+        clientId,
+        eventType: "Note",
+        date: new Date().toISOString(),
+        notes: `<h2>Consultation Report Exported to PDF</h2><p><strong>File:</strong> ${pdfFileName}</p><p><strong>Consultation Date:</strong> ${formattedDate}</p><p>Report exported as PDF and saved to client folder.</p>`,
+      });
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+
+      // Show success message
+      alert(`PDF exported successfully!\n\nSaved to: ${pdfFileName}`);
+    } catch (err) {
+      console.error("Failed to export PDF:", err);
+      setError(`Failed to export PDF: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
 
   return (
@@ -390,7 +452,28 @@ export function ReportGeneratorDialog({
                   </TabsList>
 
                   <TabsContent value="report" className="flex-1 min-h-0 overflow-hidden mt-1 flex flex-col">
-                    <div className="flex justify-end mb-1">
+                    <div className="flex justify-end gap-2 mb-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportPDF}
+                        disabled={isExportingPDF || isEditingReport}
+                        className="h-7 text-xs"
+                        title="Export report as PDF"
+                      >
+                        {isExportingPDF ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            Exporting...
+                          </>
+                        ) : (
+                          <>
+                            <FileDown className="h-3 w-3 mr-1" />
+                            Export PDF
+                          </>
+                        )}
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"
@@ -411,7 +494,10 @@ export function ReportGeneratorDialog({
                       </div>
                     ) : (
                       <div className="flex-1 overflow-auto">
-                        <div className="prose prose-sm max-w-none p-4 border rounded-md bg-background">
+                        <div
+                          ref={reportPreviewRef}
+                          className="prose prose-sm max-w-none p-4 border rounded-md bg-background"
+                        >
                           <ReactMarkdown>{generatedReport.report}</ReactMarkdown>
                         </div>
                       </div>
