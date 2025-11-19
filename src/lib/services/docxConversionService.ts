@@ -11,7 +11,7 @@ export interface DocxConversionOptions {
   consultationDate: string; // YYYYMMDD format
   version: number;
   clientFolderPath: string;
-  templateName?: string; // Optional: defaults to "consultation-report-template.docx"
+  templateName?: string; // Optional: defaults to "General_PBS_Letterhead.docx"
 }
 
 export interface DocxConversionResult {
@@ -34,7 +34,7 @@ export async function convertReportToDocx(
     consultationDate,
     version,
     clientFolderPath,
-    templateName = "consultation-report-template.docx",
+    templateName = "General_PBS_Letterhead.docx",
   } = options;
 
   try {

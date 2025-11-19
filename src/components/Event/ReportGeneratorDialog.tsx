@@ -216,10 +216,10 @@ export function ReportGeneratorDialog({
 
     try {
       // Check if template exists
-      const templateExists = await checkTemplateExists("consultation-report-template.docx");
+      const templateExists = await checkTemplateExists("General_PBS_Letterhead.docx");
 
       if (!templateExists) {
-        setError("Template not found. Please place 'consultation-report-template.docx' in Documents/PBS_Admin/Templates/");
+        setError("Template not found. Please place 'General_PBS_Letterhead.docx' in Documents/PBS_Admin/Templates/");
         setIsConvertingDocx(false);
         return;
       }
