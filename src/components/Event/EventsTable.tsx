@@ -10,10 +10,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { EventForm } from "./EventForm";
 import { QuestionnaireReconciliation } from "../Client/QuestionnaireReconciliation";
 import { BulkTaskImporter } from "../Task/BulkTaskImporter";
+import { ReportGeneratorDialog } from "./ReportGeneratorDialog";
 import { getEventsByClientId, deleteEvent } from "@/lib/services/eventService";
 import { getClientById } from "@/lib/services/clientService";
+import { getPetsByClientId } from "@/lib/services/petService";
 import type { Event } from "@/lib/types";
-import { Plus, Edit, Trash2, FileCheck, ListChecks } from "lucide-react";
+import { Plus, Edit, Trash2, FileCheck, ListChecks, FileText } from "lucide-react";
 import { format } from "date-fns";
 
 export interface EventsTableProps {
@@ -27,6 +29,7 @@ export function EventsTable({ clientId }: EventsTableProps) {
   const [reconciliationEvent, setReconciliationEvent] = useState<Event | null>(null);
   const [questionnaireFilePath, setQuestionnaireFilePath] = useState<string>("");
   const [importTasksEvent, setImportTasksEvent] = useState<Event | null>(null);
+  const [reportGeneratorEvent, setReportGeneratorEvent] = useState<Event | null>(null);
 
   // Fetch events for this client
   const { data: events = [], isLoading } = useQuery({
@@ -38,6 +41,12 @@ export function EventsTable({ clientId }: EventsTableProps) {
   const { data: client } = useQuery({
     queryKey: ["client", clientId],
     queryFn: () => getClientById(clientId),
+  });
+
+  // Fetch pets for report generation
+  const { data: pets = [] } = useQuery({
+    queryKey: ["pets", clientId],
+    queryFn: () => getPetsByClientId(clientId),
   });
 
   // Delete mutation
@@ -214,16 +223,28 @@ export function EventsTable({ clientId }: EventsTableProps) {
                             </Button>
                           )}
                           {isConsultationEvent(event) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setImportTasksEvent(event)}
-                              className="h-7 w-7 p-0 text-green-600 hover:text-green-700"
-                              title="Import Tasks from AI"
-                            >
-                              <ListChecks className="h-3.5 w-3.5" />
-                              <span className="sr-only">Import Tasks</span>
-                            </Button>
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setReportGeneratorEvent(event)}
+                                className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
+                                title="Generate Report"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                <span className="sr-only">Generate Report</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setImportTasksEvent(event)}
+                                className="h-7 w-7 p-0 text-green-600 hover:text-green-700"
+                                title="Import Tasks from AI"
+                              >
+                                <ListChecks className="h-3.5 w-3.5" />
+                                <span className="sr-only">Import Tasks</span>
+                              </Button>
+                            </>
                           )}
                           <Button
                             variant="ghost"
@@ -313,6 +334,22 @@ export function EventsTable({ clientId }: EventsTableProps) {
           eventId={importTasksEvent.eventId}
           consultationDate={importTasksEvent.date}
           clientName={`${client.firstName} ${client.lastName}`}
+        />
+      )}
+
+      {/* Report Generator Dialog */}
+      {reportGeneratorEvent && client && pets.length > 0 && (
+        <ReportGeneratorDialog
+          isOpen={!!reportGeneratorEvent}
+          onClose={() => setReportGeneratorEvent(null)}
+          clientId={clientId}
+          clientName={`${client.firstName} ${client.lastName}`}
+          clientEmail={client.email}
+          eventId={reportGeneratorEvent.eventId}
+          eventDate={reportGeneratorEvent.date}
+          petName={pets[0].name}
+          petSpecies={pets[0].species}
+          clientFolderPath={client.folderPath ?? undefined}
         />
       )}
     </>

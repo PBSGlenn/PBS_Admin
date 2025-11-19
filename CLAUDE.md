@@ -10,7 +10,7 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, **AI-powered bulk task importer from consultation transcripts**, and compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, **AI-powered bulk task importer and consultation report generator from consultation transcripts using Claude Sonnet 4.5**, and compact, consistent UI with reduced font sizes throughout.
 
 **Last Updated**: 2025-11-19
 
@@ -34,6 +34,7 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 | **Notifications** | Sonner | Toast notifications for in-app alerts |
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
 | **Email Templates** | localStorage + Variable System | Customizable templates with dynamic content |
+| **AI Services** | Anthropic Claude Sonnet 4.5 | Report generation, task extraction |
 | **External Services** | Supabase, Jotform API | Booking sync, questionnaire downloads |
 
 ---
@@ -77,11 +78,14 @@ PBS_Admin/
 │   │   │   ├── taskService.ts       # ✅ Task CRUD operations
 │   │   │   ├── bookingSyncService.ts  # ✅ Website booking import from Supabase
 │   │   │   ├── jotformService.ts    # ✅ Questionnaire sync from Jotform API
-│   │   │   └── notificationService.ts # ✅ Task notification queries
+│   │   │   ├── notificationService.ts # ✅ Task notification queries
+│   │   │   └── reportGenerationService.ts # ✅ AI report generation with Claude API
+│   │   ├── prompts/        # ✅ AI prompts and methodologies
+│   │   │   └── report-system-prompt.ts  # ✅ Report generation methodology
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
 │   │   ├── taskTemplates.ts # ✅ Predefined task templates with preset values
 │   │   ├── emailTemplates.ts # ✅ Email template definitions and management functions
-│   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils)
+│   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils, dateOffsetUtils)
 │   │   ├── constants.ts    # ✅ Application constants
 │   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin
 │   ├── hooks/
@@ -877,6 +881,116 @@ Standardized prompt for extracting practitioner tasks from consultation transcri
 3. Fathom API integration for automatic transcript fetching
 4. Template library for common consultation task sets
 5. Task templates based on consultation type (aggression, anxiety, etc.)
+
+---
+
+### AI Report Generation
+
+**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Sonnet 4.5 API.
+
+**Technology**: Anthropic SDK with prompt caching for cost efficiency
+
+**Workflow**:
+1. Veterinarian conducts consultation (records via voice memo, Zoom, etc.)
+2. Obtain transcript (manually or via transcription service)
+3. In PBS Admin, click blue "Generate Report" button on Consultation event
+4. Paste or upload transcript (.txt file)
+5. AI generates two outputs: client report (markdown) and follow-up email
+6. Preview both documents with tabs
+7. Save report to client folder (markdown file)
+8. Opens email draft dialog with pre-filled follow-up email
+9. Creates "Report Sent" event for audit trail
+
+**Features**:
+- **Two-output generation**: Professional report for records + client-friendly follow-up email
+- **Template-based structure**: 7-section report following established methodology
+- **Prompt caching**: Cost optimization by caching system prompt (reduces API costs)
+- **Preview and edit**: Review generated content before saving
+- **Markdown storage**: Reports saved as .md files in client folders
+- **Cost estimation**: Shows token count and estimated cost before generation
+- **Transcript upload**: Paste text or upload .txt file
+- **Email integration**: Opens draft with pre-filled content using email template system
+
+**Report Structure** (7 sections):
+1. **Header Block**: Client/pet info, consultation date, type
+2. **Understanding Pet's Behaviour**: 4 factors explaining behaviour, positive reframe
+3. **Safety Rules**: If applicable (aggression cases), KISS principle - simple enough for ADHD child
+4. **What To Do Now**: Immediate actions before follow-up
+5. **What to Expect**: Timeline, non-linear progress, medication option
+6. **Next Steps**: Schedule follow-up, training packages info
+7. **Questions & Closing**: Contact info, reassurance, signature
+
+**Follow-up Email Template**:
+- Subject: `[Pet name] - Check-in and [Next Step Action]`
+- Check-in questions about implementing advice
+- Schedule next appointment (with pricing/timing)
+- Training package options
+- Professional signature block
+
+**Writing Rules** (AI enforced):
+- **Australian English**: behaviour, recognise, organised, neighbourhood
+- **KISS Principle**: Simple language, no jargon
+- **Extraction-only**: Never invent advice not in transcript
+- **Tone**: Warm, professional, empathetic, never condescending
+- **Short paragraphs**: Maximum 3-4 sentences
+- **Limited lists**: Maximum 3-4 bullet points
+- **No quotes**: Paraphrase, never quote directly
+- **Specific timelines**: Use exact numbers if mentioned (e.g., "6-8 weeks")
+
+**Access**:
+- Blue FileText icon (📄) appears on all **Consultation** events in EventsTable
+- Opens ReportGeneratorDialog for that specific consultation
+- Pre-fills consultation date, client, and pet information
+
+**File Naming**:
+- Format: `consultation-report-YYYYMMDD-HHmmss.md`
+- Location: Client folder (same location as questionnaires)
+- Example: `consultation-report-20251119-143022.md`
+
+**Event Tracking**:
+Creates "Note" event after successful save:
+```html
+<h2>Consultation Report Generated</h2>
+<p><strong>File:</strong> consultation-report-20251119-143022.md</p>
+<p><strong>Consultation Date:</strong> 15/11/2025</p>
+<p>Report generated using AI and saved to client folder.</p>
+```
+
+**Cost Optimization**:
+- **Prompt caching**: System prompt (methodology) cached with ephemeral cache control
+- **Cache duration**: 5 minutes (Anthropic default)
+- **Cache benefit**: Subsequent reports within 5 minutes use cached prompt (90% cost reduction on input tokens)
+- **Token estimation**: Shows estimated cost before generation
+- **Model**: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
+- **Pricing**: ~$3/million input tokens, ~$15/million output tokens (as of March 2024)
+
+**Configuration** (`.env`):
+```bash
+# Anthropic API (for report generation)
+VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+**Implementation Files**:
+- [report-system-prompt.ts](src/lib/prompts/report-system-prompt.ts) - Full methodology and instructions for AI
+- [reportGenerationService.ts](src/lib/services/reportGenerationService.ts) - Claude API integration with caching
+- [ReportGeneratorDialog.tsx](src/components/Event/ReportGeneratorDialog.tsx) - UI component
+- [EventsTable.tsx](src/components/Event/EventsTable.tsx) - Integration point (blue button)
+
+**Query Invalidation**:
+- Invalidates `["events", clientId]` for client view refresh
+- Invalidates `["client", clientId]` for client summary refresh
+
+**Dependencies**:
+- `@anthropic-ai/sdk` - Official Anthropic SDK for Claude API
+- `react-markdown` - Markdown rendering for report preview
+
+**Future Enhancements**:
+1. Direct transcription integration (Whisper API for voice memos)
+2. Fathom.video API integration for automatic Zoom transcript retrieval
+3. PDF export option (in addition to markdown)
+4. Template customization UI for adjusting report structure
+5. Report version history and comparison
+6. Batch processing for multiple consultations
 
 ---
 
@@ -1814,4 +1928,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2025-11-19
-**Version**: 1.7.0 (AI Integration - Bulk Task Importer for consultation transcripts with JSON parsing, date offset calculation, and editable preview)
+**Version**: 1.8.0 (AI Integration - Bulk Task Importer + Consultation Report Generator with Claude Sonnet 4.5, prompt caching, markdown reports, and follow-up email generation)
