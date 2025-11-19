@@ -1,9 +1,10 @@
 // PBS Admin - Report Generator Dialog Component
 // Generate consultation reports and follow-up emails using Claude API
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -52,6 +53,48 @@ export function ReportGeneratorDialog({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showEmailDraft, setShowEmailDraft] = useState(false);
+  const [isEditingReport, setIsEditingReport] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Draft localStorage key
+  const draftKey = `report_draft_${eventId}`;
+
+  // Load draft on mount
+  useEffect(() => {
+    const savedDraft = localStorage.getItem(draftKey);
+    if (savedDraft) {
+      try {
+        const draft = JSON.parse(savedDraft);
+        if (draft.report || draft.followUpEmail) {
+          setGeneratedReport(draft);
+          setLastSaved(new Date(draft.savedAt));
+        }
+      } catch (error) {
+        console.error("Failed to load draft:", error);
+      }
+    }
+  }, [draftKey]);
+
+  // Auto-save draft whenever report changes
+  useEffect(() => {
+    if (generatedReport) {
+      const draft = {
+        ...generatedReport,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(draftKey, JSON.stringify(draft));
+      setLastSaved(new Date());
+    }
+  }, [generatedReport, draftKey]);
+
+  // Clear draft
+  const clearDraft = useCallback(() => {
+    localStorage.removeItem(draftKey);
+    setGeneratedReport(null);
+    setLastSaved(null);
+  }, [draftKey]);
 
   // Format consultation date for display
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
@@ -141,6 +184,9 @@ export function ReportGeneratorDialog({
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
 
+      // Clear draft from localStorage
+      localStorage.removeItem(draftKey);
+
       // Open email draft
       setShowEmailDraft(true);
     } catch (err) {
@@ -160,7 +206,7 @@ export function ReportGeneratorDialog({
   return (
     <>
       <Dialog open={isOpen && !showEmailDraft} onOpenChange={onClose}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Generate Consultation Report</DialogTitle>
             <DialogDescription>
@@ -185,10 +231,31 @@ export function ReportGeneratorDialog({
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 overflow-hidden flex flex-col gap-3">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-3">
             {!generatedReport ? (
               // Step 1: Input transcript
               <div className="space-y-3 flex-1 flex flex-col">
+                {localStorage.getItem(draftKey) && (
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md text-[11px] text-blue-700">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span>
+                      You have an unsaved draft for this consultation.{" "}
+                      <button
+                        onClick={() => {
+                          const savedDraft = localStorage.getItem(draftKey);
+                          if (savedDraft) {
+                            const draft = JSON.parse(savedDraft);
+                            setGeneratedReport(draft);
+                            setLastSaved(new Date(draft.savedAt));
+                          }
+                        }}
+                        className="underline font-medium"
+                      >
+                        Load draft
+                      </button>
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <Label htmlFor="transcript" className="text-xs">
                     Consultation Transcript
@@ -233,67 +300,173 @@ export function ReportGeneratorDialog({
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-between gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={onClose}
+                    onClick={() => {
+                      setGeneratedReport({
+                        report: "",
+                        followUpEmail: {
+                          subject: `${petName} - Check-in and In-Home Visit`,
+                          body: ""
+                        }
+                      });
+                      setIsEditingReport(true);
+                      setIsEditingEmail(true);
+                    }}
                     size="sm"
                     disabled={isGenerating}
                     className="h-8 text-xs"
                   >
-                    Cancel
+                    <FileText className="h-3.5 w-3.5 mr-1.5" />
+                    Write Manually
                   </Button>
-                  <Button
-                    type="button"
-                    onClick={handleGenerateReport}
-                    size="sm"
-                    disabled={!transcript.trim() || isGenerating}
-                    className="h-8 text-xs"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="h-3.5 w-3.5 mr-1.5" />
-                        Generate Report
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={onClose}
+                      size="sm"
+                      disabled={isGenerating}
+                      className="h-8 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleGenerateReport}
+                      size="sm"
+                      disabled={!transcript.trim() || isGenerating}
+                      className="h-8 text-xs"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-3.5 w-3.5 mr-1.5" />
+                          Generate with AI
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : (
               // Step 2: Preview and save
-              <div className="space-y-3 flex-1 flex flex-col overflow-hidden">
-                <div className="flex items-center gap-1 text-[10px] text-green-600">
-                  <CheckCircle2 className="h-3 w-3" />
-                  <span>Report generated successfully</span>
+              <div className="space-y-3 flex-1 min-h-0 flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between">
+                  {!isEditingReport && !isEditingEmail && (
+                    <div className="flex items-center gap-1 text-[10px] text-green-600">
+                      <CheckCircle2 className="h-3 w-3" />
+                      <span>Report generated successfully</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground ml-auto">
+                    {lastSaved && (
+                      <span>
+                        Draft saved {format(lastSaved, "HH:mm:ss")}
+                      </span>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearDraft}
+                      className="h-6 text-[10px] px-2"
+                    >
+                      Discard Draft
+                    </Button>
+                  </div>
                 </div>
 
-                <Tabs defaultValue="report" className="flex-1 flex flex-col overflow-hidden">
+                <Tabs defaultValue="report" className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="report" className="text-xs">Report Preview</TabsTrigger>
                     <TabsTrigger value="email" className="text-xs">Follow-up Email</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="report" className="flex-1 overflow-auto mt-2">
-                    <div className="prose prose-sm max-w-none p-4 border rounded-md bg-background">
-                      <ReactMarkdown>{generatedReport.report}</ReactMarkdown>
+                  <TabsContent value="report" className="flex-1 min-h-0 overflow-hidden mt-2 flex flex-col">
+                    <div className="flex justify-end mb-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditingReport(!isEditingReport)}
+                        className="h-7 text-xs"
+                      >
+                        {isEditingReport ? "Preview" : "Edit"}
+                      </Button>
                     </div>
+                    {isEditingReport ? (
+                      <Textarea
+                        value={generatedReport.report}
+                        onChange={(e) => setGeneratedReport({ ...generatedReport, report: e.target.value })}
+                        className="flex-1 min-h-0 font-mono text-sm resize-none p-4 border rounded-md"
+                      />
+                    ) : (
+                      <div className="flex-1 overflow-auto">
+                        <div className="prose prose-sm max-w-none p-4 border rounded-md bg-background">
+                          <ReactMarkdown>{generatedReport.report}</ReactMarkdown>
+                        </div>
+                      </div>
+                    )}
                   </TabsContent>
 
-                  <TabsContent value="email" className="flex-1 overflow-auto mt-2">
-                    <div className="space-y-2 p-4 border rounded-md bg-background">
-                      <div className="text-xs">
-                        <span className="font-medium">Subject:</span> {generatedReport.followUpEmail.subject}
-                      </div>
-                      <div className="text-xs whitespace-pre-wrap">
-                        {generatedReport.followUpEmail.body}
-                      </div>
+                  <TabsContent value="email" className="flex-1 min-h-0 overflow-hidden mt-2 flex flex-col">
+                    <div className="flex justify-end mb-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditingEmail(!isEditingEmail)}
+                        className="h-7 text-xs"
+                      >
+                        {isEditingEmail ? "Preview" : "Edit"}
+                      </Button>
                     </div>
+                    {isEditingEmail ? (
+                      <div className="flex-1 min-h-0 overflow-auto space-y-2 flex flex-col">
+                        <div>
+                          <Label htmlFor="email-subject" className="text-xs">Subject</Label>
+                          <Input
+                            id="email-subject"
+                            value={generatedReport.followUpEmail.subject}
+                            onChange={(e) => setGeneratedReport({
+                              ...generatedReport,
+                              followUpEmail: { ...generatedReport.followUpEmail, subject: e.target.value }
+                            })}
+                            className="h-8 text-sm mt-1"
+                          />
+                        </div>
+                        <div className="flex-1 min-h-0 flex flex-col">
+                          <Label htmlFor="email-body" className="text-xs mb-1">Body</Label>
+                          <Textarea
+                            id="email-body"
+                            value={generatedReport.followUpEmail.body}
+                            onChange={(e) => setGeneratedReport({
+                              ...generatedReport,
+                              followUpEmail: { ...generatedReport.followUpEmail, body: e.target.value }
+                            })}
+                            className="flex-1 min-h-0 font-mono text-sm resize-none p-4 border rounded-md"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 overflow-auto">
+                        <div className="space-y-2 p-4 border rounded-md bg-background">
+                          <div className="text-xs">
+                            <span className="font-medium">Subject:</span> {generatedReport.followUpEmail.subject}
+                          </div>
+                          <div className="text-xs whitespace-pre-wrap">
+                            {generatedReport.followUpEmail.body}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </TabsContent>
                 </Tabs>
 
