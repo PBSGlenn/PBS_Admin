@@ -14,7 +14,7 @@ import {
 import { Label } from "./label";
 import { Input } from "./input";
 import { Textarea } from "./textarea";
-import { Mail, Send, Edit2, Copy, Check } from "lucide-react";
+import { Mail, Send, Edit2, Copy, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export interface EmailDraftDialogProps {
@@ -25,6 +25,7 @@ export interface EmailDraftDialogProps {
   initialSubject: string;
   initialBody: string;
   clientName?: string;
+  attachmentReminder?: string; // Optional reminder about file attachment
 }
 
 export function EmailDraftDialog({
@@ -34,7 +35,8 @@ export function EmailDraftDialog({
   initialTo,
   initialSubject,
   initialBody,
-  clientName
+  clientName,
+  attachmentReminder
 }: EmailDraftDialogProps) {
   const [to, setTo] = useState(initialTo);
   const [subject, setSubject] = useState(initialSubject);
@@ -104,6 +106,19 @@ ${body}`;
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 py-4">
+          {/* Attachment Reminder */}
+          {attachmentReminder && (
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-md">
+              <p className="text-xs font-medium text-amber-900 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Reminder: Attach File
+              </p>
+              <p className="text-[10px] text-amber-700 mt-1 font-mono">
+                {attachmentReminder}
+              </p>
+            </div>
+          )}
+
           {/* To Field */}
           <div className="space-y-2">
             <Label htmlFor="email-to" className="text-xs font-semibold">

@@ -12,10 +12,12 @@ import { createEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
 import { convertReportToPdf } from "@/lib/services/pdfConversionService";
+import { getEmailTemplate, processTemplate } from "@/lib/emailTemplates";
+import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
-import { FileText, Loader2, AlertCircle, CheckCircle2, Upload, FolderOpen, FileType } from "lucide-react";
+import { FileText, Loader2, AlertCircle, CheckCircle2, Upload, FolderOpen, FileType, Mail } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { dateToISO } from "@/lib/utils/dateUtils";
 
@@ -62,6 +64,7 @@ export function ReportGeneratorDialog({
   const [isConvertingPdf, setIsConvertingPdf] = useState(false);
   const [pdfFilePath, setPdfFilePath] = useState<string | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
 
   // Format consultation date for display
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
@@ -371,6 +374,56 @@ export function ReportGeneratorDialog({
     }
   };
 
+  // Open email dialog with pre-filled cover letter
+  const handleSendReport = () => {
+    setIsEmailDialogOpen(true);
+  };
+
+  // Handle email send
+  const handleEmailSend = async (to: string, subject: string, body: string) => {
+    try {
+      // Open mailto link in default email client
+      const mailtoLink = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(mailtoLink, '_blank');
+
+      // Create "Report Sent" event
+      await createEvent({
+        clientId,
+        eventType: "Note",
+        date: new Date().toISOString(),
+        notes: `<h2>Consultation Report Sent to Client</h2><p><strong>File:</strong> ${pdfFileName}</p><p><strong>Sent To:</strong> ${to}</p><p><strong>Date Sent:</strong> ${format(new Date(), "dd/MM/yyyy 'at' HH:mm")}</p><p>Report sent via email with cover letter.</p>`,
+      });
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+    } catch (err) {
+      console.error("Failed to create Report Sent event:", err);
+    }
+  };
+
+  // Get processed email template
+  const getEmailContent = () => {
+    const template = getEmailTemplate('consultation-report');
+    if (!template) {
+      return {
+        subject: `${petName} - Consultation Report`,
+        body: `Dear ${clientName.split(' ')[0]},\n\nPlease find attached your consultation report for ${petName}.\n\nBest regards,\nPet Behaviour Services`
+      };
+    }
+
+    const variables = {
+      clientFirstName: clientName.split(' ')[0],
+      petName,
+      consultationDate: formattedDate,
+    };
+
+    return {
+      subject: processTemplate(template.subject, variables),
+      body: processTemplate(template.body, variables)
+    };
+  };
+
   // Close and reset
   const handleClose = () => {
     setTranscript("");
@@ -609,6 +662,18 @@ export function ReportGeneratorDialog({
                     )}
                   </Button>
                 )}
+                {pdfFileName && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={handleSendReport}
+                    size="sm"
+                    className="h-8 text-xs bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Mail className="h-3.5 w-3.5 mr-1.5" />
+                    Send Report to Client
+                  </Button>
+                )}
                 <Button
                   type="button"
                   onClick={handleClose}
@@ -622,6 +687,18 @@ export function ReportGeneratorDialog({
           )}
         </div>
       </DialogContent>
+
+      {/* Email Draft Dialog */}
+      <EmailDraftDialog
+        isOpen={isEmailDialogOpen}
+        onClose={() => setIsEmailDialogOpen(false)}
+        onSend={handleEmailSend}
+        initialTo={clientEmail}
+        initialSubject={getEmailContent().subject}
+        initialBody={getEmailContent().body}
+        clientName={clientName}
+        attachmentReminder={`${pdfFileName}\n\nLocation: ${clientFolderPath}`}
+      />
     </Dialog>
   );
 }

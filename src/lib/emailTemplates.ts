@@ -125,6 +125,33 @@ Pet Behaviour Services`,
     description: 'Follow-up email to check on client progress after consultation'
   },
   {
+    id: 'consultation-report',
+    name: 'Consultation Report Cover Letter',
+    subject: '{{petName}} - Consultation Report',
+    body: `Dear {{clientFirstName}},
+
+Thank you for attending your consultation with Pet Behaviour Services on {{consultationDate}}.
+
+I've attached your comprehensive consultation report for {{petName}}. This report includes:
+
+• Understanding {{petName}}'s Behaviour - The key factors contributing to the behaviour
+• Safety Rules - Important guidelines to follow (if applicable)
+• What To Do Now - Immediate action steps before our follow-up
+• What to Expect - Timeline and expectations for progress
+• Next Steps - Scheduling follow-up and training options
+
+Please take time to review the report carefully. It's normal to feel a bit overwhelmed at first - remember that we'll work through this together step by step.
+
+If you have any questions or need clarification on any of the recommendations, please don't hesitate to reach out. I'm here to support you and {{petName}} throughout this process.
+
+Looking forward to our next session and hearing about {{petName}}'s progress.
+
+Best regards,
+Pet Behaviour Services`,
+    variables: ['clientFirstName', 'petName', 'consultationDate'],
+    description: 'Cover letter for sending consultation reports to clients'
+  },
+  {
     id: 'general',
     name: 'General Email Template',
     subject: 'Pet Behaviour Services',

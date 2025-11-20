@@ -10,9 +10,9 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, **AI-powered bulk task importer and consultation report generator from consultation transcripts using Claude Sonnet 4.5**, and compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**, and compact, consistent UI with reduced font sizes throughout.
 
-**Last Updated**: 2025-11-19
+**Last Updated**: 2025-11-20
 
 **Next Session**: Consider system tray background service for persistent notifications. Explore automated email delivery for reminders (SMTP integration).
 
@@ -79,7 +79,9 @@ PBS_Admin/
 │   │   │   ├── bookingSyncService.ts  # ✅ Website booking import from Supabase
 │   │   │   ├── jotformService.ts    # ✅ Questionnaire sync from Jotform API
 │   │   │   ├── notificationService.ts # ✅ Task notification queries
-│   │   │   └── reportGenerationService.ts # ✅ AI report generation with Claude API
+│   │   │   ├── reportGenerationService.ts # ✅ AI report generation with Claude API
+│   │   │   ├── docxConversionService.ts # ✅ MD → DOCX conversion with Pandoc
+│   │   │   └── pdfConversionService.ts # ✅ DOCX → PDF conversion with MS Word
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
 │   │   │   └── report-system-prompt.ts  # ✅ Report generation methodology
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
@@ -385,12 +387,13 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 **Technology**: localStorage persistence + variable replacement system
 
 **Features**:
-- 5 default templates (Dog/Cat questionnaire reminders, protocol send, follow-up, general)
+- 6 default templates (Dog/Cat questionnaire reminders, protocol send, follow-up, consultation report, general)
 - Create, edit, duplicate, delete, and reset templates
 - Variable substitution with {{variableName}} syntax
 - Draft preview and editing before sending
 - Support for both web-based (Gmail) and desktop email clients
 - Template manager UI accessible via Settings menu
+- Attachment reminder alerts for file-based workflows
 
 **Template Structure**:
 ```typescript
@@ -467,6 +470,8 @@ import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
 
 **Features**:
 - Editable To, Subject, and Body fields
+- Amber alert box for attachment reminders (optional)
+- Shows PDF filename and folder location for consultation reports
 - Character count display
 - Copy to clipboard for web-based email clients (Gmail)
 - Open in email app for desktop clients (Outlook, Thunderbird, Mail)
@@ -984,10 +989,82 @@ VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
 - `@anthropic-ai/sdk` - Official Anthropic SDK for Claude API
 - `react-markdown` - Markdown rendering for report preview
 
+### Report Export and Delivery Workflow
+
+**Complete Pipeline**: MD → DOCX → PDF → Email
+
+After generating the initial markdown report, the system provides a complete export and delivery workflow:
+
+**Phase 1: Markdown Generation**
+- AI generates report from transcript
+- Saved as versioned MD file: `{surname}_{YYYYMMDD}_consultation-report_v{N}.md`
+- Example: `swaneveld_20251117_consultation-report_v1.md`
+- Versions increment only on regeneration (not when editing)
+- 24-hour reminder task created to review report
+
+**Phase 2: External Editing**
+- User opens MD file in professional editor (Notepad++, VS Code, etc.)
+- Edit and save (filename remains the same)
+- Return to dialog when ready for conversion
+
+**Phase 3: DOCX Conversion (Pandoc)**
+- Convert MD to DOCX with letterhead template
+- Template: `General_PBS_Letterhead.docx` (user-provided Word template)
+- Uses Pandoc `--reference-doc` to apply letterhead styles/headers/footers
+- Output: `{surname}_{YYYYMMDD}_consultation-report_v{N}.docx`
+- Creates "DOCX Converted" event for tracking
+
+**Phase 4: PDF Conversion (MS Word COM)**
+- Convert DOCX to client-friendly PDF using MS Word automation
+- PowerShell script controls Word.Application COM object
+- Client-friendly filename: `{PetName}_Consultation_Report_{17Nov2025}.pdf`
+- Example: `Beau_Consultation_Report_17Nov2025.pdf`
+- Creates "PDF Converted" event for tracking
+
+**Phase 5: Email Delivery**
+- "Send Report to Client" button appears when PDF exists
+- Opens EmailDraftDialog with pre-filled cover letter
+- Template: "Consultation Report Cover Letter"
+- Amber alert shows PDF filename and folder location
+- User reviews/edits email
+- Click "Open in Email App" → Opens mailto: link
+- User manually attaches PDF from folder
+- Creates "Report Sent" event with timestamp
+
+**File Detection on Dialog Reopen**:
+- Detects existing MD, DOCX, and PDF files
+- Restores workflow state automatically
+- Shows appropriate conversion buttons based on files present
+
+**Implementation Files**:
+- [docxConversionService.ts](src/lib/services/docxConversionService.ts) - Pandoc integration
+- [pdfConversionService.ts](src/lib/services/pdfConversionService.ts) - MS Word COM automation
+- [emailTemplates.ts](src/lib/emailTemplates.ts) - Consultation report cover letter template
+
+**Tauri Commands**:
+```rust
+// Pandoc conversion (MD → DOCX)
+run_pandoc(input_path: String, output_path: String, template_path: Option<String>)
+
+// MS Word conversion (DOCX → PDF)
+convert_docx_to_pdf(docx_path: String, pdf_path: String)
+
+// Get templates folder
+get_templates_path() -> Result<String, String>
+```
+
+**Template Location**:
+- User must place `General_PBS_Letterhead.docx` in `Documents/PBS_Admin/Templates/`
+- Template must be compatible with Pandoc `--reference-doc` format
+
+**Dependencies**:
+- **Pandoc**: Must be installed on system (`pandoc-3.8.2.1-windows-x86_64.msi`)
+- **MS Word**: Must be installed for COM automation (desktop Office, not web version)
+
 **Future Enhancements**:
 1. Direct transcription integration (Whisper API for voice memos)
 2. Fathom.video API integration for automatic Zoom transcript retrieval
-3. PDF export option (in addition to markdown)
+3. Automatic email attachment (requires file dialog integration)
 4. Template customization UI for adjusting report structure
 5. Report version history and comparison
 6. Batch processing for multiple consultations
@@ -1928,4 +2005,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2025-11-19
-**Version**: 1.8.0 (AI Integration - Bulk Task Importer + Consultation Report Generator with Claude Sonnet 4.5, prompt caching, markdown reports, and follow-up email generation)
+**Version**: 1.9.0 (AI Integration Complete - Bulk Task Importer + Consultation Report Generator with full DOCX/PDF export pipeline (Pandoc + MS Word COM), email delivery workflow, and client-friendly file naming)
