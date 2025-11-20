@@ -11,6 +11,7 @@ import { generateConsultationReport, estimateTokenCost } from "@/lib/services/re
 import { createEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
+import { convertReportToPdf } from "@/lib/services/pdfConversionService";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
@@ -58,6 +59,9 @@ export function ReportGeneratorDialog({
   const [isConvertingDocx, setIsConvertingDocx] = useState(false);
   const [docxFilePath, setDocxFilePath] = useState<string | null>(null);
   const [docxFileName, setDocxFileName] = useState<string | null>(null);
+  const [isConvertingPdf, setIsConvertingPdf] = useState(false);
+  const [pdfFilePath, setPdfFilePath] = useState<string | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
 
   // Format consultation date for display
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
@@ -139,6 +143,8 @@ export function ReportGeneratorDialog({
       setError(null);
       setDocxFilePath(null);
       setDocxFileName(null);
+      setPdfFilePath(null);
+      setPdfFileName(null);
     }
   }, [isOpen]);
 
@@ -301,6 +307,43 @@ export function ReportGeneratorDialog({
       setError(`Failed to convert to DOCX: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setIsConvertingDocx(false);
+    }
+  };
+
+  // Convert DOCX to PDF using MS Word
+  const handleConvertToPdf = async () => {
+    if (!docxFilePath || !clientFolderPath) return;
+
+    setIsConvertingPdf(true);
+    setError(null);
+
+    try {
+      // Convert DOCX to PDF
+      const result = await convertReportToPdf({
+        docxFilePath,
+        clientId,
+        clientFolderPath,
+        petName,
+        consultationDate: eventDate,
+      });
+
+      if (result.success) {
+        setPdfFilePath(result.pdfFilePath);
+        setPdfFileName(result.pdfFileName);
+
+        // Invalidate queries
+        queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+        queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+
+        alert(`PDF created successfully!\n\nFile: ${result.pdfFileName}\n\nReady to send to client.`);
+      } else {
+        setError(`Failed to convert to PDF: ${result.error}`);
+      }
+    } catch (err) {
+      console.error("PDF conversion error:", err);
+      setError(`Failed to convert to PDF: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsConvertingPdf(false);
     }
   };
 
@@ -477,6 +520,16 @@ export function ReportGeneratorDialog({
                 </div>
               )}
 
+              {pdfFileName && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-green-900">PDF Created - Ready to Send</p>
+                    <p className="text-[10px] text-green-700 font-mono">{pdfFileName}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 mt-auto">
                 <Button
                   type="button"
@@ -506,6 +559,28 @@ export function ReportGeneratorDialog({
                       <>
                         <FileType className="h-3.5 w-3.5 mr-1.5" />
                         Convert to DOCX
+                      </>
+                    )}
+                  </Button>
+                )}
+                {docxFileName && !pdfFileName && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={handleConvertToPdf}
+                    size="sm"
+                    disabled={isConvertingPdf}
+                    className="h-8 text-xs"
+                  >
+                    {isConvertingPdf ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Converting...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="h-3.5 w-3.5 mr-1.5" />
+                        Convert to PDF
                       </>
                     )}
                   </Button>

@@ -229,6 +229,45 @@ fn run_pandoc(input_path: String, output_path: String, template_path: Option<Str
     }
 }
 
+#[tauri::command]
+fn convert_docx_to_pdf(docx_path: String, pdf_path: String) -> Result<String, String> {
+    // Build PowerShell script for Word COM automation
+    let ps_script = format!(
+        r#"
+$word = New-Object -ComObject Word.Application
+$word.Visible = $false
+try {{
+    $doc = $word.Documents.Open("{}")
+    $doc.SaveAs("{}", 17)
+    $doc.Close()
+    Write-Output "Success"
+}} catch {{
+    Write-Error $_.Exception.Message
+    exit 1
+}} finally {{
+    $word.Quit()
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
+}}
+"#,
+        docx_path.replace("\\", "\\\\"),
+        pdf_path.replace("\\", "\\\\")
+    );
+
+    // Execute PowerShell script
+    let output = Command::new("powershell")
+        .args(&["-NoProfile", "-Command", &ps_script])
+        .output()
+        .map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
+
+    // Check if command succeeded
+    if output.status.success() {
+        Ok(pdf_path.clone())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("PDF conversion failed: {}", error_msg))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -245,7 +284,8 @@ pub fn run() {
             write_binary_file,
             download_file,
             list_files,
-            run_pandoc
+            run_pandoc,
+            convert_docx_to_pdf
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
