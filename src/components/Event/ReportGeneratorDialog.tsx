@@ -98,8 +98,10 @@ export function ReportGeneratorDialog({
 
     try {
       const files = await readDir(clientFolderPath);
+      const searchPattern = `${clientSurname.toLowerCase()}_${dateForFilename}_consultation-report_v`;
+
       const reportFiles = files.filter(f =>
-        f.name.startsWith(`${clientSurname.toLowerCase()}_${dateForFilename}_consultation-report_v`) &&
+        f.name.startsWith(searchPattern) &&
         f.name.endsWith('.md')
       );
 

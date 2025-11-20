@@ -18,6 +18,14 @@
     "dialog:allow-open",
     "fs:default",
     "fs:allow-read-text-file",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        {
+          "path": "$DOCUMENT/**"
+        }
+      ]
+    },
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",
