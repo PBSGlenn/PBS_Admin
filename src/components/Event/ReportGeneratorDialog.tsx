@@ -96,14 +96,16 @@ export function ReportGeneratorDialog({
     }
   };
 
-  // Check for existing MD file when dialog opens
+  // Check for existing MD/DOCX/PDF files when dialog opens
   const checkForExistingReport = async () => {
     if (!clientFolderPath) return;
 
     try {
       const files = await readDir(clientFolderPath);
       const searchPattern = `${clientSurname.toLowerCase()}_${dateForFilename}_consultation-report_v`;
+      const pdfSearchPattern = `${petName}_Consultation_Report_`;
 
+      // Find MD files
       const reportFiles = files.filter(f =>
         f.name.startsWith(searchPattern) &&
         f.name.endsWith('.md')
@@ -120,11 +122,33 @@ export function ReportGeneratorDialog({
         filesWithVersions.sort((a, b) => b.version - a.version);
         const latestFile = filesWithVersions[0];
 
-        // Set state to show the success screen
-        const filePath = `${clientFolderPath}\\${latestFile.file.name}`;
-        setSavedFilePath(filePath);
+        // Set MD file state
+        const mdFilePath = `${clientFolderPath}\\${latestFile.file.name}`;
+        setSavedFilePath(mdFilePath);
         setSavedFileName(latestFile.file.name);
         setSavedVersion(latestFile.version);
+
+        // Check for corresponding DOCX file
+        const docxFileName = latestFile.file.name.replace('.md', '.docx');
+        const docxFile = files.find(f => f.name === docxFileName);
+
+        if (docxFile) {
+          const docxFilePath = `${clientFolderPath}\\${docxFile.name}`;
+          setDocxFilePath(docxFilePath);
+          setDocxFileName(docxFile.name);
+
+          // Check for corresponding PDF file (client-friendly name)
+          const pdfFile = files.find(f =>
+            f.name.startsWith(pdfSearchPattern) &&
+            f.name.endsWith('.pdf')
+          );
+
+          if (pdfFile) {
+            const pdfFilePath = `${clientFolderPath}\\${pdfFile.name}`;
+            setPdfFilePath(pdfFilePath);
+            setPdfFileName(pdfFile.name);
+          }
+        }
       }
     } catch (error) {
       console.error("Failed to check for existing report:", error);
