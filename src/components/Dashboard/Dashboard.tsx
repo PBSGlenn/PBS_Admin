@@ -12,8 +12,9 @@ import { QuestionnaireSync } from "./QuestionnaireSync";
 import { ClientForm } from "../Client/ClientForm";
 import { ClientView } from "../Client/ClientView";
 import { EmailTemplateManager } from "../EmailTemplateManager/EmailTemplateManager";
+import { PromptTemplateManager } from "../PromptTemplateManager/PromptTemplateManager";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
-import { Bell, Settings, Mail } from "lucide-react";
+import { Bell, Settings, Mail, FileText } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -24,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 
-type View = "dashboard" | "new-client" | "view-client" | "email-templates";
+type View = "dashboard" | "new-client" | "view-client" | "email-templates" | "ai-prompts";
 
 export function Dashboard() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
@@ -99,6 +100,36 @@ export function Dashboard() {
     );
   }
 
+  // Show AI prompt template manager
+  if (currentView === "ai-prompts") {
+    return (
+      <div className="h-screen flex flex-col">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentView("dashboard")}
+              className="h-8 text-xs"
+            >
+              ← Back to Dashboard
+            </Button>
+            <div>
+              <h1 className="text-xl font-bold">AI Prompt Template Manager</h1>
+              <p className="text-xs text-muted-foreground">Customize system prompts for AI report generation</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden p-4">
+          <PromptTemplateManager
+            isOpen={true}
+            onClose={() => setCurrentView("dashboard")}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Show dashboard
   return (
     <div className="flex h-screen bg-background">
@@ -138,6 +169,13 @@ export function Dashboard() {
                 >
                   <Mail className="h-3.5 w-3.5 mr-2" />
                   Email Templates
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setCurrentView("ai-prompts")}
+                >
+                  <FileText className="h-3.5 w-3.5 mr-2" />
+                  AI Prompts
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

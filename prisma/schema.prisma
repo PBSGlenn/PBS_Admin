@@ -23,6 +23,7 @@ model Client {
   postcode         String?
   folderPath       String?
   stripeCustomerId String?
+  primaryCareVet   String?  // Primary care veterinarian for vet reports
   notes            String?
 
   createdAt        DateTime @default(now())
@@ -64,18 +65,20 @@ model Pet {
 
 // Event entity - Bookings, consultations, training sessions, etc.
 model Event {
-  eventId           Int      @id @default(autoincrement())
-  clientId          Int
-  eventType         String   // "Booking", "Consultation", "TrainingSession", "Payment", "FollowUp", etc.
-  date              String   // ISO 8601 format, displayed in Australia/Melbourne timezone
-  notes             String?
-  calendlyEventUri  String   @default("")
-  calendlyStatus    String   @default("")
-  invoiceFilePath   String?
-  hostedInvoiceUrl  String?
+  eventId              Int      @id @default(autoincrement())
+  clientId             Int
+  eventType            String   // "Booking", "Consultation", "TrainingSession", "Payment", "FollowUp", etc.
+  date                 String   // ISO 8601 format, displayed in Australia/Melbourne timezone
+  notes                String?
+  calendlyEventUri     String   @default("")
+  calendlyStatus       String   @default("")
+  invoiceFilePath      String?
+  hostedInvoiceUrl     String?
+  transcriptFilePath   String?  // Path to saved consultation transcript (.txt file)
+  questionnaireFilePath String? // Path to saved questionnaire file (.json file)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   // Relationships
   client            Client   @relation(fields: [clientId], references: [clientId], onDelete: Cascade)

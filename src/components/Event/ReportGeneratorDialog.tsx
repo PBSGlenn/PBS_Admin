@@ -8,7 +8,7 @@ import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { generateConsultationReport, estimateTokenCost } from "@/lib/services/reportGenerationService";
-import { createEvent } from "@/lib/services/eventService";
+import { createEvent, getReportCreationEvents, deleteEvent, getReportSentEvents } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
 import { convertReportToPdf } from "@/lib/services/pdfConversionService";
@@ -18,7 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
 import { FileText, Loader2, AlertCircle, CheckCircle2, Upload, FolderOpen, FileType, Mail } from "lucide-react";
-import { format, addDays } from "date-fns";
+import { format, addDays, parseISO } from "date-fns";
 import { dateToISO } from "@/lib/utils/dateUtils";
 
 export interface ReportGeneratorDialogProps {
@@ -65,6 +65,8 @@ export function ReportGeneratorDialog({
   const [pdfFilePath, setPdfFilePath] = useState<string | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [reportSentCount, setReportSentCount] = useState(0);
+  const [lastSentDate, setLastSentDate] = useState<string | null>(null);
 
   // Format consultation date for display
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
@@ -153,6 +155,13 @@ export function ReportGeneratorDialog({
           }
         }
       }
+
+      // Check for report sent events
+      const sentEvents = await getReportSentEvents(clientId);
+      if (sentEvents.length > 0) {
+        setReportSentCount(sentEvents.length);
+        setLastSentDate(sentEvents[0].date); // Most recent first
+      }
     } catch (error) {
       console.error("Failed to check for existing report:", error);
     }
@@ -172,6 +181,8 @@ export function ReportGeneratorDialog({
       setDocxFileName(null);
       setPdfFilePath(null);
       setPdfFileName(null);
+      setReportSentCount(0);
+      setLastSentDate(null);
     }
   }, [isOpen]);
 
@@ -379,20 +390,117 @@ export function ReportGeneratorDialog({
     setIsEmailDialogOpen(true);
   };
 
-  // Handle email send
-  const handleEmailSend = async (to: string, subject: string, body: string) => {
+  // Handle marking report as sent (manual Gmail workflow)
+  const handleMarkAsSent = async (to: string, subject: string, body: string) => {
     try {
-      // Open mailto link in default email client
-      const mailtoLink = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      window.open(mailtoLink, '_blank');
+      // Get intermediate report creation events to consolidate
+      const intermediateEvents = await getReportCreationEvents(clientId);
 
-      // Create "Report Sent" event
+      // Build timeline from intermediate events
+      const timeline = intermediateEvents.map(event => {
+        const eventDate = format(parseISO(event.date), "dd/MM/yyyy 'at' HH:mm");
+        let action = "";
+
+        if (event.notes?.includes("Report Generated")) {
+          action = "Report Generated (Markdown)";
+        } else if (event.notes?.includes("Converted to DOCX")) {
+          action = "Converted to DOCX";
+        } else if (event.notes?.includes("Converted to PDF")) {
+          action = "Converted to PDF";
+        }
+
+        return `<li>${eventDate}: ${action}</li>`;
+      }).join("\n");
+
+      // Create consolidated "Report Sent" event with full timeline
       await createEvent({
         clientId,
-        eventType: "Note",
+        eventType: "ReportSent",
         date: new Date().toISOString(),
-        notes: `<h2>Consultation Report Sent to Client</h2><p><strong>File:</strong> ${pdfFileName}</p><p><strong>Sent To:</strong> ${to}</p><p><strong>Date Sent:</strong> ${format(new Date(), "dd/MM/yyyy 'at' HH:mm")}</p><p>Report sent via email with cover letter.</p>`,
+        notes: `<h2>Consultation Report Sent to Client</h2>
+<p><strong>File:</strong> ${pdfFileName}</p>
+<p><strong>Sent To:</strong> ${to}</p>
+<p><strong>Date Sent:</strong> ${format(new Date(), "dd/MM/yyyy 'at' HH:mm")}</p>
+
+<h3>Report Creation Timeline</h3>
+<ul>
+${timeline}
+<li>${format(new Date(), "dd/MM/yyyy 'at' HH:mm")}: Sent to Client</li>
+</ul>
+
+<p>Report sent via email with cover letter.</p>`,
       });
+
+      // Delete intermediate events to reduce clutter
+      for (const event of intermediateEvents) {
+        await deleteEvent(event.eventId);
+      }
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+    } catch (err) {
+      console.error("Failed to create Report Sent event:", err);
+    }
+  };
+
+  // Handle email send via desktop email client (Outlook)
+  const handleEmailSend = async (to: string, subject: string, body: string) => {
+    try {
+      // Build mailto link with attachment for desktop Outlook
+      // Note: Web-based Gmail won't support this, but desktop Outlook should
+      let mailtoLink = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      // Try to attach PDF file for desktop email clients (Outlook, Thunderbird, etc.)
+      if (pdfFilePath) {
+        // Outlook desktop supports &attach= parameter
+        mailtoLink += `&attach=${encodeURIComponent(pdfFilePath)}`;
+      }
+
+      window.open(mailtoLink, '_blank');
+
+      // Get intermediate report creation events to consolidate
+      const intermediateEvents = await getReportCreationEvents(clientId);
+
+      // Build timeline from intermediate events
+      const timeline = intermediateEvents.map(event => {
+        const eventDate = format(parseISO(event.date), "dd/MM/yyyy 'at' HH:mm");
+        let action = "";
+
+        if (event.notes?.includes("Report Generated")) {
+          action = "Report Generated (Markdown)";
+        } else if (event.notes?.includes("Converted to DOCX")) {
+          action = "Converted to DOCX";
+        } else if (event.notes?.includes("Converted to PDF")) {
+          action = "Converted to PDF";
+        }
+
+        return `<li>${eventDate}: ${action}</li>`;
+      }).join("\n");
+
+      // Create consolidated "Report Sent" event with full timeline
+      await createEvent({
+        clientId,
+        eventType: "ReportSent",
+        date: new Date().toISOString(),
+        notes: `<h2>Consultation Report Sent to Client</h2>
+<p><strong>File:</strong> ${pdfFileName}</p>
+<p><strong>Sent To:</strong> ${to}</p>
+<p><strong>Date Sent:</strong> ${format(new Date(), "dd/MM/yyyy 'at' HH:mm")}</p>
+
+<h3>Report Creation Timeline</h3>
+<ul>
+${timeline}
+<li>${format(new Date(), "dd/MM/yyyy 'at' HH:mm")}: Sent to Client</li>
+</ul>
+
+<p>Report sent via email with cover letter.</p>`,
+      });
+
+      // Delete intermediate events to reduce clutter
+      for (const event of intermediateEvents) {
+        await deleteEvent(event.eventId);
+      }
 
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
@@ -607,6 +715,21 @@ export function ReportGeneratorDialog({
                 </div>
               )}
 
+              {reportSentCount > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-blue-900">
+                      Report Sent to Client
+                      {reportSentCount > 1 && <span className="ml-1">({reportSentCount} times)</span>}
+                    </p>
+                    <p className="text-[10px] text-blue-700">
+                      Last sent: {lastSentDate && format(parseISO(lastSentDate), "dd/MM/yyyy 'at' HH:mm")}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 mt-auto">
                 <Button
                   type="button"
@@ -693,6 +816,7 @@ export function ReportGeneratorDialog({
         isOpen={isEmailDialogOpen}
         onClose={() => setIsEmailDialogOpen(false)}
         onSend={handleEmailSend}
+        onMarkAsSent={handleMarkAsSent}
         initialTo={clientEmail}
         initialSubject={getEmailContent().subject}
         initialBody={getEmailContent().body}

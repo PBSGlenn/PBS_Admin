@@ -15,6 +15,7 @@ export const EVENT_TYPES = [
   { value: "Payment", label: "Payment" },
   { value: "FollowUp", label: "Follow-Up" },
   { value: "QuestionnaireReceived", label: "Questionnaire Received" },
+  { value: "ReportSent", label: "Report Sent" },
   { value: "Note", label: "Note" },
 ] as const;
 

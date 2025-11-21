@@ -182,3 +182,34 @@ export async function getParentEvent(eventId: number): Promise<Event | null> {
 
   return events.length > 0 ? events[0] : null;
 }
+
+/**
+ * Get report creation events for consolidation
+ * Finds intermediate report events (Generated, Converted to DOCX, Converted to PDF)
+ */
+export async function getReportCreationEvents(clientId: number): Promise<Event[]> {
+  return query<Event>(`
+    SELECT * FROM Event
+    WHERE clientId = ?
+    AND eventType = 'Note'
+    AND (
+      notes LIKE '%Consultation Report Generated%'
+      OR notes LIKE '%Converted to DOCX%'
+      OR notes LIKE '%Converted to PDF%'
+    )
+    ORDER BY date ASC
+  `, [clientId]);
+}
+
+/**
+ * Get report sent events
+ * Finds all "Report Sent to Client" events for tracking
+ */
+export async function getReportSentEvents(clientId: number): Promise<Event[]> {
+  return query<Event>(`
+    SELECT * FROM Event
+    WHERE clientId = ?
+    AND eventType = 'ReportSent'
+    ORDER BY date DESC
+  `, [clientId]);
+}

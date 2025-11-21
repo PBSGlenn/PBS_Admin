@@ -14,13 +14,14 @@ import {
 import { Label } from "./label";
 import { Input } from "./input";
 import { Textarea } from "./textarea";
-import { Mail, Send, Edit2, Copy, Check, AlertCircle } from "lucide-react";
+import { Mail, Send, Edit2, Copy, Check, AlertCircle, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export interface EmailDraftDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSend: (to: string, subject: string, body: string) => void;
+  onMarkAsSent?: (to: string, subject: string, body: string) => void; // Optional callback for marking as sent without opening email app
   initialTo: string;
   initialSubject: string;
   initialBody: string;
@@ -32,6 +33,7 @@ export function EmailDraftDialog({
   isOpen,
   onClose,
   onSend,
+  onMarkAsSent,
   initialTo,
   initialSubject,
   initialBody,
@@ -46,6 +48,14 @@ export function EmailDraftDialog({
 
   const handleSend = () => {
     onSend(to, subject, body);
+    onClose();
+  };
+
+  const handleMarkAsSent = () => {
+    if (onMarkAsSent) {
+      onMarkAsSent(to, subject, body);
+    }
+    toast.success("Report marked as sent!");
     onClose();
   };
 
@@ -217,6 +227,17 @@ ${body}`;
                 </>
               )}
             </Button>
+            {onMarkAsSent && (
+              <Button
+                size="sm"
+                onClick={handleMarkAsSent}
+                className="h-8 text-xs bg-green-600 hover:bg-green-700"
+                disabled={!to || !subject || !body}
+              >
+                <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                Mark as Sent
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={handleSend}

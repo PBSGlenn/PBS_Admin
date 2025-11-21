@@ -10,11 +10,11 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads, **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**, and compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **NEW: AI Prompt Management System with customizable templates, Multi-Report Generation Service for 3 report types (Comprehensive Clinical, Abridged Notes, Veterinary Report), and transcript file management for on-demand report generation**. Compact, consistent UI with reduced font sizes throughout.
 
-**Last Updated**: 2025-11-20
+**Last Updated**: 2025-11-21
 
-**Next Session**: Consider system tray background service for persistent notifications. Explore automated email delivery for reminders (SMTP integration).
+**Next Session**: Complete Phase 3C - Integrated Consultation Creation UI with transcript input and multi-report generation. Add primaryCareVet field to ClientForm UI.
 
 ---
 
@@ -62,6 +62,8 @@ PBS_Admin/
 │   │   ├── Task/           # ✅ TaskForm, TasksTable (priority/status tracking), BulkTaskImporter
 │   │   ├── EmailTemplateManager/  # ✅ Full email template management UI
 │   │   │   └── EmailTemplateManager.tsx  # ✅ Create/edit/duplicate/delete templates
+│   │   ├── PromptTemplateManager/  # ✅ AI prompt template management UI
+│   │   │   └── PromptTemplateManager.tsx  # ✅ Create/edit/reset prompt templates
 │   │   └── ui/             # ✅ shadcn/ui components (Button, Input, Dialog, Select, etc.)
 │   │       ├── email-draft-dialog.tsx  # ✅ Email preview and editing dialog
 │   │       ├── tabs.tsx    # ✅ Radix UI tabs component
@@ -80,10 +82,13 @@ PBS_Admin/
 │   │   │   ├── jotformService.ts    # ✅ Questionnaire sync from Jotform API
 │   │   │   ├── notificationService.ts # ✅ Task notification queries
 │   │   │   ├── reportGenerationService.ts # ✅ AI report generation with Claude API
+│   │   │   ├── multiReportGenerationService.ts # ✅ Multi-report generation (3 types)
+│   │   │   ├── transcriptFileService.ts # ✅ Transcript file management
 │   │   │   ├── docxConversionService.ts # ✅ MD → DOCX conversion with Pandoc
 │   │   │   └── pdfConversionService.ts # ✅ DOCX → PDF conversion with MS Word
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
-│   │   │   └── report-system-prompt.ts  # ✅ Report generation methodology
+│   │   │   ├── report-system-prompt.ts  # ✅ Report generation methodology (legacy)
+│   │   │   └── promptTemplates.ts  # ✅ Multi-prompt template management system
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
 │   │   ├── taskTemplates.ts # ✅ Predefined task templates with preset values
 │   │   ├── emailTemplates.ts # ✅ Email template definitions and management functions
@@ -142,6 +147,7 @@ Task (parent) ──> Task (children)
 - `firstName`, `lastName`, `email`, `mobile` (required)
 - `streetAddress`, `city`, `state`, `postcode` (optional)
 - `stripeCustomerId`, `folderPath`, `notes` (optional)
+- `primaryCareVet` (optional) - Primary care veterinarian for vet reports
 
 **Relationships**:
 - Has many Pets (CASCADE delete)
@@ -172,11 +178,13 @@ Task (parent) ──> Task (children)
 **Key Fields**:
 - `eventId` (PK, autoincrement)
 - `clientId` (FK → Client, required)
-- `eventType` (required) - e.g., "Booking", "Consultation", "TrainingSession", "Payment", "FollowUp"
+- `eventType` (required) - e.g., "Booking", "Consultation", "TrainingSession", "Payment", "FollowUp", "ReportSent"
 - `date` (required, ISO 8601 string)
 - `notes` (optional, supports rich text/structured notes)
 - `calendlyEventUri`, `calendlyStatus` (integration fields)
 - `invoiceFilePath`, `hostedInvoiceUrl` (Stripe integration)
+- `transcriptFilePath` (optional) - Path to saved consultation transcript (.txt file)
+- `questionnaireFilePath` (optional) - Path to saved questionnaire file (.json file)
 - `parentEventId` (FK → Event, optional) - for event hierarchies
 
 **Relationships**:
@@ -1068,6 +1076,377 @@ get_templates_path() -> Result<String, String>
 4. Template customization UI for adjusting report structure
 5. Report version history and comparison
 6. Batch processing for multiple consultations
+
+---
+
+### AI Prompt Template Management System
+
+**Purpose**: Manage and customize AI prompts for multiple report types with easy editing workflow via Claude Chat.
+
+**Technology**: localStorage persistence + variable substitution system
+
+**Workflow**:
+1. User opens Settings menu → "AI Prompts"
+2. View all available prompt templates (3 default templates)
+3. Select template to view/edit
+4. Copy prompt to clipboard
+5. Paste into Claude Chat for editing
+6. Copy updated prompt from Claude Chat
+7. Paste back into PBS Admin
+8. Save customized template
+
+**Features**:
+- **3 Default Templates**:
+  1. **Comprehensive Clinical Report** (3-5 pages, markdown)
+     - Detailed behavior analysis with 7-section structure
+     - Output: Markdown for DOCX conversion
+     - Max tokens: 8000
+  2. **Abridged Clinical Notes** (1-2 pages, HTML)
+     - Concise summary for in-app Event notes
+     - Output: HTML for database storage
+     - Max tokens: 4000
+  3. **Veterinary Report** (3/4-1 page, markdown)
+     - Professional vet-to-vet communication
+     - Output: Markdown for DOCX conversion
+     - Max tokens: 4000
+     - Requires primaryCareVet field on Client
+
+- **Template Management**:
+  - Create, edit, duplicate, delete custom templates
+  - Reset customized templates to defaults
+  - Search and filter templates by name/category
+  - Track customization status with badges
+
+- **UI Components**:
+  - Two-pane layout: Template list (left) + Editor (right)
+  - Tabs: System Prompt, Variables
+  - Copy button for Claude Chat workflow
+  - Real-time character count
+  - Unsaved changes tracking
+
+**Template Structure**:
+```typescript
+interface PromptTemplate {
+  id: string;              // Unique identifier
+  name: string;            // Display name
+  description: string;     // Template description
+  systemPrompt: string;    // Full AI instruction set
+  outputFormat: 'markdown' | 'html';
+  maxTokens: number;       // Claude API max tokens
+  variables: string[];     // Available template variables
+  enabled: boolean;        // Active/inactive status
+  category?: string;       // Grouping (e.g., "Clinical Reports")
+}
+```
+
+**Variable Substitution**:
+Templates support dynamic content replacement:
+- `{{clientName}}` - Client full name
+- `{{petName}}` - Pet name
+- `{{petSpecies}}` - Dog or Cat
+- `{{petBreed}}` - Breed (optional)
+- `{{petAge}}` - Age (optional)
+- `{{petSex}}` - Sex (optional)
+- `{{consultationDate}}` - Consultation date formatted
+- `{{transcript}}` - Full consultation transcript
+- `{{questionnaire}}` - Questionnaire data (optional)
+- `{{vetClinicName}}` - Primary care vet clinic (optional)
+
+**Storage**:
+- Custom templates stored in localStorage: `pbs_admin_prompt_templates`
+- Merging logic: Custom templates override defaults by ID
+- Reset functionality restores default version
+
+**Access**:
+- Settings menu (gear icon) in Dashboard header
+- Select "AI Prompts" from dropdown
+
+**Implementation Files**:
+- [promptTemplates.ts](src/lib/prompts/promptTemplates.ts) - Template management service
+- [PromptTemplateManager.tsx](src/components/PromptTemplateManager/PromptTemplateManager.tsx) - UI component
+- [Dashboard.tsx](src/components/Dashboard/Dashboard.tsx) - Integration point
+
+**User Workflow Quote**:
+> "what I am likely to do is to copy the existing prompt and paste it into claude chat and describe what I want changed, then copy the updated prompt created by claude chat back into the app"
+
+---
+
+### Multi-Report Generation Service
+
+**Purpose**: Generate multiple report types in parallel from a single consultation transcript using Claude Sonnet 4.5 API.
+
+**Technology**: Anthropic SDK with parallel execution and prompt caching
+
+**Architecture**:
+```
+Consultation Transcript
+        │
+        ├──> Comprehensive Clinical Report (MD)
+        │    - Saved to client folder as DOCX
+        │    - 3-5 pages, detailed analysis
+        │
+        ├──> Abridged Clinical Notes (HTML)
+        │    - Saved to Event.notes field
+        │    - 1-2 pages, concise summary
+        │
+        └──> Veterinary Report (MD) [Optional]
+             - Saved to client folder as DOCX
+             - 3/4-1 page, vet-to-vet communication
+             - Requires primaryCareVet field
+```
+
+**Report Types**:
+
+1. **Comprehensive Clinical Report**:
+   - **Purpose**: Detailed record for client folder
+   - **Format**: Markdown → DOCX (via Pandoc) → PDF (via MS Word)
+   - **Structure**: 7 sections (Header, Understanding Behaviour, Safety Rules, What To Do Now, What to Expect, Next Steps, Questions & Closing)
+   - **Output**: `{surname}_{YYYYMMDD}_consultation-report.docx`
+   - **Use Case**: Primary client record, sent to client after consultation
+
+2. **Abridged Clinical Notes**:
+   - **Purpose**: Quick reference for in-app viewing
+   - **Format**: HTML (stored in Event.notes field)
+   - **Structure**: Concise summary with key points
+   - **Output**: Directly saved to database
+   - **Use Case**: Fast lookup without opening files
+
+3. **Veterinary Report**:
+   - **Purpose**: Professional communication to referring vet
+   - **Format**: Markdown → DOCX (via Pandoc)
+   - **Structure**: Vet-to-vet professional language
+   - **Output**: `{surname}_{YYYYMMDD}_vet-report.docx`
+   - **Use Case**: On-demand generation when vet follow-up required
+
+**Parallel Generation**:
+```typescript
+export async function generateConsultationReports(
+  params: ReportGenerationParams,
+  options: {
+    generateComprehensive?: boolean;
+    generateAbridged?: boolean;
+    generateVet?: boolean;
+  }
+): Promise<MultiReportResult> {
+  const promises = [];
+
+  // Queue all selected reports
+  if (options.generateComprehensive) promises.push(generateComprehensiveClinicalReport(params));
+  if (options.generateAbridged) promises.push(generateAbridgedClinicalNotes(params));
+  if (options.generateVet) promises.push(generateVeterinaryReport(params));
+
+  // Execute in parallel
+  const results = await Promise.all(promises);
+
+  return {
+    comprehensiveReport: /* ... */,
+    abridgedNotes: /* ... */,
+    vetReport: /* ... */,
+    errors: /* ... */
+  };
+}
+```
+
+**Prompt Caching**:
+- System prompts cached with `cache_control: { type: "ephemeral" }`
+- Cache duration: 5 minutes (Anthropic default)
+- **Cost savings**: 90% reduction on cached input tokens
+- Subsequent reports within 5 minutes use cached prompt
+- Estimated cost per report set: ~$0.15-0.30 (varies by transcript length)
+
+**Token Tracking**:
+```typescript
+interface ReportGenerationResult {
+  content: string;
+  template: PromptTemplate;
+  tokensUsed: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  error?: string;
+}
+```
+
+**Cost Estimation**:
+- `estimateReportCost(transcriptLength, questionnaireLength, reportTypes)` function
+- Shows estimated tokens and USD cost before generation
+- Pricing (as of March 2024):
+  - Input: ~$3/million tokens
+  - Output: ~$15/million tokens
+
+**Error Handling**:
+- Per-report error tracking (one failure doesn't block others)
+- Errors array contains specific failure messages
+- Successful reports still returned even if some fail
+
+**Implementation Files**:
+- [multiReportGenerationService.ts](src/lib/services/multiReportGenerationService.ts) - Core service
+- [promptTemplates.ts](src/lib/prompts/promptTemplates.ts) - Template retrieval
+- [ReportGeneratorDialog.tsx](src/components/Event/ReportGeneratorDialog.tsx) - UI integration (future)
+
+**Configuration** (`.env`):
+```bash
+VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+**Model**: `claude-sonnet-4-20250514` (Claude Sonnet 4.5)
+
+---
+
+### Transcript File Management
+
+**Purpose**: Save consultation transcripts to client folders for on-demand report generation and compliance record-keeping.
+
+**Technology**: Tauri file system API with versioning support
+
+**Workflow**:
+1. User conducts consultation (voice memo, Zoom, etc.)
+2. Obtain transcript (manual typing, transcription service, Fathom, etc.)
+3. In Consultation event, paste or upload transcript
+4. Save transcript to client folder as .txt file
+5. Store file path in `Event.transcriptFilePath` field
+6. Use saved transcript for:
+   - Initial multi-report generation
+   - On-demand vet report generation (weeks later)
+   - Re-generation if needed
+   - Compliance and audit trail
+
+**File Naming Convention**:
+- Format: `{surname}_{YYYYMMDD}_transcript.txt`
+- Example: `duncan_20251115_transcript.txt`
+- Lowercase surname for consistency
+
+**Auto-Versioning**:
+- If file exists, append version number
+- Format: `{surname}_{YYYYMMDD}_transcript_v{N}.txt`
+- Example: `duncan_20251115_transcript_v2.txt`
+- Versions increment automatically (v2, v3, v4, ...)
+
+**Database Schema Updates**:
+
+**Client Model**:
+```prisma
+model Client {
+  // ... existing fields
+  primaryCareVet   String?  // Primary care veterinarian for vet reports
+  // ...
+}
+```
+
+**Event Model**:
+```prisma
+model Event {
+  // ... existing fields
+  transcriptFilePath   String?  // Path to saved consultation transcript (.txt file)
+  questionnaireFilePath String? // Path to saved questionnaire file (.json file)
+  // ...
+}
+```
+
+**Service Functions**:
+
+```typescript
+// Save transcript to client folder
+export async function saveTranscriptFile(
+  clientFolderPath: string,
+  clientSurname: string,
+  consultationDate: string,
+  transcriptContent: string
+): Promise<TranscriptSaveResult> {
+  // Generates filename, checks for duplicates, auto-versions
+  // Uses Tauri invoke: write_text_file
+  // Returns { success, filePath, fileName }
+}
+
+// Read transcript from saved file
+export async function readTranscriptFile(filePath: string): Promise<{
+  success: boolean;
+  content?: string;
+  error?: string;
+}> {
+  // Uses Tauri fs plugin: readTextFile
+  // Returns transcript content or error
+}
+
+// Copy questionnaire JSON to client folder
+export async function copyQuestionnaireFile(
+  sourcePath: string,
+  clientFolderPath: string,
+  clientSurname: string,
+  consultationDate: string
+): Promise<TranscriptSaveResult> {
+  // Copies questionnaire JSON from Jotform downloads
+  // Same naming convention and versioning logic
+}
+
+// List available questionnaires in client folder
+export async function listQuestionnaireFiles(
+  clientFolderPath: string
+): Promise<{
+  success: boolean;
+  files?: Array<{ name: string; path: string }>;
+  error?: string;
+}> {
+  // Filters for .json files containing 'questionnaire'
+  // Used for dropdown selection in report generation
+}
+
+// Validate transcript content
+export function validateTranscriptContent(content: string): {
+  valid: boolean;
+  errors: string[];
+} {
+  // Checks: not empty, minimum 100 characters, maximum 1MB
+}
+
+// Check if transcript file exists
+export async function transcriptFileExists(filePath: string | null): Promise<boolean> {
+  // Quick existence check for UI state
+}
+```
+
+**Tauri Commands Used**:
+```rust
+// Write text file to disk
+invoke("write_text_file", { filePath, content })
+
+// Read directory entries
+invoke("plugin:fs|read_dir", { path: clientFolderPath })
+```
+
+**On-Demand Generation Workflow**:
+1. User opens existing Consultation event (e.g., 2 weeks after initial consultation)
+2. Clicks "Generate Vet Report" button
+3. System checks `Event.transcriptFilePath` for saved transcript
+4. Reads transcript file from client folder
+5. Prompts for vet clinic name (if `Client.primaryCareVet` not set)
+6. Generates vet report using saved transcript
+7. Saves vet report to client folder as DOCX
+
+**Benefits**:
+- **Privacy**: Transcripts stay local, not sent to cloud storage
+- **Compliance**: Permanent record in client folder
+- **Flexibility**: Generate different report types at different times
+- **Efficiency**: No need to re-paste transcript for additional reports
+- **Audit Trail**: File timestamp shows when consultation occurred
+
+**Implementation Files**:
+- [transcriptFileService.ts](src/lib/services/transcriptFileService.ts) - Complete file management
+- [schema.prisma](prisma/schema.prisma) - Database schema with new fields
+- [types.ts](src/lib/types.ts) - TypeScript interfaces
+
+**Migration**:
+- Migration: `20251121040644_add_transcript_vet_fields`
+- Adds nullable fields (backwards compatible)
+- Existing events unaffected
+
+**Future UI Integration** (Phase 3C):
+- Consultation creation form with transcript input
+- File upload option (drag-and-drop .txt files)
+- Questionnaire selection dropdown
+- Multi-report generation checkboxes
+- Progress indicators for parallel generation
 
 ---
 
@@ -2004,5 +2383,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2025-11-19
-**Version**: 1.9.0 (AI Integration Complete - Bulk Task Importer + Consultation Report Generator with full DOCX/PDF export pipeline (Pandoc + MS Word COM), email delivery workflow, and client-friendly file naming)
+**Last Updated**: 2025-11-21
+**Version**: 2.0.0 (Advanced AI Integration - Multi-Report Generation System with AI Prompt Template Manager, 3-report parallel generation (Comprehensive Clinical, Abridged Notes, Veterinary Report), transcript file management for on-demand generation, and ReportSent event type)

@@ -13,6 +13,7 @@ export interface Client {
   postcode: string | null;
   folderPath: string | null;
   stripeCustomerId: string | null;
+  primaryCareVet: string | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -41,6 +42,8 @@ export interface Event {
   calendlyStatus: string;
   invoiceFilePath: string | null;
   hostedInvoiceUrl: string | null;
+  transcriptFilePath: string | null;
+  questionnaireFilePath: string | null;
   parentEventId: number | null;
   createdAt: Date;
   updatedAt: Date;
@@ -97,6 +100,7 @@ export const EVENT_TYPES = [
   "Payment",
   "FollowUp",
   "QuestionnaireReceived",
+  "ReportSent",
   "Note",
 ] as const;
 
@@ -137,6 +141,7 @@ export interface ClientInput {
   postcode?: string;
   folderPath?: string;
   stripeCustomerId?: string;
+  primaryCareVet?: string;
   notes?: string;
 }
 
@@ -159,6 +164,8 @@ export interface EventInput {
   calendlyStatus?: string;
   invoiceFilePath?: string;
   hostedInvoiceUrl?: string;
+  transcriptFilePath?: string;
+  questionnaireFilePath?: string;
   parentEventId?: number;
 }
 
