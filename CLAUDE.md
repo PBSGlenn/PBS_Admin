@@ -10,9 +10,9 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **NEW: AI Prompt Management System with customizable templates, Multi-Report Generation Service for 3 report types (Comprehensive Clinical, Abridged Notes, Veterinary Report), and transcript file management for on-demand report generation**. Compact, consistent UI with reduced font sizes throughout.
+**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 3 report types (Comprehensive Clinical, Abridged Notes, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes.
 
-**Last Updated**: 2025-11-21
+**Last Updated**: 2025-11-26
 
 **Next Session**: Complete Phase 3C - Integrated Consultation Creation UI with transcript input and multi-report generation. Add primaryCareVet field to ClientForm UI.
 
@@ -65,7 +65,10 @@ PBS_Admin/
 │   │   ├── PromptTemplateManager/  # ✅ AI prompt template management UI
 │   │   │   └── PromptTemplateManager.tsx  # ✅ Create/edit/reset prompt templates
 │   │   └── ui/             # ✅ shadcn/ui components (Button, Input, Dialog, Select, etc.)
+│   │       ├── email-input.tsx  # ✅ Email input with context menu (paste/copy/create email)
+│   │       ├── address-input.tsx  # ✅ Address input with context menu (paste/copy/Google Maps)
 │   │       ├── email-draft-dialog.tsx  # ✅ Email preview and editing dialog
+│   │       ├── context-menu.tsx  # ✅ Radix UI context menu component
 │   │       ├── tabs.tsx    # ✅ Radix UI tabs component
 │   │       └── dropdown-menu.tsx  # ✅ Radix UI dropdown menu component
 │   ├── lib/
@@ -303,6 +306,17 @@ await invoke("plugin:opener|open_path", { path: folderPath });
 ```
 
 **Permissions**: Requires `opener:allow-open-path` permission with `$DOCUMENT/**` scope in capabilities/default.json
+
+**Opening URLs** (Google Maps, external links):
+```typescript
+import { invoke } from "@tauri-apps/api/core";
+
+// Open URL in default browser
+const url = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+await invoke("plugin:opener|open_url", { url });
+```
+
+**Permissions**: Requires `opener:allow-open-url` permission in capabilities/default.json
 
 ---
 
@@ -2227,14 +2241,18 @@ npm test -- --watch
 - **UI Components** - Complete shadcn/ui component library
   - Button, Input, Card, Table, Badge, Dialog, Select, Textarea, Label
   - RichTextEditor (Tiptap-based) with formatting toolbar
+  - EmailInput with context menu (Paste, Copy, Copy email address, Create email)
+  - AddressInput with context menu (Paste, Copy, Copy full address, Open in Google Maps)
   - EmailDraftDialog for email preview and editing
+  - ContextMenu (Radix UI) - Right-click context menus on form fields
   - Tabs, DropdownMenu (Radix UI)
   - Toggle, Separator (Radix UI)
 - **UI Design and Consistency** - Compact, data-dense interface
-  - Dashboard-style font sizes throughout (11px/text-[11px] for table content)
+  - Dashboard-style font sizes throughout (11px/text-[11px] for content, 10px for labels)
   - Reduced table row heights (h-10) and padding (py-1.5)
-  - Compact form controls (h-8 inputs, h-7 buttons)
-  - Consistent spacing (space-y-2, gap-2)
+  - Compact form controls (h-7 inputs, h-7 buttons)
+  - Client forms fully compacted: text-[11px] inputs, text-[10px] labels, minimal spacing
+  - Consistent spacing (space-y-1.5, gap-2)
   - Rich text editor styled at 11px to match tables
   - Badge text at 10px for compact status indicators
   - Maximizes information density while maintaining readability

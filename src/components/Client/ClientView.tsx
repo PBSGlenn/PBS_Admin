@@ -5,6 +5,8 @@ import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { EmailInput } from "../ui/email-input";
+import { AddressInput } from "../ui/address-input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
@@ -212,82 +214,83 @@ export function ClientView({ client, onClose }: ClientViewProps) {
     <div className="flex h-screen bg-background">
       {/* Left Pane - Client Form */}
       <div className="w-1/2 border-r border-border flex flex-col overflow-auto">
-        <div className="p-4">
+        <div className="p-3">
           {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onClose}
-                className="h-8 w-8"
+                className="h-7 w-7"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
               </Button>
               <div>
-                <h1 className="text-lg font-bold">Edit Client</h1>
-                <p className="text-xs text-muted-foreground">Update client information</p>
+                <h1 className="text-sm font-bold">Edit Client</h1>
+                <p className="text-[10px] text-muted-foreground">Update client information</p>
               </div>
             </div>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-2">
+          <form onSubmit={handleSubmit} className="space-y-1.5">
             {/* Basic Information */}
             <Card>
-              <CardHeader className="py-2 px-4">
-                <CardTitle className="text-sm">Basic Information</CardTitle>
-                <CardDescription className="text-xs">Required client contact details</CardDescription>
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-[11px] font-semibold">Basic Information</CardTitle>
+                <CardDescription className="text-[10px]">Required client contact details</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-2 px-4 pb-3">
-                <div className="space-y-1">
-                  <Label htmlFor="firstName" className="text-xs">
+              <CardContent className="grid grid-cols-2 gap-2 px-3 pb-2">
+                <div className="space-y-0.5">
+                  <Label htmlFor="firstName" className="text-[10px]">
                     First Name <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="firstName"
                     value={formData.firstName}
                     onChange={(e) => handleChange("firstName", e.target.value)}
-                    className={`h-8 text-sm ${errors.firstName ? "border-destructive" : ""}`}
+                    className={`h-7 text-[11px] ${errors.firstName ? "border-destructive" : ""}`}
                   />
                   {errors.firstName && (
-                    <p className="text-xs text-destructive">{errors.firstName}</p>
+                    <p className="text-[10px] text-destructive">{errors.firstName}</p>
                   )}
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="lastName" className="text-xs">
+                <div className="space-y-0.5">
+                  <Label htmlFor="lastName" className="text-[10px]">
                     Last Name <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="lastName"
                     value={formData.lastName}
                     onChange={(e) => handleChange("lastName", e.target.value)}
-                    className={`h-8 text-sm ${errors.lastName ? "border-destructive" : ""}`}
+                    className={`h-7 text-[11px] ${errors.lastName ? "border-destructive" : ""}`}
                   />
                   {errors.lastName && (
-                    <p className="text-xs text-destructive">{errors.lastName}</p>
+                    <p className="text-[10px] text-destructive">{errors.lastName}</p>
                   )}
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="email" className="text-xs">
+                <div className="space-y-0.5">
+                  <Label htmlFor="email" className="text-[10px]">
                     Email <span className="text-destructive">*</span>
                   </Label>
-                  <Input
+                  <EmailInput
                     id="email"
-                    type="email"
                     value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    className={`h-8 text-sm ${errors.email ? "border-destructive" : ""}`}
+                    onChange={(value) => handleChange("email", value)}
+                    className={`h-7 text-[11px] ${errors.email ? "border-destructive" : ""}`}
+                    clientFirstName={formData.firstName}
+                    clientLastName={formData.lastName}
                   />
                   {errors.email && (
-                    <p className="text-xs text-destructive">{errors.email}</p>
+                    <p className="text-[10px] text-destructive">{errors.email}</p>
                   )}
                 </div>
 
-                <div className="space-y-1">
-                  <Label htmlFor="mobile" className="text-xs">
+                <div className="space-y-0.5">
+                  <Label htmlFor="mobile" className="text-[10px]">
                     Mobile <span className="text-destructive">*</span>
                   </Label>
                   <Input
@@ -295,10 +298,10 @@ export function ClientView({ client, onClose }: ClientViewProps) {
                     type="tel"
                     value={formData.mobile}
                     onChange={(e) => handleChange("mobile", e.target.value)}
-                    className={`h-8 text-sm ${errors.mobile ? "border-destructive" : ""}`}
+                    className={`h-7 text-[11px] ${errors.mobile ? "border-destructive" : ""}`}
                   />
                   {errors.mobile && (
-                    <p className="text-xs text-destructive">{errors.mobile}</p>
+                    <p className="text-[10px] text-destructive">{errors.mobile}</p>
                   )}
                 </div>
               </CardContent>
@@ -306,44 +309,47 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
             {/* Address Information */}
             <Card>
-              <CardHeader className="py-2 px-4">
-                <CardTitle className="text-sm">Address</CardTitle>
-                <CardDescription className="text-xs">Optional address information</CardDescription>
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-[11px] font-semibold">Address</CardTitle>
+                <CardDescription className="text-[10px]">Optional address information</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 px-4 pb-3">
-                <div className="space-y-1">
-                  <Label htmlFor="streetAddress" className="text-xs">Street Address</Label>
-                  <Input
+              <CardContent className="space-y-1.5 px-3 pb-2">
+                <div className="space-y-0.5">
+                  <Label htmlFor="streetAddress" className="text-[10px]">Street Address</Label>
+                  <AddressInput
                     id="streetAddress"
                     value={formData.streetAddress}
-                    onChange={(e) => handleChange("streetAddress", e.target.value)}
-                    className="h-8 text-sm"
+                    onChange={(value) => handleChange("streetAddress", value)}
+                    className="h-7 text-[11px]"
+                    city={formData.city}
+                    state={formData.state}
+                    postcode={formData.postcode}
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="city" className="text-xs">City</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="city" className="text-[10px]">City</Label>
                     <Input
                       id="city"
                       value={formData.city}
                       onChange={(e) => handleChange("city", e.target.value)}
-                      className="h-8 text-sm"
+                      className="h-7 text-[11px]"
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <Label htmlFor="state" className="text-xs">State</Label>
+                  <div className="space-y-0.5">
+                    <Label htmlFor="state" className="text-[10px]">State</Label>
                     <Select
                       value={formData.state || "VIC"}
                       onValueChange={(value) => handleChange("state", value)}
                     >
-                      <SelectTrigger className="h-8 text-sm">
+                      <SelectTrigger className="h-7 text-[11px]">
                         <SelectValue placeholder="Select state" />
                       </SelectTrigger>
                       <SelectContent>
                         {AUSTRALIAN_STATES.map((state) => (
-                          <SelectItem key={state.value} value={state.value}>
+                          <SelectItem key={state.value} value={state.value} className="text-[11px]">
                             {state.label}
                           </SelectItem>
                         ))}
@@ -351,13 +357,13 @@ export function ClientView({ client, onClose }: ClientViewProps) {
                     </Select>
                   </div>
 
-                  <div className="space-y-1">
-                    <Label htmlFor="postcode" className="text-xs">Postcode</Label>
+                  <div className="space-y-0.5">
+                    <Label htmlFor="postcode" className="text-[10px]">Postcode</Label>
                     <Input
                       id="postcode"
                       value={formData.postcode}
                       onChange={(e) => handleChange("postcode", e.target.value)}
-                      className="h-8 text-sm"
+                      className="h-7 text-[11px]"
                     />
                   </div>
                 </div>
@@ -366,39 +372,39 @@ export function ClientView({ client, onClose }: ClientViewProps) {
 
             {/* Notes */}
             <Card>
-              <CardHeader className="py-2 px-4">
-                <CardTitle className="text-sm">Notes</CardTitle>
-                <CardDescription className="text-xs">Additional information about this client</CardDescription>
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-[11px] font-semibold">Notes</CardTitle>
+                <CardDescription className="text-[10px]">Additional information about this client</CardDescription>
               </CardHeader>
-              <CardContent className="px-4 pb-3">
+              <CardContent className="px-3 pb-2">
                 <Textarea
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => handleChange("notes", e.target.value)}
                   rows={3}
                   placeholder="Any additional notes about this client..."
-                  className="text-sm min-h-[60px]"
+                  className="text-[11px] min-h-[60px]"
                 />
               </CardContent>
             </Card>
 
             {/* Form Actions */}
-            <div className="flex justify-between gap-2 pt-2">
+            <div className="flex justify-between gap-2 pt-1.5">
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleFolderButtonClick}
                 size="sm"
-                className="h-8"
+                className="h-7 text-[11px]"
               >
                 {currentFolderPath ? (
                   <>
-                    <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                    <FolderOpen className="h-3 w-3 mr-1" />
                     Open Folder
                   </>
                 ) : (
                   <>
-                    <Folder className="h-3.5 w-3.5 mr-1.5" />
+                    <Folder className="h-3 w-3 mr-1" />
                     Create or Change Client Folder
                   </>
                 )}
@@ -407,21 +413,21 @@ export function ClientView({ client, onClose }: ClientViewProps) {
                 type="submit"
                 disabled={!hasChanges() || saveMutation.isPending || showSaveSuccess}
                 size="sm"
-                className="h-8"
+                className="h-7 text-[11px]"
               >
                 {showSaveSuccess ? (
                   <>
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
                     Saved!
                   </>
                 ) : saveMutation.isPending ? (
                   <>
-                    <Save className="h-3.5 w-3.5 mr-1.5" />
+                    <Save className="h-3 w-3 mr-1" />
                     Saving...
                   </>
                 ) : (
                   <>
-                    <Save className="h-3.5 w-3.5 mr-1.5" />
+                    <Save className="h-3 w-3 mr-1" />
                     Save Changes
                   </>
                 )}
