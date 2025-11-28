@@ -6,12 +6,14 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { TranscriptInput } from "./TranscriptInput";
 import { QuestionnaireSelector } from "./QuestionnaireSelector";
 import { OutputSelector, type OutputType } from "./OutputSelector";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import type { EventProcessingState, OutputState } from "@/lib/types";
-import { updateEvent } from "@/lib/services/eventService";
+import { updateEvent, createEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { getPetsByClientId } from "@/lib/services/petService";
 import { readTranscriptFile } from "@/lib/services/transcriptFileService";
@@ -75,6 +77,9 @@ export function ConsultationEventPanel({
   const [selectedQuestionnairePath, setSelectedQuestionnairePath] = useState<string | null>(
     event?.questionnaireFilePath || null
   );
+
+  // Track if prescription should be created as part of consultation
+  const [createPrescription, setCreatePrescription] = useState(false);
 
   // Initialize processing state from event or create new
   const [processingState, setProcessingState] = useState<EventProcessingState>(() => {
@@ -350,6 +355,28 @@ export function ConsultationEventPanel({
         } catch (error) {
           console.error(`Failed to auto-convert ${reportType} to DOCX:`, error);
           // Continue with other conversions even if one fails
+        }
+      }
+
+      // Create linked Prescription event if checkbox was checked
+      if (createPrescription && currentEvent?.eventId) {
+        try {
+          const prescriptionEvent = await createEvent({
+            clientId,
+            eventType: 'Prescription',
+            date: new Date().toISOString(),
+            notes: '<p>Prescription for consultation on ' + format(new Date(formData.date || new Date()), 'dd/MM/yyyy') + '</p>',
+            parentEventId: currentEvent.eventId
+          });
+
+          // Show success notification
+          alert(`Prescription event created successfully! You can now edit it from the Events table.`);
+
+          // Invalidate queries to refresh events table
+          queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+        } catch (error) {
+          console.error('Failed to create prescription event:', error);
+          alert('Failed to create prescription event. You can create it manually from the Events table.');
         }
       }
     },
@@ -631,6 +658,27 @@ export function ConsultationEventPanel({
             }));
           }}
         />
+
+        <Separator className="my-3" />
+
+        {/* Prescription Creation Option */}
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="createPrescription"
+            checked={createPrescription}
+            onCheckedChange={(checked) => setCreatePrescription(checked === true)}
+          />
+          <Label
+            htmlFor="createPrescription"
+            className="text-xs font-normal cursor-pointer"
+          >
+            Create linked Prescription event
+          </Label>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1 ml-6">
+          Opens prescription form after consultation is saved
+        </p>
+
         <div className="mt-3 flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Estimated cost: ~$0.25</span>
           <Button
