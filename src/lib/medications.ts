@@ -35,7 +35,7 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
   {
     id: 'fluoxetine',
     genericName: 'Fluoxetine',
-    brandNames: ['Prozac', 'Reconcile'],
+    brandNames: ['Generic Health', 'Apotex', 'Sandoz', 'AN'],
     category: 'SSRI',
     species: ['Both'],
     doseRange: {
@@ -71,7 +71,7 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
   {
     id: 'sertraline',
     genericName: 'Sertraline',
-    brandNames: ['Zoloft'],
+    brandNames: ['Zoloft', 'Generic Health', 'Sandoz', 'Apo', 'Eleva', 'Sertra', 'Setrona'],
     category: 'SSRI',
     species: ['Both'],
     doseRange: {
@@ -142,7 +142,7 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
   {
     id: 'alprazolam',
     genericName: 'Alprazolam',
-    brandNames: ['Xanax', 'Kalma'],
+    brandNames: ['Kalma', 'Alprax', 'Sandoz'],
     category: 'Benzodiazepine',
     species: ['Both'],
     doseRange: {
@@ -178,7 +178,7 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
   {
     id: 'diazepam',
     genericName: 'Diazepam',
-    brandNames: ['Valium', 'Ducene'],
+    brandNames: ['Valium', 'Ducene', 'Valpam', 'Antenex', 'Propam'],
     category: 'Benzodiazepine',
     species: ['Both'],
     doseRange: {
@@ -213,7 +213,7 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
   {
     id: 'trazodone',
     genericName: 'Trazodone',
-    brandNames: ['Trazorel', 'Molipaxin'],
+    brandNames: ['Compounded formulation'],
     category: 'Other',
     species: ['Dog'],
     doseRange: {
@@ -241,14 +241,14 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
       'Severe cardiac disease',
       'Use with MAOIs'
     ],
-    notes: 'Give 1-2 hours before trigger event. Can be used daily or as needed. Well tolerated. Lower doses for situational use, higher for daily use.',
+    notes: 'No branded veterinary product available in Australia - must be compounded. Give 1-2 hours before trigger event. Can be used daily or as needed. Well tolerated. Lower doses for situational use, higher for daily use.',
     scheduleClass: 'S4',
     requiresAuthority: false,
   },
   {
     id: 'gabapentin',
     genericName: 'Gabapentin',
-    brandNames: ['Neurontin', 'Gralise'],
+    brandNames: ['Neurontin', 'Nupentin', 'Gabapentin Pfizer', 'Gabapentin-GA', 'Gabaran', 'Gabatine'],
     category: 'Gabapentinoid',
     species: ['Both'],
     doseRange: {
@@ -315,7 +315,7 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
   {
     id: 'buspirone',
     genericName: 'Buspirone',
-    brandNames: ['Buspar'],
+    brandNames: ['Compounded formulation'],
     category: 'Azapirone',
     species: ['Cat'],
     doseRange: {
@@ -340,14 +340,14 @@ export const BEHAVIOR_MEDICATIONS: Medication[] = [
     contraindications: [
       'Use with MAOIs'
     ],
-    notes: 'Particularly effective in cats. Full effect may take 2-4 weeks. Generally well-tolerated. Does not cause sedation or dependence.',
+    notes: 'Buspar/Bustab discontinued in Australia - must be compounded. Particularly effective in cats. Full effect may take 2-4 weeks. Generally well-tolerated. Does not cause sedation or dependence.',
     scheduleClass: 'S4',
     requiresAuthority: false,
   },
   {
     id: 'acepromazine',
     genericName: 'Acepromazine',
-    brandNames: ['ACP', 'Acetylpromazine'],
+    brandNames: ['ACP', 'PromAce', 'Atravet', 'Acezine', 'Aceproject'],
     category: 'Other',
     species: ['Both'],
     doseRange: {
