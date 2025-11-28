@@ -73,6 +73,14 @@ export function EventFormModal({
         <div className="grid grid-cols-2 gap-6">
           {/* Left Panel - Standard Event Fields */}
           <div className="space-y-3">
+            {/* Client Name Display */}
+            <div className="pb-2 border-b">
+              <p className="text-[10px] text-muted-foreground">Client</p>
+              <p className="font-semibold text-xs">
+                {client ? `${client.firstName} ${client.lastName}` : 'Loading...'}
+              </p>
+            </div>
+
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Event Details
             </h3>
