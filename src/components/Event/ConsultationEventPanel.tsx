@@ -325,10 +325,33 @@ export function ConsultationEventPanel({
 
       return { updatedState, results };
     },
-    onSuccess: ({ updatedState }) => {
+    onSuccess: async ({ updatedState, results }) => {
       setProcessingState(updatedState);
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+
+      // Automatically convert generated reports to DOCX
+      const reportTypesToConvert: Array<'clientReport' | 'practitionerReport' | 'vetReport'> = [];
+
+      if (results.comprehensiveReport) {
+        reportTypesToConvert.push('clientReport');
+      }
+      if (results.practitionerReport) {
+        reportTypesToConvert.push('practitionerReport');
+      }
+      if (results.vetReport) {
+        reportTypesToConvert.push('vetReport');
+      }
+
+      // Convert each report to DOCX automatically
+      for (const reportType of reportTypesToConvert) {
+        try {
+          await convertToDOCXMutation.mutateAsync(reportType);
+        } catch (error) {
+          console.error(`Failed to auto-convert ${reportType} to DOCX:`, error);
+          // Continue with other conversions even if one fails
+        }
+      }
     },
     onError: (error) => {
       alert(`Failed to generate reports: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -387,11 +410,21 @@ export function ConsultationEventPanel({
         processingState: JSON.stringify(updatedState)
       });
 
-      return { updatedState, docxResult };
+      return { updatedState, docxResult, reportType };
     },
-    onSuccess: ({ updatedState }) => {
+    onSuccess: async ({ updatedState, reportType }) => {
       setProcessingState(updatedState);
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+
+      // Automatically convert client report to PDF after DOCX generation
+      if (reportType === 'clientReport') {
+        try {
+          await convertToPDFMutation.mutateAsync();
+        } catch (error) {
+          console.error('Failed to auto-convert client report to PDF:', error);
+          // Don't show alert here, just log - PDF conversion is optional
+        }
+      }
     },
     onError: (error) => {
       alert(`Failed to convert to DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`);

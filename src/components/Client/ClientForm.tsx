@@ -38,6 +38,7 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
     city: "",
     state: "VIC",
     postcode: "",
+    primaryCareVet: "",
     notes: "",
   });
 
@@ -369,6 +370,31 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
                       className="h-7 text-[11px]"
                     />
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Veterinary Information */}
+            <Card>
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-[11px] font-semibold">Veterinary Information</CardTitle>
+                <CardDescription className="text-[10px]">Primary care veterinarian details</CardDescription>
+              </CardHeader>
+              <CardContent className="px-3 pb-2">
+                <div className="space-y-0.5">
+                  <Label htmlFor="primaryCareVet" className="text-[10px]">
+                    Primary Care Vet
+                  </Label>
+                  <Input
+                    id="primaryCareVet"
+                    value={formData.primaryCareVet}
+                    onChange={(e) => handleChange("primaryCareVet", e.target.value)}
+                    placeholder="e.g., Dr. Smith at Melbourne Veterinary Clinic"
+                    className="h-7 text-[11px]"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Used for veterinary reports and referrals
+                  </p>
                 </div>
               </CardContent>
             </Card>
