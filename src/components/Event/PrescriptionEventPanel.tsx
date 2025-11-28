@@ -198,11 +198,13 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
               <SelectValue placeholder="Choose medication..." />
             </SelectTrigger>
             <SelectContent>
-              {BEHAVIOR_MEDICATIONS.map((med) => (
-                <SelectItem key={med.id} value={med.id} className="text-[11px]">
-                  {med.genericName} ({med.category})
-                </SelectItem>
-              ))}
+              {[...BEHAVIOR_MEDICATIONS]
+                .sort((a, b) => a.genericName.localeCompare(b.genericName))
+                .map((med) => (
+                  <SelectItem key={med.id} value={med.id} className="text-[11px]">
+                    {med.genericName} ({med.category})
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>
