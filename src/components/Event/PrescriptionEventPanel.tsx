@@ -289,10 +289,19 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
               </div>
 
               <div className="pt-2">
-                <p className="text-[10px] font-medium">Dose Range:</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {selectedMedication.doseRange.min} - {selectedMedication.doseRange.max} {selectedMedication.doseRange.unit}
-                </p>
+                <p className="text-[10px] font-medium">Dosing:</p>
+                <div className="space-y-0.5">
+                  {(selectedMedication.species.includes('Dog') || selectedMedication.species.includes('Both')) && (
+                    <p className="text-[10px] text-muted-foreground">
+                      <span className="font-medium">Dog dose:</span> {selectedMedication.doseRange.min} - {selectedMedication.doseRange.max} {selectedMedication.doseRange.unit}
+                    </p>
+                  )}
+                  {(selectedMedication.species.includes('Cat') || selectedMedication.species.includes('Both')) && (
+                    <p className="text-[10px] text-muted-foreground">
+                      <span className="font-medium">Cat dose:</span> {selectedMedication.doseRange.min} - {selectedMedication.doseRange.max} {selectedMedication.doseRange.unit}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="pt-2">
