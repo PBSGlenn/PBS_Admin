@@ -609,6 +609,12 @@ export function ConsultationEventPanel({
 
   return (
     <div className="space-y-4">
+      {/* Client Name Display */}
+      <div className="pb-2 border-b">
+        <p className="text-[10px] text-muted-foreground">Client</p>
+        <p className="font-semibold text-xs">{clientName || 'Unknown Client'}</p>
+      </div>
+
       {/* Input Files Section */}
       <Card className="p-3">
         <h4 className="text-xs font-semibold mb-2">INPUT FILES</h4>

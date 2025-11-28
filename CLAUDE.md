@@ -2286,6 +2286,15 @@ npm test -- --watch
 📋 **TODO - Future Enhancements**:
 - ✅ Email integration for task reminders (Completed - Template system with draft preview)
 - SMTP integration for automated email delivery (optional future enhancement)
+- **Drug Compendium** (Settings → Medication Reference Table)
+  - Editable table displaying all medications from database
+  - User-editable fields (manual updates to medication information)
+  - Web-updatable (integration with online pharmaceutical databases)
+  - Table includes: Generic name, Brand names, Drug category, Dosing information, Indications, Contraindications, Side effects, Australian scheduling (S3/S4/S8)
+  - Export/import functionality for backup
+  - Version control for medication database changes
+  - Could leverage existing medicationUpdateService.ts and monthly update checker infrastructure
+  - Consider using DataTable component with inline editing
 - System tray background service for persistent notifications
 - Legacy data import tool
 - Backup/restore functionality

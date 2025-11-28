@@ -7,15 +7,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FileText, FileCheck, AlertCircle } from "lucide-react";
-import { Event } from "@/lib/types";
+import { Event, Pet } from "@/lib/types";
 import { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { BEHAVIOR_MEDICATIONS, Medication, getMedicationById, FREQUENCY_OPTIONS } from "@/lib/medications";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { updateEvent } from "@/lib/services/eventService";
+import { getPetsByClientId } from "@/lib/services/petService";
 import { format } from "date-fns";
 
 interface PrescriptionData {
+  petId: string;
+  petName: string;
+  petSpecies: string;
   medicationId: string;
   doseAmount: string; // e.g., "20" (mg)
   frequency: string; // e.g., "twice_daily"
@@ -35,6 +39,9 @@ export function PrescriptionEventPanel({
 }: EventSpecificPanelProps) {
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
   const [prescriptionData, setPrescriptionData] = useState<PrescriptionData>({
+    petId: '',
+    petName: '',
+    petSpecies: '',
     medicationId: '',
     doseAmount: '',
     frequency: 'twice_daily',
@@ -44,6 +51,25 @@ export function PrescriptionEventPanel({
   });
   const [docxFilePath, setDocxFilePath] = useState<string>('');
   const [pdfFilePath, setPdfFilePath] = useState<string>('');
+
+  // Fetch client's pets
+  const { data: pets = [], isLoading: petsLoading } = useQuery({
+    queryKey: ["pets", clientId],
+    queryFn: () => getPetsByClientId(clientId),
+  });
+
+  // Handle pet selection
+  const handlePetChange = (petId: string) => {
+    const selectedPet = pets.find(p => p.petId.toString() === petId);
+    if (selectedPet) {
+      setPrescriptionData(prev => ({
+        ...prev,
+        petId,
+        petName: selectedPet.name,
+        petSpecies: selectedPet.species,
+      }));
+    }
+  };
 
   // Handle medication selection
   const handleMedicationChange = (medicationId: string) => {
@@ -95,8 +121,8 @@ export function PrescriptionEventPanel({
         outputPath: docxFilePath,
         prescriptionData: {
           clientName,
-          petName: formData.petName || "Pet",
-          petSpecies: formData.petSpecies || "Dog",
+          petName: prescriptionData.petName || "Pet",
+          petSpecies: prescriptionData.petSpecies || "Dog",
           petWeight: prescriptionData.petWeight || "Unknown",
           medicationName: selectedMedication.genericName,
           brandNames: selectedMedication.brandNames.join(", "),
@@ -185,7 +211,33 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
   return (
     <div className="space-y-3 text-[11px]">
       <div className="space-y-2">
+        {/* Client Name Display */}
+        <div className="pb-2 border-b">
+          <p className="text-[10px] text-muted-foreground">Client</p>
+          <p className="font-semibold text-xs">{clientName}</p>
+        </div>
+
         <h3 className="font-semibold text-xs">Prescription Details</h3>
+
+        {/* Pet Selection */}
+        <div className="space-y-1">
+          <Label className="text-[10px]">Select Pet</Label>
+          <Select
+            value={prescriptionData.petId}
+            onValueChange={handlePetChange}
+          >
+            <SelectTrigger className="h-7 text-[11px]">
+              <SelectValue placeholder={petsLoading ? "Loading pets..." : "Choose pet..."} />
+            </SelectTrigger>
+            <SelectContent>
+              {pets.map((pet) => (
+                <SelectItem key={pet.petId} value={pet.petId.toString()} className="text-[11px]">
+                  {pet.name} ({pet.species}{pet.breed ? `, ${pet.breed}` : ''})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Medication Selection */}
         <div className="space-y-1">
