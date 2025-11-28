@@ -201,7 +201,6 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
               {BEHAVIOR_MEDICATIONS.map((med) => (
                 <SelectItem key={med.id} value={med.id} className="text-[11px]">
                   {med.genericName} ({med.category})
-                  {med.brandNames.length > 0 && ` - ${med.brandNames[0]}`}
                 </SelectItem>
               ))}
             </SelectContent>
