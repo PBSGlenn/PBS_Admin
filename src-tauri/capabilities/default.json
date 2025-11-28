@@ -27,6 +27,14 @@
         }
       ]
     },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "$DOCUMENT/**"
+        }
+      ]
+    },
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",

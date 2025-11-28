@@ -44,6 +44,7 @@ export interface Event {
   hostedInvoiceUrl: string | null;
   transcriptFilePath: string | null;
   questionnaireFilePath: string | null;
+  processingState: string | null;
   parentEventId: number | null;
   createdAt: Date;
   updatedAt: Date;
@@ -63,6 +64,36 @@ export interface Task {
   parentTaskId: number | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Event Processing State (stored as JSON in Event.processingState)
+
+export interface OutputState {
+  status: 'not_started' | 'generating' | 'generated' | 'saved';
+  content?: string;
+  filePath?: string;
+  fileName?: string;
+  version?: number;
+  generatedAt?: string;
+  error?: string;
+}
+
+export interface EventProcessingState {
+  status: 'draft' | 'in_progress' | 'completed';
+  step: string;
+  transcriptSource: 'file' | 'pasted' | null;
+  transcriptPasted: string | null;
+  questionnaireSelected: boolean;
+  selectedOutputs: ('clinicalNotes' | 'clientReport' | 'practitionerReport' | 'vetReport' | 'prescription')[];
+  outputs: {
+    clinicalNotes?: OutputState;
+    clientReport?: OutputState;
+    practitionerReport?: OutputState;
+    vetReport?: OutputState;
+    prescription?: OutputState;
+  };
+  tasksCreated: boolean;
+  incompleteTaskId: number | null;
 }
 
 // Extended types with computed fields

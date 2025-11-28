@@ -5,6 +5,7 @@ use std::path::Path;
 use std::io::Write;
 use std::process::Command;
 use reqwest::blocking::get;
+use serde::{Deserialize, Serialize};
 
 #[tauri::command]
 fn create_folder(path: String) -> Result<String, String> {
@@ -230,6 +231,52 @@ fn run_pandoc(input_path: String, output_path: String, template_path: Option<Str
 }
 
 #[tauri::command]
+fn run_pandoc_from_stdin(markdown_content: String, output_path: String, template_path: Option<String>) -> Result<String, String> {
+    use std::process::Stdio;
+
+    // Build pandoc command with stdin input
+    let mut cmd = Command::new("pandoc");
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    // Read from stdin (dash means read from stdin)
+    cmd.arg("-");
+
+    // Add output file
+    cmd.arg("-o");
+    cmd.arg(&output_path);
+
+    // Add reference document (template) if provided
+    if let Some(template) = template_path {
+        cmd.arg("--reference-doc");
+        cmd.arg(&template);
+    }
+
+    // Spawn process
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn pandoc: {}. Is pandoc installed?", e))?;
+
+    // Write markdown content to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(markdown_content.as_bytes())
+            .map_err(|e| format!("Failed to write to pandoc stdin: {}", e))?;
+    }
+
+    // Wait for process to complete
+    let output = child.wait_with_output()
+        .map_err(|e| format!("Failed to wait for pandoc: {}", e))?;
+
+    // Check if command succeeded
+    if output.status.success() {
+        Ok(output_path.clone())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Pandoc conversion failed: {}", error_msg))
+    }
+}
+
+#[tauri::command]
 fn convert_docx_to_pdf(docx_path: String, pdf_path: String) -> Result<String, String> {
     // Build PowerShell script for Word COM automation
     let ps_script = format!(
@@ -268,6 +315,153 @@ try {{
     }
 }
 
+// Transcription-related structures
+#[derive(Serialize, Deserialize)]
+struct TranscriptionResponse {
+    text: String,
+}
+
+#[derive(Serialize)]
+struct TranscribeResult {
+    text: String,
+    duration: f64,
+}
+
+/// Save uploaded audio file to temp directory for processing
+#[tauri::command]
+fn save_temp_audio_file(file_name: String, file_data: Vec<u8>) -> Result<String, String> {
+    // Get system temp directory
+    let temp_dir = std::env::temp_dir();
+    let pbs_temp = temp_dir.join("PBS_Admin");
+
+    // Create PBS_Admin temp folder if it doesn't exist
+    if !pbs_temp.exists() {
+        fs::create_dir_all(&pbs_temp)
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    }
+
+    // Create unique filename with timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let safe_name = file_name.replace(&['/', '\\', ':', '*', '?', '"', '<', '>', '|'][..], "_");
+    let temp_file_path = pbs_temp.join(format!("{}_{}", timestamp, safe_name));
+
+    // Write file data
+    match fs::File::create(&temp_file_path) {
+        Ok(mut file) => {
+            file.write_all(&file_data)
+                .map_err(|e| format!("Failed to write temp file: {}", e))?;
+            Ok(temp_file_path.to_string_lossy().to_string())
+        },
+        Err(e) => Err(format!("Failed to create temp file: {}", e)),
+    }
+}
+
+/// Transcribe audio using OpenAI Whisper API
+#[tauri::command]
+async fn transcribe_audio(file_path: String, language: String) -> Result<TranscribeResult, String> {
+    println!("Transcribing audio file: {}", file_path);
+
+    // Get OpenAI API key from environment
+    let api_key = std::env::var("OPENAI_API_KEY")
+        .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())?;
+
+    println!("API key found: {}...", &api_key[..10]);
+
+    // Read audio file
+    let file_data = fs::read(&file_path)
+        .map_err(|e| format!("Failed to read audio file: {}", e))?;
+
+    let file_size = file_data.len();
+    println!("Audio file size: {} bytes", file_size);
+
+    // Check file size limit (OpenAI Whisper API has 25MB limit)
+    const MAX_FILE_SIZE: usize = 25 * 1024 * 1024; // 25MB in bytes
+    if file_size > MAX_FILE_SIZE {
+        let mb = file_size as f64 / 1_024_000.0;
+        return Err(format!(
+            "Audio file is too large ({:.1} MB). OpenAI Whisper API has a 25MB limit. Please compress the audio file or split it into smaller segments.",
+            mb
+        ));
+    }
+
+    // Get file name from path
+    let file_name = Path::new(&file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("audio.m4a")
+        .to_string();
+
+    // Determine MIME type based on file extension
+    let mime_type = if file_name.ends_with(".m4a") {
+        "audio/mp4"
+    } else if file_name.ends_with(".mp3") {
+        "audio/mpeg"
+    } else if file_name.ends_with(".wav") {
+        "audio/wav"
+    } else {
+        "audio/mpeg" // default
+    };
+
+    // Create multipart form
+    let part = reqwest::multipart::Part::bytes(file_data)
+        .file_name(file_name)
+        .mime_str(mime_type)
+        .map_err(|e| format!("Failed to set MIME type: {}", e))?;
+
+    let form = reqwest::multipart::Form::new()
+        .text("model", "whisper-1")
+        .text("language", language)
+        .part("file", part);
+
+    println!("Sending request to OpenAI Whisper API...");
+
+    // Send request to OpenAI API
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.openai.com/v1/audio/transcriptions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send request to OpenAI: {}", e))?;
+
+    // Check response status
+    if !response.status().is_success() {
+        let error_text = response.text().await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("OpenAI API error: {}", error_text));
+    }
+
+    // Parse response
+    let response_json: serde_json::Value = response.json().await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    println!("Response received: {}", response_json);
+
+    let text = response_json["text"]
+        .as_str()
+        .ok_or("Missing 'text' field in response")?
+        .to_string();
+
+    // Duration might not be in response with default format, estimate from file size
+    // Rough estimate: ~1 minute per 1MB for typical audio formats
+    let duration = response_json["duration"]
+        .as_f64()
+        .unwrap_or_else(|| {
+            // Fallback: estimate duration from file size (very rough)
+            let mb = file_size as f64 / 1_000_000.0;
+            mb * 60.0 // Assume ~1MB per minute
+        });
+
+    println!("Transcription complete. Text length: {} chars, Duration: {}s", text.len(), duration);
+
+    Ok(TranscribeResult { text, duration })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -285,7 +479,10 @@ pub fn run() {
             download_file,
             list_files,
             run_pandoc,
-            convert_docx_to_pdf
+            run_pandoc_from_stdin,
+            convert_docx_to_pdf,
+            save_temp_audio_file,
+            transcribe_audio
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

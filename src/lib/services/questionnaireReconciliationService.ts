@@ -6,7 +6,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Client, Pet } from '../types';
 import { getClientById, updateClient } from './clientService';
-import { getAllPets, updatePet } from './petService';
+import { getAllPets, updatePet, createPet } from './petService';
+import { parseAgeToDateOfBirth } from '../utils/ageUtils';
 
 /**
  * Questionnaire data structure (from saved JSON file)
@@ -461,4 +462,60 @@ export async function applyPetUpdates(
   }
 
   return await updatePet(pet.petId, updates);
+}
+
+/**
+ * Create new pet from questionnaire data
+ */
+export async function createPetFromQuestionnaire(
+  clientId: number,
+  selectedFields: string[],
+  questionnaireData: QuestionnaireData
+): Promise<Pet> {
+  const qPet = questionnaireData.pet;
+  const petData: any = {
+    clientId,
+    name: '', // Will be set below if selected
+    species: '', // Will be set below if selected
+  };
+
+  // Build notes from weight if selected
+  const notes: string[] = [];
+
+  for (const field of selectedFields) {
+    switch (field) {
+      case 'name':
+        petData.name = qPet.name;
+        break;
+      case 'species':
+        petData.species = qPet.species;
+        break;
+      case 'breed':
+        if (qPet.breed) petData.breed = qPet.breed;
+        break;
+      case 'sex':
+        const mappedSex = mapSexValue(qPet.sex);
+        if (mappedSex) petData.sex = mappedSex;
+        break;
+      case 'age':
+        // Convert age string to date of birth
+        if (qPet.age) {
+          const dob = parseAgeToDateOfBirth(qPet.age);
+          if (dob) petData.dateOfBirth = dob;
+        }
+        break;
+      case 'weight':
+        if (qPet.weight) {
+          notes.push(`Weight: ${qPet.weight}`);
+        }
+        break;
+    }
+  }
+
+  // Add notes if any
+  if (notes.length > 0) {
+    petData.notes = notes.join('\n');
+  }
+
+  return await createPet(petData);
 }

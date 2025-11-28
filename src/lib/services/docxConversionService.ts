@@ -14,6 +14,17 @@ export interface DocxConversionOptions {
   templateName?: string; // Optional: defaults to "General_PBS_Letterhead.docx"
 }
 
+export interface DocxConversionFromContentOptions {
+  markdownContent: string;
+  clientId: number;
+  clientSurname: string;
+  consultationDate: string; // YYYYMMDD format
+  reportType: 'clientReport' | 'practitionerReport' | 'vetReport';
+  version: number;
+  clientFolderPath: string;
+  templateName?: string; // Optional: defaults to "General_PBS_Letterhead.docx"
+}
+
 export interface DocxConversionResult {
   docxFilePath: string;
   docxFileName: string;
@@ -61,6 +72,73 @@ export async function convertReportToDocx(
       eventType: "Note",
       date: new Date().toISOString(),
       notes: `<h2>Consultation Report Converted to DOCX</h2><p><strong>File:</strong> ${docxFileName}</p><p><strong>Source:</strong> ${mdFilePath.split('\\').pop()}</p><p><strong>Template:</strong> ${templateName}</p><p>Report converted to Word document with letterhead template.</p>`,
+    });
+
+    return {
+      docxFilePath,
+      docxFileName,
+      success: true,
+    };
+  } catch (error) {
+    console.error("DOCX conversion failed:", error);
+    return {
+      docxFilePath: "",
+      docxFileName: "",
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Convert markdown content directly to DOCX (skip intermediate .md file)
+ * Uses Pandoc stdin input to avoid creating temporary markdown files
+ */
+export async function convertReportToDocxDirectly(
+  options: DocxConversionFromContentOptions
+): Promise<DocxConversionResult> {
+  const {
+    markdownContent,
+    clientId,
+    clientSurname,
+    consultationDate,
+    reportType,
+    version,
+    clientFolderPath,
+    templateName = "General_PBS_Letterhead.docx",
+  } = options;
+
+  try {
+    // Get templates folder path
+    const templatesPath = await invoke<string>("get_templates_path");
+
+    // Build template file path
+    const templateFilePath = `${templatesPath}\\${templateName}`;
+
+    // Determine report type suffix
+    const reportSuffix = reportType === 'clientReport'
+      ? 'client-report'
+      : reportType === 'practitionerReport'
+      ? 'practitioner-report'
+      : 'vet-report';
+
+    // Generate output filename: {surname}_{YYYYMMDD}_{report-type}_v{version}.docx
+    const docxFileName = `${clientSurname.toLowerCase()}_${consultationDate}_${reportSuffix}_v${version}.docx`;
+    const docxFilePath = `${clientFolderPath}\\${docxFileName}`;
+
+    // Run Pandoc with stdin input (markdown content passed directly, no intermediate file)
+    await invoke<string>("run_pandoc_from_stdin", {
+      markdownContent,
+      outputPath: docxFilePath,
+      templatePath: templateFilePath,
+    });
+
+    // Create event tracking the conversion
+    await createEvent({
+      clientId,
+      eventType: "Note",
+      date: new Date().toISOString(),
+      notes: `<h2>${reportType === 'clientReport' ? 'Client Report' : reportType === 'practitionerReport' ? 'Practitioner Report' : 'Vet Report'} Converted to DOCX</h2><p><strong>File:</strong> ${docxFileName}</p><p><strong>Template:</strong> ${templateName}</p><p>Report converted directly from memory to Word document (no intermediate markdown file).</p>`,
     });
 
     return {

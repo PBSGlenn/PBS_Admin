@@ -76,6 +76,7 @@ model Event {
   hostedInvoiceUrl     String?
   transcriptFilePath   String?  // Path to saved consultation transcript (.txt file)
   questionnaireFilePath String? // Path to saved questionnaire file (.json file)
+  processingState      String?  // JSON string storing event processing workflow state (pause/resume)
 
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

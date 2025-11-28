@@ -13,8 +13,9 @@ import { ClientForm } from "../Client/ClientForm";
 import { ClientView } from "../Client/ClientView";
 import { EmailTemplateManager } from "../EmailTemplateManager/EmailTemplateManager";
 import { PromptTemplateManager } from "../PromptTemplateManager/PromptTemplateManager";
+import { TranscriptionTool } from "../TranscriptionTool/TranscriptionTool";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
-import { Bell, Settings, Mail, FileText } from "lucide-react";
+import { Bell, Settings, Mail, FileText, FileAudio } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -25,11 +26,12 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 
-type View = "dashboard" | "new-client" | "view-client" | "email-templates" | "ai-prompts";
+type View = "dashboard" | "new-client" | "view-client" | "email-templates" | "ai-prompts" | "audio-transcription";
 
 export function Dashboard() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [isTranscriptionToolOpen, setIsTranscriptionToolOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
 
   const handleNewClient = () => {
@@ -177,6 +179,13 @@ export function Dashboard() {
                   <FileText className="h-3.5 w-3.5 mr-2" />
                   AI Prompts
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setIsTranscriptionToolOpen(true)}
+                >
+                  <FileAudio className="h-3.5 w-3.5 mr-2" />
+                  Audio Transcription Tool
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -240,6 +249,12 @@ export function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {/* Audio Transcription Tool Dialog */}
+      <TranscriptionTool
+        isOpen={isTranscriptionToolOpen}
+        onClose={() => setIsTranscriptionToolOpen(false)}
+      />
     </div>
   );
 }

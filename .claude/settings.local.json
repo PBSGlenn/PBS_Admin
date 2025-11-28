@@ -19,7 +19,13 @@
       "Bash(cmd /c \"taskkill /PID 7524 /F\")",
       "Bash(cat:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add automatic Jotform questionnaire sync with file downloads\n\nImplemented automatic questionnaire sync that polls Jotform API, downloads\nsubmitted forms (JSON + PDF), and saves them to client folders.\n\nBackend Changes:\n- Added Tauri commands for file operations (write_text_file, write_binary_file)\n- Commands write JSON data and download PDFs to client folders\n- Proper error handling and path validation\n\nService Layer:\n- Created jotformService.ts with full Jotform API integration\n- Fetches submissions from both Dog and Cat questionnaire forms (last 30 days)\n- Parses submission data (QID-based field extraction)\n- Client matching by email (primary) or mobile (fallback)\n- Downloads JSON data (structured submission) and PDF (formatted questionnaire)\n- Saves files to client folder with timestamped filenames\n- Creates \"Questionnaire Received\" event with submission details\n- Validates client has folder before downloading\n\nUI Components:\n- Created QuestionnaireSync.tsx dashboard component\n- Shows unprocessed submissions with client/pet info\n- Manual \"Process X Submissions\" button (similar to booking sync)\n- Real-time sync results with success/failure indicators\n- Shows which files were downloaded (JSON, PDF)\n- Compact styling matching dashboard design\n\nConfiguration:\n- Added Jotform API key and form IDs to .env\n- VITE_JOTFORM_API_KEY\n- VITE_JOTFORM_DOG_FORM_ID\n- VITE_JOTFORM_CAT_FORM_ID\n\nForm Field Mapping (both forms use same QIDs):\n- QID 3: Full Name (first/last)\n- QID 6: Email (client matching)\n- QID 32: Phone Number (client matching fallback)\n- QID 8: Pet Name\n- QID 19: Breed\n- QID 23: Age\n- QID 22: Sex\n- QID 68: Address\n- QID 69: Weight\n\nError Handling:\n- Skips submissions if client not found (doesn''t create client automatically)\n- Skips if client folder not created yet\n- Continues processing other submissions if one fails\n- Shows specific error messages in UI\n\nFuture Enhancements:\n- Track processed submission IDs to avoid re-processing\n- Auto-poll on app startup or every N minutes\n- Update pet data from questionnaire (if more detailed)\n- Notification when new questionnaire available\n\n🤖 Generated with Claude Code (https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm run check:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /PID 20024 /F\")",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(npx prisma migrate dev:*)"
     ],
     "deny": [],
     "ask": []

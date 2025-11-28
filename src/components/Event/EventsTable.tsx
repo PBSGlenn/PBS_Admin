@@ -4,18 +4,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
-import { EventForm } from "./EventForm";
+import { Dialog, DialogContent } from "../ui/dialog";
+import { EventFormModal } from "./EventFormModal";
 import { QuestionnaireReconciliation } from "../Client/QuestionnaireReconciliation";
-import { BulkTaskImporter } from "../Task/BulkTaskImporter";
-import { ReportGeneratorDialog } from "./ReportGeneratorDialog";
 import { getEventsByClientId, deleteEvent } from "@/lib/services/eventService";
 import { getClientById } from "@/lib/services/clientService";
-import { getPetsByClientId } from "@/lib/services/petService";
-import type { Event } from "@/lib/types";
-import { Plus, Edit, Trash2, FileCheck, ListChecks, FileText } from "lucide-react";
+import type { Event, EventProcessingState } from "@/lib/types";
+import { Plus, Edit, Trash2, FileCheck } from "lucide-react";
 import { format } from "date-fns";
 
 export interface EventsTableProps {
@@ -28,8 +26,6 @@ export function EventsTable({ clientId }: EventsTableProps) {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [reconciliationEvent, setReconciliationEvent] = useState<Event | null>(null);
   const [questionnaireFilePath, setQuestionnaireFilePath] = useState<string>("");
-  const [importTasksEvent, setImportTasksEvent] = useState<Event | null>(null);
-  const [reportGeneratorEvent, setReportGeneratorEvent] = useState<Event | null>(null);
 
   // Fetch events for this client
   const { data: events = [], isLoading } = useQuery({
@@ -41,12 +37,6 @@ export function EventsTable({ clientId }: EventsTableProps) {
   const { data: client } = useQuery({
     queryKey: ["client", clientId],
     queryFn: () => getClientById(clientId),
-  });
-
-  // Fetch pets for report generation
-  const { data: pets = [] } = useQuery({
-    queryKey: ["pets", clientId],
-    queryFn: () => getPetsByClientId(clientId),
   });
 
   // Delete mutation
@@ -80,9 +70,15 @@ export function EventsTable({ clientId }: EventsTableProps) {
     return event.eventType === "QuestionnaireReceived";
   };
 
-  // Check if event is a consultation event
-  const isConsultationEvent = (event: Event): boolean => {
-    return event.eventType === "Consultation";
+  // Check if event is in progress (has processing state)
+  const isEventInProgress = (event: Event): boolean => {
+    if (!event.processingState) return false;
+    try {
+      const state = JSON.parse(event.processingState) as EventProcessingState;
+      return state.status === 'draft' || state.status === 'in_progress';
+    } catch {
+      return false;
+    }
   };
 
   // Extract submission ID from questionnaire event notes
@@ -200,9 +196,19 @@ export function EventsTable({ clientId }: EventsTableProps) {
                 </TableHeader>
                 <TableBody>
                   {events.map((event) => (
-                    <TableRow key={event.eventId} className="h-10">
+                    <TableRow
+                      key={event.eventId}
+                      className={`h-10 ${isEventInProgress(event) ? 'bg-amber-50 hover:bg-amber-100' : ''}`}
+                    >
                       <TableCell className="text-[11px] font-medium py-1.5">
-                        {event.eventType}
+                        <div className="flex items-center gap-2">
+                          <span>{event.eventType}</span>
+                          {isEventInProgress(event) && (
+                            <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-amber-100 text-amber-800 border-amber-300">
+                              In Progress
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-[11px] py-1.5">{formatDateTime(event.date)}</TableCell>
                       <TableCell className="text-[11px] text-muted-foreground py-1.5">
@@ -221,30 +227,6 @@ export function EventsTable({ clientId }: EventsTableProps) {
                               <FileCheck className="h-3.5 w-3.5" />
                               <span className="sr-only">Review Questionnaire</span>
                             </Button>
-                          )}
-                          {isConsultationEvent(event) && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setReportGeneratorEvent(event)}
-                                className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
-                                title="Generate Report"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                                <span className="sr-only">Generate Report</span>
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setImportTasksEvent(event)}
-                                className="h-7 w-7 p-0 text-green-600 hover:text-green-700"
-                                title="Import Tasks from AI"
-                              >
-                                <ListChecks className="h-3.5 w-3.5" />
-                                <span className="sr-only">Import Tasks</span>
-                              </Button>
-                            </>
                           )}
                           <Button
                             variant="ghost"
@@ -276,40 +258,20 @@ export function EventsTable({ clientId }: EventsTableProps) {
         </CardContent>
       </Card>
 
-      {/* Add Event Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Event</DialogTitle>
-            <DialogDescription>
-              Enter the details for the new event below.
-            </DialogDescription>
-          </DialogHeader>
-          <EventForm
-            clientId={clientId}
-            onClose={() => setIsAddDialogOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
+      {/* Add Event Modal */}
+      <EventFormModal
+        clientId={clientId}
+        isOpen={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
+      />
 
-      {/* Edit Event Dialog */}
-      <Dialog open={!!editingEvent} onOpenChange={(open) => !open && handleCloseEditDialog()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Event</DialogTitle>
-            <DialogDescription>
-              Update the details for this {editingEvent?.eventType} event.
-            </DialogDescription>
-          </DialogHeader>
-          {editingEvent && (
-            <EventForm
-              clientId={clientId}
-              event={editingEvent}
-              onClose={handleCloseEditDialog}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Edit Event Modal */}
+      <EventFormModal
+        clientId={clientId}
+        event={editingEvent}
+        isOpen={!!editingEvent}
+        onClose={handleCloseEditDialog}
+      />
 
       {/* Questionnaire Reconciliation Dialog */}
       <Dialog open={!!reconciliationEvent} onOpenChange={(open) => !open && handleCloseReconciliation()}>
@@ -324,35 +286,6 @@ export function EventsTable({ clientId }: EventsTableProps) {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Bulk Task Importer Dialog */}
-      {importTasksEvent && client && (
-        <BulkTaskImporter
-          isOpen={!!importTasksEvent}
-          onClose={() => setImportTasksEvent(null)}
-          clientId={clientId}
-          eventId={importTasksEvent.eventId}
-          consultationDate={importTasksEvent.date}
-          clientName={`${client.firstName} ${client.lastName}`}
-        />
-      )}
-
-      {/* Report Generator Dialog */}
-      {reportGeneratorEvent && client && pets.length > 0 && (
-        <ReportGeneratorDialog
-          isOpen={!!reportGeneratorEvent}
-          onClose={() => setReportGeneratorEvent(null)}
-          clientId={clientId}
-          clientName={`${client.firstName} ${client.lastName}`}
-          clientSurname={client.lastName}
-          clientEmail={client.email}
-          eventId={reportGeneratorEvent.eventId}
-          eventDate={reportGeneratorEvent.date}
-          petName={pets[0].name}
-          petSpecies={pets[0].species}
-          clientFolderPath={client.folderPath ?? undefined}
-        />
-      )}
     </>
   );
 }

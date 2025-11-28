@@ -13,6 +13,7 @@ import {
   reconcileQuestionnaire,
   applyClientUpdates,
   applyPetUpdates,
+  createPetFromQuestionnaire,
   type ReconciliationResult,
   type FieldComparison,
 } from '@/lib/services/questionnaireReconciliationService';
@@ -104,13 +105,23 @@ export function QuestionnaireReconciliation({
         );
       }
 
-      // Apply pet updates if any selected and pet exists
-      if (selectedPetFields.length > 0 && reconciliation.pet.record) {
-        await applyPetUpdates(
-          reconciliation.pet.record,
-          selectedPetFields,
-          reconciliation.questionnaireData
-        );
+      // Apply pet updates if any selected
+      if (selectedPetFields.length > 0) {
+        if (reconciliation.pet.record) {
+          // Pet exists - update it
+          await applyPetUpdates(
+            reconciliation.pet.record,
+            selectedPetFields,
+            reconciliation.questionnaireData
+          );
+        } else {
+          // Pet doesn't exist - create it
+          await createPetFromQuestionnaire(
+            clientId,
+            selectedPetFields,
+            reconciliation.questionnaireData
+          );
+        }
       }
 
       onUpdateComplete();

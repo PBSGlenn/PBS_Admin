@@ -7,8 +7,8 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
-import { generateConsultationReport, estimateTokenCost } from "@/lib/services/reportGenerationService";
-import { createEvent, getReportCreationEvents, deleteEvent, getReportSentEvents } from "@/lib/services/eventService";
+import { generateConsultationReports, estimateReportCost } from "@/lib/services/multiReportGenerationService";
+import { createEvent, getReportCreationEvents, deleteEvent, getReportSentEvents, updateEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
 import { convertReportToPdf } from "@/lib/services/pdfConversionService";
@@ -33,6 +33,7 @@ export interface ReportGeneratorDialogProps {
   petName: string;
   petSpecies: string;
   clientFolderPath?: string;
+  questionnaireFilePath?: string | null;
 }
 
 export function ReportGeneratorDialog({
@@ -47,11 +48,14 @@ export function ReportGeneratorDialog({
   petName,
   petSpecies,
   clientFolderPath,
+  questionnaireFilePath,
 }: ReportGeneratorDialogProps) {
   const queryClient = useQueryClient();
 
   // State
   const [transcript, setTranscript] = useState("");
+  const [questionnaireData, setQuestionnaireData] = useState<string | null>(null);
+  const [isLoadingQuestionnaire, setIsLoadingQuestionnaire] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,8 +76,12 @@ export function ReportGeneratorDialog({
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
   const dateForFilename = format(new Date(eventDate), "yyyyMMdd");
 
-  // Estimate cost
-  const costEstimate = estimateTokenCost(transcript.length);
+  // Estimate cost for all 3 reports (comprehensive, abridged, client)
+  const costEstimate = estimateReportCost(
+    transcript.length,
+    questionnaireData?.length || 0,
+    ["comprehensive", "abridged", "client"]
+  );
 
   // Detect next version number
   const getNextVersionNumber = async (): Promise<number> => {
@@ -167,13 +175,41 @@ export function ReportGeneratorDialog({
     }
   };
 
+  // Load questionnaire data if available
+  const loadQuestionnaireData = async () => {
+    if (!questionnaireFilePath) {
+      setQuestionnaireData(null);
+      return;
+    }
+
+    try {
+      setIsLoadingQuestionnaire(true);
+      const content = await readTextFile(questionnaireFilePath);
+      const parsed = JSON.parse(content);
+
+      // Format the questionnaire data for AI consumption
+      // Include all answers in a readable format
+      const formattedQuestionnaire = JSON.stringify(parsed.allAnswers, null, 2);
+      setQuestionnaireData(formattedQuestionnaire);
+
+      console.log('[ReportGenerator] Loaded questionnaire:', parsed.submissionId);
+    } catch (error) {
+      console.error('[ReportGenerator] Failed to load questionnaire:', error);
+      setQuestionnaireData(null);
+    } finally {
+      setIsLoadingQuestionnaire(false);
+    }
+  };
+
   // Check for existing report when dialog opens
   useEffect(() => {
     if (isOpen) {
       checkForExistingReport();
+      loadQuestionnaireData();
     } else {
       // Reset state when dialog closes
       setTranscript("");
+      setQuestionnaireData(null);
       setSavedFilePath(null);
       setSavedFileName(null);
       setError(null);
@@ -209,7 +245,7 @@ export function ReportGeneratorDialog({
     }
   };
 
-  // Generate report using Claude API and save immediately
+  // Generate all 3 reports using Claude API and save immediately
   const handleGenerateAndSave = async () => {
     if (!transcript.trim()) {
       setError("Please provide a consultation transcript");
@@ -226,52 +262,119 @@ export function ReportGeneratorDialog({
     setError(null);
 
     try {
-      // Generate report
-      const result = await generateConsultationReport({
-        clientName,
-        petName,
-        petSpecies,
-        consultationDate: formattedDate,
-        transcript,
-      });
+      // Generate all 3 reports in parallel
+      const results = await generateConsultationReports(
+        {
+          clientName,
+          petName,
+          petSpecies,
+          consultationDate: formattedDate,
+          transcript,
+          questionnaire: questionnaireData || undefined,
+        },
+        {
+          generateComprehensive: true,
+          generateAbridged: true,
+          generateClient: true,
+          generateVet: false, // On-demand only
+        }
+      );
 
-      // Detect next version number
-      const version = await getNextVersionNumber();
+      if (results.errors.length > 0) {
+        setError(`Some reports failed to generate:\n${results.errors.join('\n')}`);
+      }
 
-      // Generate filename: {surname}_{YYYYMMDD}_consultation-report_v{version}.md
-      const reportFileName = `${clientSurname.toLowerCase()}_${dateForFilename}_consultation-report_v${version}.md`;
-      const reportFilePath = `${clientFolderPath}\\${reportFileName}`;
+      const completedReports: string[] = [];
 
-      // Save report as markdown file
-      await invoke("write_text_file", {
-        filePath: reportFilePath,
-        content: result.report,
-      });
+      // 1. Save Comprehensive Clinical Report as DOCX
+      if (results.comprehensiveReport) {
+        const comprehensiveFileName = `${clientSurname.toLowerCase()}_${dateForFilename}_comprehensive-clinical.docx`;
+        const comprehensiveFilePath = `${clientFolderPath}\\${comprehensiveFileName}`;
 
-      setSavedFilePath(reportFilePath);
-      setSavedFileName(reportFileName);
-      setSavedVersion(version);
+        // Save as markdown first for Pandoc conversion
+        const tempMdPath = comprehensiveFilePath.replace('.docx', '.md');
+        await invoke("write_text_file", {
+          filePath: tempMdPath,
+          content: results.comprehensiveReport.content,
+        });
 
-      // Create "Report Generated" event
+        // Auto-convert to DOCX
+        const conversionResult = await convertReportToDocx({
+          mdFilePath: tempMdPath,
+          clientId,
+          clientSurname,
+          consultationDate: dateForFilename,
+          version: 1,
+          clientFolderPath,
+        });
+
+        if (conversionResult.success) {
+          completedReports.push(`✓ Comprehensive Clinical Report (DOCX): ${conversionResult.docxFileName}`);
+        }
+      }
+
+      // 2. Save Abridged Clinical Notes to Event.notes
+      if (results.abridgedNotes) {
+        // Update the consultation event with abridged notes
+        await updateEvent(eventId, {
+          notes: results.abridgedNotes.content,
+        });
+        completedReports.push(`✓ Abridged Clinical Notes (saved to Event notes)`);
+      }
+
+      // 3. Save Client Report as MD (for review/editing)
+      if (results.clientReport) {
+        const version = await getNextVersionNumber();
+        const clientReportFileName = `${clientSurname.toLowerCase()}_${dateForFilename}_client-report_v${version}.md`;
+        const clientReportFilePath = `${clientFolderPath}\\${clientReportFileName}`;
+
+        await invoke("write_text_file", {
+          filePath: clientReportFilePath,
+          content: results.clientReport.content,
+        });
+
+        setSavedFilePath(clientReportFilePath);
+        setSavedFileName(clientReportFileName);
+        setSavedVersion(version);
+
+        completedReports.push(`✓ Client Report (MD): ${clientReportFileName}`);
+      }
+
+      // Create "Multi-Report Generated" event
+      const reportSummary = completedReports.join('\n');
       await createEvent({
         clientId,
         eventType: "Note",
         date: new Date().toISOString(),
-        notes: `<h2>Consultation Report Generated</h2><p><strong>File:</strong> ${reportFileName}</p><p><strong>Version:</strong> ${version}</p><p><strong>Consultation Date:</strong> ${formattedDate}</p><p>Report generated using AI and saved to client folder.</p>`,
+        notes: `<h2>Consultation Reports Generated</h2>
+<p><strong>Consultation Date:</strong> ${formattedDate}</p>
+<p><strong>Reports Created:</strong></p>
+<ul>
+${completedReports.map(r => `<li>${r}</li>`).join('\n')}
+</ul>
+<p><strong>Token Usage:</strong></p>
+<ul>
+${results.comprehensiveReport ? `<li>Comprehensive: ${results.comprehensiveReport.tokensUsed.total.toLocaleString()} tokens</li>` : ''}
+${results.abridgedNotes ? `<li>Abridged: ${results.abridgedNotes.tokensUsed.total.toLocaleString()} tokens</li>` : ''}
+${results.clientReport ? `<li>Client Report: ${results.clientReport.tokensUsed.total.toLocaleString()} tokens</li>` : ''}
+</ul>
+<p>Reports generated using Claude Sonnet 4.5 AI.</p>`,
       });
 
-      // Auto-create review task (due 24 hours from now)
-      const dueDate = dateToISO(addDays(new Date(), 1));
-      await createTask({
-        clientId,
-        eventId,
-        description: `Review and edit consultation report for ${clientName}`,
-        dueDate,
-        status: "Pending",
-        priority: 2,
-        automatedAction: "",
-        triggeredBy: "AI Report Generation",
-      });
+      // Auto-create review task for client report (due 24 hours from now)
+      if (results.clientReport) {
+        const dueDate = dateToISO(addDays(new Date(), 1));
+        await createTask({
+          clientId,
+          eventId,
+          description: `Review and edit client report for ${clientName}`,
+          dueDate,
+          status: "Pending",
+          priority: 2,
+          automatedAction: "",
+          triggeredBy: "AI Report Generation",
+        });
+      }
 
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
@@ -279,8 +382,8 @@ export function ReportGeneratorDialog({
       queryClient.invalidateQueries({ queryKey: ["tasks", clientId] });
       queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
     } catch (err) {
-      console.error("Failed to generate report:", err);
-      setError(`Failed to generate report: ${err instanceof Error ? err.message : "Unknown error"}`);
+      console.error("Failed to generate reports:", err);
+      setError(`Failed to generate reports: ${err instanceof Error ? err.message : "Unknown error"}`);
       setSavedFilePath(null);
       setSavedFileName(null);
     } finally {
@@ -596,12 +699,21 @@ ${timeline}
                 className="flex-1 font-mono text-[11px] resize-none"
               />
 
+              {questionnaireData && (
+                <div className="flex items-center gap-2 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded-md text-[10px]">
+                  <CheckCircle2 className="h-3 w-3 text-blue-600 flex-shrink-0" />
+                  <span className="text-blue-700">
+                    Questionnaire data loaded ({questionnaireData.length.toLocaleString()} characters)
+                  </span>
+                </div>
+              )}
+
               {transcript && (
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{transcript.length.toLocaleString()} characters</span>
                   <span>
-                    Est. ~{costEstimate.estimatedTokens.toLocaleString()} tokens
-                    (${costEstimate.estimatedCostUSD.toFixed(4)} USD)
+                    Est. ~{costEstimate.estimatedInputTokens.toLocaleString()} + {costEstimate.estimatedOutputTokens.toLocaleString()} tokens
+                    (${costEstimate.estimatedCostUSD.toFixed(4)} USD for 3 reports)
                   </span>
                 </div>
               )}

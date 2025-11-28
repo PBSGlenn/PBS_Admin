@@ -12,19 +12,32 @@ import { createEvent, updateEvent } from "@/lib/services/eventService";
 import { onEventCreated, onEventUpdated } from "@/lib/automation/engine";
 import { EVENT_TYPES } from "@/lib/types";
 import type { Event, EventInput } from "@/lib/types";
-import { Save, X } from "lucide-react";
+import { Save, X, Check } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 export interface EventFormProps {
   clientId: number;
   event?: Event | null;
   onClose: () => void;
   onSave?: (event: Event) => void;
+  hideNotes?: boolean;
+  onFormDataChange?: (formData: { eventType: string, date: string, notes: string }) => void;
 }
 
-export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) {
+export function EventForm({
+  clientId,
+  event,
+  onClose,
+  onSave,
+  hideNotes = false,
+  onFormDataChange
+}: EventFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!event;
+
+  // Track newly created event
+  const [createdEvent, setCreatedEvent] = useState<Event | null>(null);
 
   // Format date for datetime-local input (YYYY-MM-DDTHH:mm)
   const formatDateTimeLocal = (dateString: string | undefined) => {
@@ -41,12 +54,19 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
   // Form state
   const [formData, setFormData] = useState({
     eventType: event?.eventType || "",
-    date: formatDateTimeLocal(event?.date),
+    date: formatDateTimeLocal(event?.date) || format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     notes: event?.notes || "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isFormValid, setIsFormValid] = useState(false);
+
+  // Sync notes when event changes (e.g., when Clinical Notes are generated)
+  useEffect(() => {
+    if (event?.notes && event.notes !== formData.notes) {
+      setFormData(prev => ({ ...prev, notes: event.notes || "" }));
+    }
+  }, [event?.notes]);
 
   // Check if all required fields are valid
   const checkFormValidity = () => {
@@ -60,6 +80,13 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
     setIsFormValid(checkFormValidity());
   }, [formData]);
 
+  // Notify parent of form data changes
+  useEffect(() => {
+    if (onFormDataChange) {
+      onFormDataChange(formData);
+    }
+  }, [formData, onFormDataChange]);
+
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (input: EventInput) => {
@@ -72,11 +99,26 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
       queryClient.invalidateQueries({ queryKey: ["tasks", clientId] }); // Invalidate tasks too (automation may create tasks)
+
+      // Track created event and show success message
+      setCreatedEvent(savedEvent);
+      toast.success(`${formData.eventType} event created successfully`, {
+        description: formData.eventType === 'Consultation' ? 'You can now generate reports' : undefined,
+        duration: 3000
+      });
+
       if (onSave) onSave(savedEvent);
-      onClose();
+
+      // Keep modal open for Consultation events (user needs to generate reports)
+      // Close modal for all other event types
+      if (formData.eventType !== 'Consultation') {
+        onClose();
+      }
     },
     onError: (error) => {
-      alert(`Failed to create event: ${error}`);
+      toast.error('Failed to create event', {
+        description: error instanceof Error ? error.message : String(error)
+      });
     },
   });
 
@@ -92,11 +134,22 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
       queryClient.invalidateQueries({ queryKey: ["tasks", clientId] }); // Invalidate tasks too (automation may create tasks)
+
+      // Show success message
+      toast.success(`${formData.eventType} event updated successfully`);
+
       if (onSave) onSave(savedEvent);
-      onClose();
+
+      // Keep modal open for Consultation events (user needs to generate reports)
+      // Close modal for all other event types
+      if (formData.eventType !== 'Consultation') {
+        onClose();
+      }
     },
     onError: (error) => {
-      alert(`Failed to update event: ${error}`);
+      toast.error('Failed to update event', {
+        description: error instanceof Error ? error.message : String(error)
+      });
     },
   });
 
@@ -203,15 +256,17 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
           )}
         </div>
 
-        {/* Notes */}
-        <div className="space-y-1.5">
-          <Label htmlFor="notes" className="text-xs">Notes</Label>
-          <RichTextEditor
-            content={formData.notes}
-            onChange={(content) => handleChange("notes", content)}
-            placeholder="Additional information about this event..."
-          />
-        </div>
+        {/* Notes - Hidden when hideNotes is true (shown in event-specific panel) */}
+        {!hideNotes && (
+          <div className="space-y-1.5">
+            <Label htmlFor="notes" className="text-xs">Notes</Label>
+            <RichTextEditor
+              content={formData.notes}
+              onChange={(content) => handleChange("notes", content)}
+              placeholder="Additional information about this event..."
+            />
+          </div>
+        )}
       </div>
 
       {/* Form Actions */}
@@ -233,8 +288,22 @@ export function EventForm({ clientId, event, onClose, onSave }: EventFormProps) 
           size="sm"
           className="h-7 text-xs"
         >
-          <Save className="h-3 w-3 mr-1" />
-          {isPending ? (isEditing ? "Updating..." : "Creating...") : (isEditing ? "Update Event" : "Create Event")}
+          {isPending ? (
+            <>
+              <Save className="h-3 w-3 mr-1" />
+              {isEditing || createdEvent ? "Updating..." : "Creating..."}
+            </>
+          ) : createdEvent ? (
+            <>
+              <Check className="h-3 w-3 mr-1" />
+              Event Created - Save Changes
+            </>
+          ) : (
+            <>
+              <Save className="h-3 w-3 mr-1" />
+              {isEditing ? "Update Event" : "Create Event"}
+            </>
+          )}
         </Button>
       </div>
     </form>

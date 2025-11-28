@@ -41,6 +41,8 @@ export interface ReportGenerationResult {
 export interface MultiReportResult {
   comprehensiveReport?: ReportGenerationResult;
   abridgedNotes?: ReportGenerationResult;
+  clientReport?: ReportGenerationResult;
+  practitionerReport?: ReportGenerationResult;
   vetReport?: ReportGenerationResult;
   errors: string[];
 }
@@ -138,6 +140,16 @@ export async function generateAbridgedClinicalNotes(
 }
 
 /**
+ * Generate client report (client-facing consultation summary, markdown)
+ * Saved as DOCX/PDF in client folder, sent to client via email
+ */
+export async function generateClientReport(
+  params: ReportGenerationParams
+): Promise<ReportGenerationResult> {
+  return generateSingleReport("client-report", params);
+}
+
+/**
  * Generate veterinary report (3/4-1 page, markdown)
  * Saved as DOCX in client folder, sent to vet
  */
@@ -159,10 +171,14 @@ export async function generateConsultationReports(
   options: {
     generateComprehensive?: boolean;
     generateAbridged?: boolean;
+    generateClient?: boolean;
+    generatePractitioner?: boolean;
     generateVet?: boolean;
   } = {
     generateComprehensive: true,
     generateAbridged: true,
+    generateClient: true,
+    generatePractitioner: false,
     generateVet: false
   }
 ): Promise<MultiReportResult> {
@@ -192,6 +208,28 @@ export async function generateConsultationReports(
     );
   }
 
+  if (options.generateClient) {
+    promises.push(
+      generateClientReport(params)
+        .then(result => ({ type: "client", result }))
+        .catch(error => {
+          errors.push(`Client Report: ${error.message}`);
+          return { type: "client", result: null as any };
+        })
+    );
+  }
+
+  if (options.generatePractitioner) {
+    promises.push(
+      generateComprehensiveClinicalReport(params)
+        .then(result => ({ type: "practitioner", result }))
+        .catch(error => {
+          errors.push(`Practitioner Report: ${error.message}`);
+          return { type: "practitioner", result: null as any };
+        })
+    );
+  }
+
   if (options.generateVet) {
     promises.push(
       generateVeterinaryReport(params)
@@ -215,6 +253,10 @@ export async function generateConsultationReports(
         multiResult.comprehensiveReport = result;
       } else if (type === "abridged") {
         multiResult.abridgedNotes = result;
+      } else if (type === "client") {
+        multiResult.clientReport = result;
+      } else if (type === "practitioner") {
+        multiResult.practitionerReport = result;
       } else if (type === "vet") {
         multiResult.vetReport = result;
       }
@@ -231,7 +273,7 @@ export async function generateConsultationReports(
 export function estimateReportCost(
   transcriptLength: number,
   questionnaireLength: number = 0,
-  reportTypes: ("comprehensive" | "abridged" | "vet")[] = ["comprehensive", "abridged"]
+  reportTypes: ("comprehensive" | "abridged" | "client" | "vet")[] = ["comprehensive", "abridged", "client"]
 ): {
   estimatedInputTokens: number;
   estimatedOutputTokens: number;
@@ -241,7 +283,7 @@ export function estimateReportCost(
   // - 1 token ≈ 4 characters
   // - System prompt: ~3000-4000 tokens per template
   // - User prompt: transcript + questionnaire + formatting
-  // - Output: varies by template (comprehensive: ~3000-5000, abridged: ~1000-2000, vet: ~800-1200)
+  // - Output: varies by template (comprehensive: ~3000-5000, abridged: ~1000-2000, client: ~2500-4000, vet: ~800-1200)
 
   const transcriptTokens = Math.ceil(transcriptLength / 4);
   const questionnaireTokens = Math.ceil(questionnaireLength / 4);
@@ -254,6 +296,7 @@ export function estimateReportCost(
     const template = getPromptTemplate(
       type === "comprehensive" ? "comprehensive-clinical" :
       type === "abridged" ? "abridged-notes" :
+      type === "client" ? "client-report" :
       "vet-report"
     );
 
