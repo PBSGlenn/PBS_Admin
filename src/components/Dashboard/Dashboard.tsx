@@ -1,7 +1,7 @@
 // PBS Admin - Dashboard Screen
 // Two-pane layout: Clients list (left) + Overview (right)
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ClientsList } from "./ClientsList";
@@ -14,8 +14,11 @@ import { ClientView } from "../Client/ClientView";
 import { EmailTemplateManager } from "../EmailTemplateManager/EmailTemplateManager";
 import { PromptTemplateManager } from "../PromptTemplateManager/PromptTemplateManager";
 import { TranscriptionTool } from "../TranscriptionTool/TranscriptionTool";
+import { MedicationUpdateChecker } from "../MedicationUpdateChecker/MedicationUpdateChecker";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
-import { Bell, Settings, Mail, FileText, FileAudio } from "lucide-react";
+import { isMonthlyUpdateDue } from "@/lib/services/medicationUpdateService";
+import { toast } from "sonner";
+import { Bell, Settings, Mail, FileText, FileAudio, Pill } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -32,7 +35,28 @@ export function Dashboard() {
   const [currentView, setCurrentView] = useState<View>("dashboard");
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [isTranscriptionToolOpen, setIsTranscriptionToolOpen] = useState(false);
+  const [isMedicationUpdateCheckerOpen, setIsMedicationUpdateCheckerOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
+
+  // Check for monthly medication updates on mount
+  useEffect(() => {
+    // Only check when on dashboard view
+    if (currentView === "dashboard") {
+      const isUpdateDue = isMonthlyUpdateDue();
+
+      if (isUpdateDue) {
+        // Show notification with action button
+        toast.info('Medication database update check is due', {
+          description: 'Check for brand name updates from Australian pharmaceutical databases',
+          duration: 10000, // 10 seconds
+          action: {
+            label: 'Check Now',
+            onClick: () => setIsMedicationUpdateCheckerOpen(true),
+          },
+        });
+      }
+    }
+  }, [currentView]);
 
   const handleNewClient = () => {
     setSelectedClient(null);
@@ -181,6 +205,13 @@ export function Dashboard() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-xs cursor-pointer"
+                  onClick={() => setIsMedicationUpdateCheckerOpen(true)}
+                >
+                  <Pill className="h-3.5 w-3.5 mr-2" />
+                  Medication Updates
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
                   onClick={() => setIsTranscriptionToolOpen(true)}
                 >
                   <FileAudio className="h-3.5 w-3.5 mr-2" />
@@ -254,6 +285,12 @@ export function Dashboard() {
       <TranscriptionTool
         isOpen={isTranscriptionToolOpen}
         onClose={() => setIsTranscriptionToolOpen(false)}
+      />
+
+      {/* Medication Update Checker Dialog */}
+      <MedicationUpdateChecker
+        isOpen={isMedicationUpdateCheckerOpen}
+        onClose={() => setIsMedicationUpdateCheckerOpen(false)}
       />
     </div>
   );
