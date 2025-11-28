@@ -462,6 +462,157 @@ async fn transcribe_audio(file_path: String, language: String) -> Result<Transcr
     Ok(TranscribeResult { text, duration })
 }
 
+#[derive(Debug, Deserialize)]
+struct PrescriptionData {
+    client_name: String,
+    pet_name: String,
+    pet_species: String,
+    pet_weight: String,
+    medication_name: String,
+    brand_names: String,
+    dose_amount: String,
+    frequency: String,
+    repeats: String,
+    special_instructions: String,
+    prescription_date: String,
+    schedule_class: String,
+}
+
+#[tauri::command]
+fn generate_prescription_docx(
+    template_name: String,
+    output_path: String,
+    prescription_data: PrescriptionData,
+) -> Result<String, String> {
+    use std::process::Stdio;
+
+    // Get templates folder path
+    let templates_path = match dirs::document_dir() {
+        Some(docs_path) => {
+            docs_path.join("PBS_Admin").join("Templates")
+        },
+        None => return Err("Could not find Documents folder".to_string()),
+    };
+
+    // Build template file path
+    let template_file_path = templates_path.join(&template_name);
+
+    // Create prescription markdown content
+    let markdown_content = format!(
+r#"---
+title: "Veterinary Prescription"
+---
+
+# VETERINARY PRESCRIPTION
+## Pet Behaviour Services
+
+**Date:** {}
+
+---
+
+## CLIENT DETAILS
+
+**Client:** {}
+**Pet:** {} ({}, {})
+
+---
+
+## ℞ PRESCRIPTION
+
+**Medication:** {}
+**Brand Names:** {}
+
+**Dose:** {}
+**Frequency:** {}
+**Repeats:** {}
+
+**Schedule Classification:** {}
+
+## SPECIAL INSTRUCTIONS
+
+{}
+
+---
+
+## PRESCRIBER DETAILS
+
+**Signature:** _______________________________
+
+**Dr. [Name]**
+**Veterinary Registration #:** [Number]
+**Date:** {}
+
+---
+
+### IMPORTANT NOTES
+- This prescription is valid for 6 months from the date of issue
+- Controlled substances (S8) require special authorization
+- Follow all veterinary advice regarding this medication
+- Contact the practice if any adverse effects occur
+"#,
+        prescription_data.prescription_date,
+        prescription_data.client_name,
+        prescription_data.pet_name,
+        prescription_data.pet_species,
+        prescription_data.pet_weight,
+        prescription_data.medication_name,
+        prescription_data.brand_names,
+        prescription_data.dose_amount,
+        prescription_data.frequency,
+        prescription_data.repeats,
+        prescription_data.schedule_class,
+        if prescription_data.special_instructions.is_empty() {
+            "None".to_string()
+        } else {
+            prescription_data.special_instructions.clone()
+        },
+        prescription_data.prescription_date,
+    );
+
+    // Build pandoc command with stdin input
+    let mut cmd = Command::new("pandoc");
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    // Read from stdin
+    cmd.arg("-");
+
+    // Add output file
+    cmd.arg("-o");
+    cmd.arg(&output_path);
+
+    // Add reference document (template) if it exists
+    if template_file_path.exists() {
+        cmd.arg("--reference-doc");
+        cmd.arg(template_file_path.to_string_lossy().to_string());
+    } else {
+        println!("Warning: Template file not found: {:?}. Using default Pandoc styling.", template_file_path);
+    }
+
+    // Spawn process
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn pandoc: {}. Is pandoc installed?", e))?;
+
+    // Write markdown content to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(markdown_content.as_bytes())
+            .map_err(|e| format!("Failed to write to pandoc stdin: {}", e))?;
+    }
+
+    // Wait for process to complete
+    let output = child.wait_with_output()
+        .map_err(|e| format!("Failed to wait for pandoc: {}", e))?;
+
+    // Check if command succeeded
+    if output.status.success() {
+        Ok(output_path.clone())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Pandoc conversion failed: {}", error_msg))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -481,6 +632,7 @@ pub fn run() {
             run_pandoc,
             run_pandoc_from_stdin,
             convert_docx_to_pdf,
+            generate_prescription_docx,
             save_temp_audio_file,
             transcribe_audio
         ])

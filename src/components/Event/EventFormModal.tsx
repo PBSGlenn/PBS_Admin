@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EventForm } from "./EventForm";
 import { ConsultationEventPanel } from "./ConsultationEventPanel";
+import { PrescriptionEventPanel } from "./PrescriptionEventPanel";
 import { getClientById } from "@/lib/services/clientService";
 import type { Event } from "@/lib/types";
 
@@ -87,12 +88,26 @@ export function EventFormModal({
           {/* Right Panel - Event-Specific Controls */}
           <div className="space-y-3 border-l pl-6">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              {eventType === "Consultation" ? "Consultation Processing" : "Event-Specific Options"}
+              {eventType === "Consultation"
+                ? "Consultation Processing"
+                : eventType === "Prescription"
+                ? "Prescription Details"
+                : "Event-Specific Options"}
             </h3>
 
             {/* Conditional Event-Specific Panels */}
             {eventType === "Consultation" ? (
               <ConsultationEventPanel
+                clientId={clientId}
+                event={currentEvent}
+                formData={formData}
+                clientFolderPath={client?.folderPath ?? undefined}
+                clientName={client ? `${client.firstName} ${client.lastName}` : undefined}
+                onSave={handleEventSave}
+                onClose={onClose}
+              />
+            ) : eventType === "Prescription" ? (
+              <PrescriptionEventPanel
                 clientId={clientId}
                 event={currentEvent}
                 formData={formData}
