@@ -132,6 +132,7 @@ export const EVENT_TYPES = [
   "FollowUp",
   "QuestionnaireReceived",
   "ReportSent",
+  "Prescription",
   "Note",
 ] as const;
 
