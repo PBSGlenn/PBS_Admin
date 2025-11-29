@@ -21,6 +21,8 @@ interface PrescriptionData {
   petName: string;
   petSpecies: string;
   medicationId: string;
+  formulation: string; // e.g., "Tablet", "Capsule", "Liquid"
+  doseConcentration: string; // e.g., "20mg per tablet", "2mg/ml"
   doseAmount: string; // e.g., "20" (mg)
   frequency: string; // e.g., "twice_daily"
   repeats: string; // e.g., "5"
@@ -43,6 +45,8 @@ export function PrescriptionEventPanel({
     petName: '',
     petSpecies: '',
     medicationId: '',
+    formulation: 'Tablet',
+    doseConcentration: '',
     doseAmount: '',
     frequency: 'twice_daily',
     repeats: '5',
@@ -126,6 +130,8 @@ export function PrescriptionEventPanel({
           petWeight: prescriptionData.petWeight || "Unknown",
           medicationName: selectedMedication.genericName,
           brandNames: selectedMedication.brandNames.join(", "),
+          formulation: prescriptionData.formulation,
+          doseConcentration: prescriptionData.doseConcentration,
           doseAmount: prescriptionData.doseAmount,
           frequency: frequencyLabel,
           repeats: prescriptionData.repeats,
@@ -185,6 +191,8 @@ export function PrescriptionEventPanel({
 <p><strong>Medication:</strong> ${selectedMedication.genericName} (${selectedMedication.brandNames.join(', ')})</p>
 <p><strong>Category:</strong> ${selectedMedication.category}</p>
 <p><strong>Schedule:</strong> ${selectedMedication.scheduleClass || 'N/A'}</p>
+<p><strong>Formulation:</strong> ${prescriptionData.formulation}</p>
+<p><strong>Dose Concentration:</strong> ${prescriptionData.doseConcentration}</p>
 
 <h3>Dosing</h3>
 <p><strong>Dose:</strong> ${prescriptionData.doseAmount} mg</p>
@@ -259,6 +267,41 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
                 ))}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Formulation Type */}
+        <div className="space-y-1">
+          <Label className="text-[10px]">Formulation</Label>
+          <Select
+            value={prescriptionData.formulation}
+            onValueChange={(value) => setPrescriptionData(prev => ({ ...prev, formulation: value }))}
+          >
+            <SelectTrigger className="h-7 text-[11px]">
+              <SelectValue placeholder="Choose formulation..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Tablet" className="text-[11px]">Tablet</SelectItem>
+              <SelectItem value="Capsule" className="text-[11px]">Capsule</SelectItem>
+              <SelectItem value="Liquid/Solution" className="text-[11px]">Liquid/Solution</SelectItem>
+              <SelectItem value="Suspension" className="text-[11px]">Suspension</SelectItem>
+              <SelectItem value="Chewable Tablet" className="text-[11px]">Chewable Tablet</SelectItem>
+              <SelectItem value="Transdermal Gel" className="text-[11px]">Transdermal Gel</SelectItem>
+              <SelectItem value="Injectable" className="text-[11px]">Injectable</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Dose Concentration */}
+        <div className="space-y-1">
+          <Label className="text-[10px]">Dose Concentration</Label>
+          <Input
+            type="text"
+            placeholder="e.g., 20mg per tablet, 2mg/ml"
+            value={prescriptionData.doseConcentration}
+            onChange={(e) => setPrescriptionData(prev => ({ ...prev, doseConcentration: e.target.value }))}
+            className="h-7 text-[11px]"
+          />
+          <p className="text-[9px] text-muted-foreground">Enter concentration (e.g., "20mg per tablet" or "2mg/ml")</p>
         </div>
 
         {/* Medication Information Display */}
