@@ -470,7 +470,10 @@ struct PrescriptionData {
     pet_weight: String,
     medication_name: String,
     brand_names: String,
-    dose_amount: String,
+    formulation: String,
+    dose_concentration: String,
+    amount_to_dispense: String,
+    dose_rate: String,
     frequency: String,
     repeats: String,
     special_instructions: String,
@@ -480,9 +483,8 @@ struct PrescriptionData {
 
 #[tauri::command]
 fn generate_prescription_docx(
-    template_name: String,
+    template_content: String,
     output_path: String,
-    prescription_data: PrescriptionData,
 ) -> Result<String, String> {
     use std::process::Stdio;
 
@@ -494,80 +496,11 @@ fn generate_prescription_docx(
         None => return Err("Could not find Documents folder".to_string()),
     };
 
-    // Build template file path
-    let template_file_path = templates_path.join(&template_name);
+    // Build letterhead file path (reference document for Pandoc)
+    let letterhead_file_path = templates_path.join("Prescription_Template.docx");
 
-    // Create prescription markdown content
-    let markdown_content = format!(
-r#"---
-title: "Veterinary Prescription"
----
-
-# VETERINARY PRESCRIPTION
-## Pet Behaviour Services
-
-**Date:** {}
-
----
-
-## CLIENT DETAILS
-
-**Client:** {}
-**Pet:** {} ({}, {})
-
----
-
-## ℞ PRESCRIPTION
-
-**Medication:** {}
-**Brand Names:** {}
-
-**Dose:** {}
-**Frequency:** {}
-**Repeats:** {}
-
-**Schedule Classification:** {}
-
-## SPECIAL INSTRUCTIONS
-
-{}
-
----
-
-## PRESCRIBER DETAILS
-
-**Signature:** _______________________________
-
-**Dr. [Name]**
-**Veterinary Registration #:** [Number]
-**Date:** {}
-
----
-
-### IMPORTANT NOTES
-- This prescription is valid for 6 months from the date of issue
-- Controlled substances (S8) require special authorization
-- Follow all veterinary advice regarding this medication
-- Contact the practice if any adverse effects occur
-"#,
-        prescription_data.prescription_date,
-        prescription_data.client_name,
-        prescription_data.pet_name,
-        prescription_data.pet_species,
-        prescription_data.pet_weight,
-        prescription_data.medication_name,
-        prescription_data.brand_names,
-        prescription_data.dose_amount,
-        prescription_data.frequency,
-        prescription_data.repeats,
-        prescription_data.schedule_class,
-        if prescription_data.special_instructions.is_empty() {
-            "None".to_string()
-        } else {
-            prescription_data.special_instructions.clone()
-        },
-        prescription_data.prescription_date,
-    );
+    // Use the processed template content provided from frontend
+    let markdown_content = template_content;
 
     // Build pandoc command with stdin input
     let mut cmd = Command::new("pandoc");
@@ -578,16 +511,23 @@ title: "Veterinary Prescription"
     // Read from stdin
     cmd.arg("-");
 
+    // Use hard_line_breaks extension to preserve all newlines
+    cmd.arg("-f");
+    cmd.arg("markdown+hard_line_breaks");
+
     // Add output file
     cmd.arg("-o");
     cmd.arg(&output_path);
 
-    // Add reference document (template) if it exists
-    if template_file_path.exists() {
+    // Add reference document (letterhead) if it exists
+    if letterhead_file_path.exists() {
+        println!("Using prescription letterhead file: {:?}", letterhead_file_path);
         cmd.arg("--reference-doc");
-        cmd.arg(template_file_path.to_string_lossy().to_string());
+        cmd.arg(letterhead_file_path.to_string_lossy().to_string());
     } else {
-        println!("Warning: Template file not found: {:?}. Using default Pandoc styling.", template_file_path);
+        let error_msg = format!("Prescription template file not found: {:?}. Please create Prescription_Template.docx in Documents\\PBS_Admin\\Templates\\", letterhead_file_path);
+        println!("Warning: {}", error_msg);
+        return Err(error_msg);
     }
 
     // Spawn process

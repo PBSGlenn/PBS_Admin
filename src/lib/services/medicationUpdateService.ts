@@ -88,6 +88,11 @@ export function addToUpdateHistory(entry: UpdateHistory): void {
 /**
  * Search for current brand names for a specific medication
  * Uses web search to find authoritative Australian sources
+ *
+ * Search Strategy:
+ * 1. Chemist Warehouse - Primary source for current Australian market availability
+ * 2. PBS.gov.au - Government pharmaceutical benefits scheme
+ * 3. healthdirect.gov.au - Government health information
  */
 export async function searchMedicationBrands(
   genericName: string,
@@ -96,24 +101,41 @@ export async function searchMedicationBrands(
   // Note: This is a placeholder for web search integration
   // In production, this would use the WebSearch tool or API
 
-  const searchQuery = `${genericName} brand names Australia PBS 2025 veterinary`;
+  const sources = [
+    'https://www.chemistwarehouse.com.au',
+    'https://www.pbs.gov.au',
+    'https://www.healthdirect.gov.au'
+  ];
+
+  // Search queries for each source
+  const searchQueries = {
+    chemistWarehouse: `site:chemistwarehouse.com.au ${genericName}`,
+    pbs: `site:pbs.gov.au ${genericName} brand names`,
+    healthdirect: `site:healthdirect.gov.au ${genericName} brands`
+  };
 
   // TODO: Integrate with WebSearch tool
+  // 1. Search Chemist Warehouse for product listings
+  // 2. Search PBS for official brand registrations
+  // 3. Search healthdirect for additional brands
+  // 4. Parse and combine results
+  // 5. Deduplicate and validate brand names
+
   // For now, return current brands (no changes detected)
   const currentMed = BEHAVIOR_MEDICATIONS.find(m => m.genericName === genericName);
 
   return {
     brands: currentMed?.brandNames || [],
-    sources: [
-      'https://www.pbs.gov.au',
-      'https://www.healthdirect.gov.au'
-    ]
+    sources
   };
 }
 
 /**
  * Parse search results and extract brand names
- * This function would parse HTML/text from PBS.gov.au and healthdirect.gov.au
+ * This function would parse HTML/text from:
+ * - Chemist Warehouse (product listings)
+ * - PBS.gov.au (official registrations)
+ * - healthdirect.gov.au (health information)
  */
 export function parseBrandNamesFromSearchResults(searchResults: string): string[] {
   // TODO: Implement HTML parsing logic

@@ -10,11 +10,11 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Integrated Consultation Creation UI** with two-panel modal layout, transcript input (file/paste), questionnaire selection, multi-report generation with markdown-to-HTML conversion, direct memory-to-DOCX conversion (no intermediate .md files), and immediate Clinical Notes display in rich text editor. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes.
+**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Integrated Consultation Creation UI** with two-panel modal layout, transcript input (file/paste), questionnaire selection, multi-report generation with markdown-to-HTML conversion, direct memory-to-DOCX conversion (no intermediate .md files), and immediate Clinical Notes display in rich text editor. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates.
 
-**Last Updated**: 2025-11-28
+**Last Updated**: 2025-12-01
 
-**Next Session**: Implement automatic DOCX conversion after generation, add PDF conversion workflow for client reports, add primaryCareVet field to ClientForm UI.
+**Next Session**: Fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX, add primaryCareVet field to ClientForm UI.
 
 ---
 
@@ -34,8 +34,10 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 | **Notifications** | Sonner | Toast notifications for in-app alerts |
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
 | **Email Templates** | localStorage + Variable System | Customizable templates with dynamic content |
+| **Prescription Templates** | localStorage + Pandoc | Template-based prescription generation |
 | **AI Services** | Anthropic Claude Sonnet 4.5 | Report generation, task extraction |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
+| **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
 | **External Services** | Supabase, Jotform API | Booking sync, questionnaire downloads |
 
 ---
@@ -96,6 +98,8 @@ PBS_Admin/
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
 │   │   ├── taskTemplates.ts # ✅ Predefined task templates with preset values
 │   │   ├── emailTemplates.ts # ✅ Email template definitions and management functions
+│   │   ├── prescriptionTemplates.ts # ✅ Prescription template system with variable substitution
+│   │   ├── medications.ts  # ✅ Behavior medication database with dosing, brands, contraindications
 │   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils, dateOffsetUtils)
 │   │   ├── constants.ts    # ✅ Application constants
 │   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin
@@ -520,6 +524,147 @@ import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
 - `@radix-ui/react-tabs` - Template preview tabs
 - `@radix-ui/react-dropdown-menu` - Settings menu
 - `@radix-ui/react-icons` - UI icons
+
+---
+
+### Prescription Generation System
+
+**Purpose**: Template-based prescription generation system for behavior medications with DOCX output and letterhead integration.
+
+**Technology**: Pandoc for markdown-to-DOCX conversion with reference document styling
+
+**Features**:
+- Template-based prescription format with variable substitution
+- Medication database with 40+ behavior medications
+- Dosing information (Dog/Cat dose ranges, formulations, brands)
+- Bold formatting for labels and key text
+- Multi-line address formatting with Pandoc hard line breaks
+- DOCX generation with letterhead template integration
+- Automatic Event notes updates with prescription summary
+- PDF conversion workflow (DOCX → PDF via MS Word)
+
+**Prescription Template Structure**:
+```markdown
+{{prescription_date}}
+
+**Prescription for "{{pet_name}}" {{client_surname}}, a {{pet_breed}}**
+
+**Owner:** {{client_name}}\
+{{client_address}}
+
+**To the Pharmacist,**
+
+Please supply the following medication for this animal under my care:
+
+**Drug name:** {{medication_name}}
+**Formulation:** {{formulation}}
+**Dosage and directions:** {{dosage_directions}}
+
+**FOR ANIMAL TREATMENT ONLY**
+
+**Quantity:** {{amount_to_dispense}}
+**Number of repeats:** {{repeats}}
+
+{{#if special_instructions}}
+**Special instructions:** {{special_instructions}}
+
+{{/if}}
+Please contact us if more information is required.
+
+Yours sincerely,
+
+**Dr. Glenn Tobiansky (V2794)**
+{{prescription_date}}
+```
+
+**Available Variables**:
+- `{{prescription_date}}` - Current date (dd/MM/yyyy)
+- `{{pet_name}}` - Pet name
+- `{{client_surname}}` - Client surname
+- `{{pet_breed}}` - Pet breed
+- `{{client_name}}` - Full client name
+- `{{client_address}}` - Multi-line address
+- `{{medication_name}}` - Generic medication name
+- `{{formulation}}` - Tablet, Capsule, Liquid, etc.
+- `{{dosage_directions}}` - Dose rate + frequency (e.g., "1 tablet once daily")
+- `{{amount_to_dispense}}` - Total quantity
+- `{{repeats}}` - Number of repeats
+- `{{special_instructions}}` - Optional instructions
+
+**Medication Database**:
+Located in [medications.ts](src/lib/medications.ts):
+- 40+ behavior medications (SSRIs, TCAs, GABAergic, Alpha-2 agonists, etc.)
+- Each medication includes:
+  - Generic name and brand names
+  - Drug category and schedule class (S3, S4, S8)
+  - Description and mechanism of action
+  - Dog/Cat dose ranges (mg/kg or fixed dose)
+  - Common indications and contraindications
+  - Side effects and important notes
+  - Default frequency
+  - Species-specific dosing
+
+**Medication Update Service**:
+Automated monthly check for updated brand names using web search:
+1. Chemist Warehouse (primary source for Australian market availability)
+2. PBS.gov.au (government pharmaceutical benefits scheme)
+3. healthdirect.gov.au (government health information)
+
+**Workflow**:
+1. Select pet and medication from dropdown
+2. Choose formulation type (Tablet, Capsule, Liquid, etc.)
+3. Enter dose concentration (e.g., "20mg per tablet")
+4. Enter pet weight (optional) to see suggested dose range
+5. Set dose rate, frequency, amount to dispense, and repeats
+6. Add special instructions (optional)
+7. Click "Generate Prescription (DOCX)"
+8. System generates DOCX with letterhead and opens file automatically
+9. Event notes updated with simple prescription summary
+
+**DOCX Generation** (Rust Backend):
+```rust
+// Uses Pandoc with hard_line_breaks extension
+pandoc -f markdown+hard_line_breaks --reference-doc Prescription_Template.docx -o output.docx
+```
+
+**Letterhead Integration**:
+- User provides `Prescription_Template.docx` in `Documents/PBS_Admin/Templates/`
+- Letterhead must be in the **Header section** of the Word template (not body)
+- Pandoc applies template's header/footer, styles, and page settings
+
+**File Naming**:
+- Format: `{surname}_{YYYYMMDD}_prescription_{medication}.docx`
+- Example: `chen_20251201_prescription_fluoxetine.docx`
+- Location: Client folder
+
+**Event Notes**:
+Simple prescription summary saved to Event notes:
+```
+Drug name: Fluoxetine
+Formulation: Tablet
+Dosage and directions: 0.5 tablet once daily
+FOR ANIMAL TREATMENT ONLY
+Quantity: 28
+Number of repeats: 5
+Special instructions: Give with food
+```
+
+**Storage**: Template stored in localStorage key `pbs_admin_prescription_template`
+
+**Implementation Files**:
+- [prescriptionTemplates.ts](src/lib/prescriptionTemplates.ts) - Template management
+- [medications.ts](src/lib/medications.ts) - Medication database
+- [medicationUpdateService.ts](src/lib/services/medicationUpdateService.ts) - Brand name updates
+- [PrescriptionEventPanel.tsx](src/components/Event/PrescriptionEventPanel.tsx) - UI component
+- [lib.rs](src-tauri/src/lib.rs) - Pandoc integration (lines 485-560)
+
+**Dependencies**:
+- **Pandoc 3.8+**: Must be installed on system (`pandoc-3.8.2.1-windows-x86_64.msi`)
+- **MS Word**: Required for DOCX → PDF conversion (desktop Office, not web version)
+
+**Known Issues** (TODO):
+- Event notes not updating after prescription generation (query invalidation issue)
+- Letterhead not appearing in generated DOCX (template header configuration)
 
 ---
 
