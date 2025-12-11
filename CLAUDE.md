@@ -10,11 +10,11 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Integrated Consultation Creation UI** with two-panel modal layout, transcript input (file/paste), questionnaire selection, multi-report generation with markdown-to-HTML conversion, direct memory-to-DOCX conversion (no intermediate .md files), and immediate Clinical Notes display in rich text editor. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates.
+**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation.
 
-**Last Updated**: 2025-12-01
+**Last Updated**: 2025-12-11
 
-**Next Session**: Fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX, add primaryCareVet field to ClientForm UI.
+**Next Session**: Fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX.
 
 ---
 
@@ -917,19 +917,62 @@ interface Action {
 
 ---
 
-### 2. Consultation Event Workflow
+### 2. Consultation Event Workflow (Simplified)
 
-**Trigger**: Event created with eventType === "Consultation"
+**Purpose**: Manual workflow supporting flexible AI processing outside the app.
 
-**Steps**:
-1. Allow structured note-taking during consultation
-2. Optionally generate follow-up tasks:
-   - "Email protocol document to client"
-   - "Schedule training session"
-   - "Invoice reminder"
-3. Optionally spawn related events:
-   - "TrainingSession scheduled" (with parentEventId)
-   - "FollowUp scheduled" (with parentEventId)
+**Consultation Recording**:
+- **Zoom consultations**: Record with Fathom (auto-generates transcript)
+- **Home visits**: Record with iPhone voice memo app
+
+**Transcript Processing**:
+- **Fathom**: Copy transcript to .txt file
+- **iPhone**: Download recording → Process through MS Word → Save as .txt
+
+**PBS Admin Workflow**:
+1. **Create/Open Consultation Event**:
+   - User selects "Consultation" event type
+   - Right panel shows ConsultationEventPanel with transcript section
+
+2. **Save Transcript**:
+   - Paste transcript text from MS Word/Fathom into textarea
+   - Character count displayed for validation (minimum 10 characters)
+   - Click "Save Transcript" button
+   - System saves to client folder: `{surname}_{YYYYMMDD}_transcript.txt`
+   - Textarea disappears, confirmation message appears: "Transcript saved: {filename}"
+   - Event.transcriptFilePath updated in database
+
+3. **Replace Transcript** (if needed):
+   - Click "Replace Transcript" button
+   - Confirmation dialog: "Are you sure you want to replace the existing transcript file?"
+   - If confirmed, textarea reopens (empty)
+   - Paste new transcript and save (overwrites previous file)
+
+4. **External AI Processing** (outside PBS Admin):
+   - User manually processes transcript + questionnaire through preferred AI:
+     - ChatGPT 5.1
+     - Claude Opus 4.5
+     - Gemini 3 Pro
+     - (Chooses best-performing AI at the time)
+   - Uses custom prompts for:
+     - Clinical notes (detailed)
+     - Client report
+     - Vet report (when needed)
+   - Manually reviews/edits AI output in Word
+   - Saves reports to client folder
+   - Manually emails client report with cover letter
+
+5. **Save Clinical Summary to Event Notes** (future phase):
+   - Ask AI to create summary of clinical notes
+   - Paste summary into Event notes field (left panel)
+   - Stores in database for quick reference
+
+**Benefits**:
+- **Flexibility**: Choose best-performing AI at any time
+- **Control**: Manual review/editing before finalizing
+- **Simplicity**: No forced automation, no complex workflows
+- **Privacy**: Full reports stored locally in client folders
+- **Gradual automation**: Can add more automation features incrementally
 
 ---
 
