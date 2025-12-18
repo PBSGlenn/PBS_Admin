@@ -17,7 +17,10 @@ import {
   RotateCcw,
   AlertCircle,
   Save,
-  X
+  X,
+  Cpu,
+  RefreshCw,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -35,6 +38,14 @@ export interface PromptTemplateManagerProps {
   onClose: () => void;
 }
 
+// Current AI model configuration
+const AI_MODEL = {
+  provider: "Anthropic",
+  name: "Claude Opus 4.5",
+  modelId: "claude-opus-4-5-20251101",
+  releaseDate: "November 2025"
+};
+
 export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManagerProps) {
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -42,6 +53,8 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
   const [searchQuery, setSearchQuery] = useState("");
   const [copied, setCopied] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
   // Load templates on mount and when dialog opens
   useEffect(() => {
@@ -152,6 +165,25 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
     }
   };
 
+  const handleCheckForUpdate = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateStatus(null);
+
+    try {
+      // Open Anthropic's models page in a new browser window
+      window.open("https://docs.anthropic.com/en/docs/about-claude/models", "_blank");
+
+      setUpdateStatus("Opened Anthropic models documentation. Check for newer model versions.");
+      toast.info("Check the Anthropic docs for the latest model versions");
+    } catch (error) {
+      console.error("Failed to check for updates:", error);
+      setUpdateStatus("Failed to open documentation");
+      toast.error("Failed to open Anthropic documentation");
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCancel()}>
       <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -168,6 +200,56 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
         <div className="flex-1 overflow-hidden flex gap-4">
           {/* Left Pane - Template List */}
           <div className="w-80 flex flex-col gap-3">
+            {/* AI Model Info Card */}
+            <Card className="p-3 bg-muted/50">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Cpu className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-semibold">AI Model</span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Provider:</span>
+                    <span className="font-medium">{AI_MODEL.provider}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Model:</span>
+                    <span className="font-medium">{AI_MODEL.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">ID:</span>
+                    <code className="text-[10px] bg-background px-1 py-0.5 rounded">{AI_MODEL.modelId}</code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Release:</span>
+                    <span className="font-medium">{AI_MODEL.releaseDate}</span>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCheckForUpdate}
+                  disabled={isCheckingUpdate}
+                  className="w-full h-7 text-xs mt-2"
+                >
+                  {isCheckingUpdate ? (
+                    <>
+                      <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />
+                      Checking...
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="h-3 w-3 mr-1.5" />
+                      Check for Updates
+                    </>
+                  )}
+                </Button>
+                {updateStatus && (
+                  <p className="text-[10px] text-muted-foreground mt-1">{updateStatus}</p>
+                )}
+              </div>
+            </Card>
+
             {/* Search */}
             <Input
               placeholder="Search templates..."

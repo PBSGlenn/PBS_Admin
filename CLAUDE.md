@@ -10,9 +10,9 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation.
+**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving.
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2025-12-19
 
 **Next Session**: Fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX.
 
@@ -35,7 +35,7 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
 | **Email Templates** | localStorage + Variable System | Customizable templates with dynamic content |
 | **Prescription Templates** | localStorage + Pandoc | Template-based prescription generation |
-| **AI Services** | Anthropic Claude Sonnet 4.5 | Report generation, task extraction |
+| **AI Services** | Anthropic Claude Opus 4.5 | Report generation, task extraction |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
 | **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
 | **External Services** | Supabase, Jotform API | Booking sync, questionnaire downloads |
@@ -941,6 +941,9 @@ interface Action {
    - System saves to client folder: `{surname}_{YYYYMMDD}_transcript.txt`
    - Textarea disappears, confirmation message appears: "Transcript saved: {filename}"
    - Event.transcriptFilePath updated in database
+   - **Transcript files dropdown** appears showing all .txt files in client folder
+   - Dropdown auto-refreshes after saving to show newly created file
+   - Shows "No txt files found" if folder is empty
 
 3. **Replace Transcript** (if needed):
    - Click "Replace Transcript" button
@@ -1326,6 +1329,8 @@ get_templates_path() -> Result<String, String>
   - Copy button for Claude Chat workflow
   - Real-time character count
   - Unsaved changes tracking
+  - **AI Model Info Card**: Displays current model (provider, name, ID, release date)
+  - **Check for Updates button**: Opens Anthropic models documentation to check for newer versions
 
 **Template Structure**:
 ```typescript
