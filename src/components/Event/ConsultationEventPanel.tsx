@@ -11,7 +11,6 @@ import { FileCheck, Loader2, FileText } from "lucide-react";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { updateEvent } from "@/lib/services/eventService";
 import { saveTranscriptFile } from "@/lib/services/transcriptFileService";
-import { format } from "date-fns";
 
 export interface ConsultationEventPanelProps extends EventSpecificPanelProps {
   clientFolderPath?: string;
@@ -22,7 +21,6 @@ export interface ConsultationEventPanelProps extends EventSpecificPanelProps {
 export function ConsultationEventPanel({
   clientId,
   event,
-  formData,
   clientFolderPath,
   clientName
 }: ConsultationEventPanelProps) {
@@ -46,8 +44,9 @@ export function ConsultationEventPanel({
       // Extract client surname for filename
       const clientSurname = clientName.split(' ').pop() || clientName;
 
-      // Format consultation date for filename
-      const consultationDate = format(new Date(formData.date || new Date()), "yyyyMMdd");
+      // Use event.date (ISO format from database) or fall back to today's ISO string
+      // The service will handle formatting for the filename
+      const consultationDate = event.date || new Date().toISOString();
 
       // Save transcript file to client folder
       const result = await saveTranscriptFile(
