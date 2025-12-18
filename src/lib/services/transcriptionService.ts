@@ -203,7 +203,7 @@ Vet: I see. And when you say aggression, can you describe exactly what behaviors
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
+      model: "claude-opus-4-5-20251101",
       max_tokens: 8000,
       system: systemPrompt,
       messages: [

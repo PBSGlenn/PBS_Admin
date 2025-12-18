@@ -6,7 +6,7 @@ import { REPORT_SYSTEM_PROMPT, generateReportPrompt } from "../prompts/report-sy
 
 // API configuration
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
-const MODEL = "claude-sonnet-4-5-20250929";
+const MODEL = "claude-opus-4-5-20251101";
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
