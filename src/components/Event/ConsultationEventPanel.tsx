@@ -147,6 +147,12 @@ export function ConsultationEventPanel({
   const [isExtractingTasks, setIsExtractingTasks] = useState(false);
   const [hasCreatedTasks, setHasCreatedTasks] = useState(false);
 
+  // Manual task entry state
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskOffset, setNewTaskOffset] = useState("1 week");
+  const [newTaskPriority, setNewTaskPriority] = useState<Priority>(2);
+
   // Load all files from client folder
   useEffect(() => {
     const loadFiles = async () => {
@@ -596,6 +602,29 @@ export function ConsultationEventPanel({
     setCaseTasks(prev => prev.filter(task => task.id !== taskId));
   };
 
+  // Add a manual case-specific task
+  const handleAddManualTask = () => {
+    if (!newTaskDescription.trim()) {
+      toast.error("Please enter a task description");
+      return;
+    }
+
+    const newTask: CaseTask = {
+      id: `manual-${Date.now()}`,
+      description: newTaskDescription.trim(),
+      offset: newTaskOffset,
+      priority: newTaskPriority,
+      context: "Manually added"
+    };
+
+    setCaseTasks(prev => [...prev, newTask]);
+    setNewTaskDescription("");
+    setNewTaskOffset("1 week");
+    setNewTaskPriority(2);
+    setShowAddTaskForm(false);
+    toast.success("Task added");
+  };
+
   // Extract case-specific tasks from transcript using AI
   const handleExtractTasks = async () => {
     if (!selectedFilePath) {
@@ -663,7 +692,14 @@ Return ONLY valid JSON array, no other text.`
       }
 
       const data = await response.json();
-      const content = data.content[0]?.text || "[]";
+      let content = data.content[0]?.text || "[]";
+
+      // Strip markdown code blocks if present (```json ... ```)
+      content = content.trim();
+      if (content.startsWith("```")) {
+        // Remove opening ```json or ``` and closing ```
+        content = content.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      }
 
       // Parse the JSON response
       try {
@@ -1252,9 +1288,14 @@ Return ONLY valid JSON array, no other text.`
                       >
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-medium">{task.description}</p>
-                          {task.context && (
+                          {task.context && task.context !== "Manually added" && (
                             <p className="text-[9px] text-muted-foreground mt-0.5 italic truncate">
                               "{task.context}"
+                            </p>
+                          )}
+                          {task.context === "Manually added" && (
+                            <p className="text-[9px] text-blue-600 mt-0.5">
+                              Manual
                             </p>
                           )}
                         </div>
@@ -1275,8 +1316,95 @@ Return ONLY valid JSON array, no other text.`
                 ) : (
                   <div className="border rounded-md p-3 bg-muted/20 text-center">
                     <p className="text-[10px] text-muted-foreground">
-                      Click "Extract from Transcript" to find case-specific tasks
+                      Click "Extract from Transcript" or add tasks manually
                     </p>
+                  </div>
+                )}
+
+                {/* Manual Task Entry */}
+                {!showAddTaskForm ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAddTaskForm(true)}
+                    className="h-6 text-[10px] w-full text-muted-foreground hover:text-foreground"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add Task Manually
+                  </Button>
+                ) : (
+                  <div className="border rounded-md p-2 bg-muted/20 space-y-2">
+                    <div>
+                      <Label className="text-[9px] text-muted-foreground">Description</Label>
+                      <Textarea
+                        value={newTaskDescription}
+                        onChange={(e) => setNewTaskDescription(e.target.value)}
+                        placeholder="Enter task description..."
+                        className="h-16 text-[10px] resize-none"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <Label className="text-[9px] text-muted-foreground">Due</Label>
+                        <Select value={newTaskOffset} onValueChange={setNewTaskOffset}>
+                          <SelectTrigger className="h-7 text-[10px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1 day">+1 day</SelectItem>
+                            <SelectItem value="2 days">+2 days</SelectItem>
+                            <SelectItem value="3 days">+3 days</SelectItem>
+                            <SelectItem value="5 days">+5 days</SelectItem>
+                            <SelectItem value="1 week">+1 week</SelectItem>
+                            <SelectItem value="2 weeks">+2 weeks</SelectItem>
+                            <SelectItem value="3 weeks">+3 weeks</SelectItem>
+                            <SelectItem value="4 weeks">+4 weeks</SelectItem>
+                            <SelectItem value="6 weeks">+6 weeks</SelectItem>
+                            <SelectItem value="8 weeks">+8 weeks</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1">
+                        <Label className="text-[9px] text-muted-foreground">Priority</Label>
+                        <Select
+                          value={String(newTaskPriority)}
+                          onValueChange={(v) => setNewTaskPriority(Number(v) as Priority)}
+                        >
+                          <SelectTrigger className="h-7 text-[10px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1 - Highest</SelectItem>
+                            <SelectItem value="2">2 - High</SelectItem>
+                            <SelectItem value="3">3 - Medium</SelectItem>
+                            <SelectItem value="4">4 - Low</SelectItem>
+                            <SelectItem value="5">5 - Lowest</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setShowAddTaskForm(false);
+                          setNewTaskDescription("");
+                        }}
+                        className="h-6 text-[10px] flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleAddManualTask}
+                        disabled={!newTaskDescription.trim()}
+                        className="h-6 text-[10px] flex-1 bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Task
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

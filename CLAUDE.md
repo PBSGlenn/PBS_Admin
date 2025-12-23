@@ -980,6 +980,10 @@ interface Action {
      - AI analyzes transcript AND clinical notes
      - Extracts practitioner tasks with descriptions, due dates, priorities
      - Review and remove any unwanted tasks
+   - **Manual Task Entry**:
+     - Click "Add Task Manually" button
+     - Enter description, select due offset (+1 day to +8 weeks), set priority (1-5)
+     - Manual tasks show "Manual" label and can be removed like AI tasks
    - Click "Create X Tasks" to create all tasks at once
    - Tasks linked to client and consultation event
 
