@@ -10,9 +10,9 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving.
+**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes.
 
-**Last Updated**: 2025-12-19
+**Last Updated**: 2025-12-23
 
 **Next Session**: Fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX.
 
@@ -951,29 +951,56 @@ interface Action {
    - If confirmed, textarea reopens (empty)
    - Paste new transcript and save (overwrites previous file)
 
-4. **External AI Processing** (outside PBS Admin):
+4. **Generate Abridged Clinical Notes** (in-app):
+   - Click "Generate Abridged Notes" button in ConsultationEventPanel
+   - AI generates HTML-formatted clinical summary from transcript
+   - Preview shows generated content before saving
+   - Click "Save to Event Notes" to store in Event.notes field
+   - Appears in left panel for quick reference
+
+5. **Generate Comprehensive Clinical Notes (DOCX)** (in-app):
+   - Click "Generate Comprehensive Notes (DOCX)" button
+   - AI generates detailed 3-5 page clinical report in markdown
+   - Automatically converts to DOCX using Pandoc with letterhead template
+   - Saves to client folder: `{surname}_{YYYYMMDD}_comprehensive-clinical_v{N}.docx`
+   - Success notification with:
+     - Green confirmation box showing filename
+     - "Open Document" button to view in Word
+     - "Regenerate" button if needed
+
+6. **Generate Post-Consultation Tasks** (in-app):
+   - Click "Post-Consultation Tasks" button
+   - **Standard Tasks** (pre-checked, opt-out model):
+     - Send consultation report to client (+5 days, priority 1)
+     - Post-consultation follow-up email (+7 days, priority 2)
+     - 2-week post-consultation follow-up email (+14 days, priority 2)
+     - Uncheck any tasks not needed for this case
+   - **Case-Specific Tasks** (AI-extracted):
+     - Click "Extract Tasks from Notes" button
+     - AI analyzes transcript AND clinical notes
+     - Extracts practitioner tasks with descriptions, due dates, priorities
+     - Review and remove any unwanted tasks
+   - Click "Create X Tasks" to create all tasks at once
+   - Tasks linked to client and consultation event
+
+7. **External AI Processing** (optional, outside PBS Admin):
    - User manually processes transcript + questionnaire through preferred AI:
      - ChatGPT 5.1
      - Claude Opus 4.5
      - Gemini 3 Pro
      - (Chooses best-performing AI at the time)
    - Uses custom prompts for:
-     - Clinical notes (detailed)
      - Client report
      - Vet report (when needed)
    - Manually reviews/edits AI output in Word
    - Saves reports to client folder
    - Manually emails client report with cover letter
 
-5. **Save Clinical Summary to Event Notes** (future phase):
-   - Ask AI to create summary of clinical notes
-   - Paste summary into Event notes field (left panel)
-   - Stores in database for quick reference
-
 **Benefits**:
-- **Flexibility**: Choose best-performing AI at any time
+- **In-app AI**: Abridged notes, comprehensive DOCX, and task extraction built-in
+- **Flexibility**: Choose in-app or external AI processing
 - **Control**: Manual review/editing before finalizing
-- **Simplicity**: No forced automation, no complex workflows
+- **Simplicity**: No forced automation, opt-out model for standard tasks
 - **Privacy**: Full reports stored locally in client folders
 - **Gradual automation**: Can add more automation features incrementally
 

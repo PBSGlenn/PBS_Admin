@@ -11,6 +11,9 @@ export interface EventSpecificPanelProps {
     date: string;
     notes: string;
   };
+  clientFolderPath?: string;
+  clientName?: string;
   onSave?: (event: Event) => void;
+  onClose?: () => void;
   onProcessingStateChange?: (processingState: any) => void;
 }

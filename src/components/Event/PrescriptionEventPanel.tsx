@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FileText, FileCheck } from "lucide-react";
+import { toast } from "sonner";
 import { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { BEHAVIOR_MEDICATIONS, Medication, getMedicationById, FREQUENCY_OPTIONS } from "@/lib/medications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -182,29 +183,45 @@ Number of repeats: ${prescriptionData.repeats}${prescriptionData.specialInstruct
       });
 
       // Update event with prescription details
-      await updateEvent(event.eventId, {
+      const updatedEvent = await updateEvent(event.eventId, {
         notes: prescriptionSummary,
       });
 
-      return { docxFilePath, docxFileName };
+      return { docxFilePath, docxFileName, updatedEvent };
     },
-    onSuccess: async ({ docxFilePath }) => {
+    onSuccess: async ({ docxFilePath, updatedEvent }) => {
       setDocxFilePath(docxFilePath);
 
-      // Invalidate event query to refresh notes display
+      // Notify parent of updated event (this updates currentEvent in EventFormModal)
+      // which propagates to EventForm to sync the notes display
+      if (onSave && updatedEvent) {
+        onSave(updatedEvent);
+      }
+
+      // Invalidate event query to refresh notes display in tables
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+
+      // Show success toast
+      toast.success("Prescription generated", {
+        description: "DOCX file created and event notes updated"
+      });
 
       // Open DOCX file for veterinarian review
       try {
         await invoke("plugin:opener|open_path", { path: docxFilePath });
       } catch (error) {
         console.error("Failed to open DOCX file:", error);
-        alert(`DOCX generated successfully but failed to open. Please open manually: ${docxFilePath}`);
+        toast.error("Failed to open DOCX file", {
+          description: "Please open manually from the client folder"
+        });
       }
     },
     onError: (error) => {
       console.error("DOCX generation failed:", error);
+      toast.error("Failed to generate prescription", {
+        description: error instanceof Error ? error.message : "Unknown error occurred"
+      });
     },
   });
 

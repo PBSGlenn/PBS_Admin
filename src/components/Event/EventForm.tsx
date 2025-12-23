@@ -109,9 +109,9 @@ export function EventForm({
 
       if (onSave) onSave(savedEvent);
 
-      // Keep modal open for Consultation events (user needs to generate reports)
+      // Keep modal open for Consultation and Prescription events (user needs to generate documents)
       // Close modal for all other event types
-      if (formData.eventType !== 'Consultation') {
+      if (formData.eventType !== 'Consultation' && formData.eventType !== 'Prescription') {
         onClose();
       }
     },
@@ -140,9 +140,9 @@ export function EventForm({
 
       if (onSave) onSave(savedEvent);
 
-      // Keep modal open for Consultation events (user needs to generate reports)
+      // Keep modal open for Consultation and Prescription events (user needs to generate documents)
       // Close modal for all other event types
-      if (formData.eventType !== 'Consultation') {
+      if (formData.eventType !== 'Consultation' && formData.eventType !== 'Prescription') {
         onClose();
       }
     },
