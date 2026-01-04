@@ -207,14 +207,30 @@ fn run_pandoc(input_path: String, output_path: String, template_path: Option<Str
     // Add input file
     cmd.arg(&input_path);
 
+    // Use hard_line_breaks extension to preserve markdown line breaks
+    cmd.arg("-f");
+    cmd.arg("markdown+hard_line_breaks");
+
     // Add output file
     cmd.arg("-o");
     cmd.arg(&output_path);
 
     // Add reference document (template) if provided
-    if let Some(template) = template_path {
-        cmd.arg("--reference-doc");
-        cmd.arg(&template);
+    // Note: The template's letterhead MUST be in the Word Header section (Insert > Header)
+    // not in the document body, for Pandoc --reference-doc to apply it correctly
+    if let Some(ref template) = template_path {
+        // Check if template file exists
+        let template_path_obj = std::path::Path::new(template);
+        if template_path_obj.exists() {
+            println!("Using reference document template: {}", template);
+            cmd.arg("--reference-doc");
+            cmd.arg(template);
+        } else {
+            return Err(format!(
+                "Template file not found: {}. Please ensure the letterhead template exists in Documents\\PBS_Admin\\Templates\\",
+                template
+            ));
+        }
     }
 
     // Execute command
@@ -243,14 +259,30 @@ fn run_pandoc_from_stdin(markdown_content: String, output_path: String, template
     // Read from stdin (dash means read from stdin)
     cmd.arg("-");
 
+    // Use hard_line_breaks extension to preserve markdown line breaks
+    cmd.arg("-f");
+    cmd.arg("markdown+hard_line_breaks");
+
     // Add output file
     cmd.arg("-o");
     cmd.arg(&output_path);
 
     // Add reference document (template) if provided
-    if let Some(template) = template_path {
-        cmd.arg("--reference-doc");
-        cmd.arg(&template);
+    // Note: The template's letterhead MUST be in the Word Header section (Insert > Header)
+    // not in the document body, for Pandoc --reference-doc to apply it correctly
+    if let Some(ref template) = template_path {
+        // Check if template file exists
+        let template_path_obj = std::path::Path::new(template);
+        if template_path_obj.exists() {
+            println!("Using reference document template: {}", template);
+            cmd.arg("--reference-doc");
+            cmd.arg(template);
+        } else {
+            return Err(format!(
+                "Template file not found: {}. Please ensure the letterhead template exists in Documents\\PBS_Admin\\Templates\\",
+                template
+            ));
+        }
     }
 
     // Spawn process
@@ -279,21 +311,35 @@ fn run_pandoc_from_stdin(markdown_content: String, output_path: String, template
 #[tauri::command]
 fn convert_docx_to_pdf(docx_path: String, pdf_path: String) -> Result<String, String> {
     // Build PowerShell script for Word COM automation
+    // IMPORTANT: The DOCX file MUST be closed in Word before conversion
+    // If the file is open, Word COM will hang trying to access it
     let ps_script = format!(
         r#"
-$word = New-Object -ComObject Word.Application
-$word.Visible = $false
+$ErrorActionPreference = "Stop"
+$word = $null
 try {{
-    $doc = $word.Documents.Open("{}")
+    $word = New-Object -ComObject Word.Application
+    $word.Visible = $false
+    $word.DisplayAlerts = 0
+
+    # Open document: FileName, ConfirmConversions, ReadOnly
+    # ReadOnly=$true helps avoid conflicts if file is somehow locked
+    $doc = $word.Documents.Open("{}", $false, $true)
+
+    # Save as PDF (17 = wdFormatPDF)
     $doc.SaveAs("{}", 17)
-    $doc.Close()
+    $doc.Close($false)
     Write-Output "Success"
 }} catch {{
-    Write-Error $_.Exception.Message
+    Write-Error "PDF conversion failed: $($_.Exception.Message)"
     exit 1
 }} finally {{
-    $word.Quit()
-    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
+    if ($word -ne $null) {{
+        try {{ $word.Quit() }} catch {{ }}
+        try {{ [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null }} catch {{ }}
+    }}
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
 }}
 "#,
         docx_path.replace("\\", "\\\\"),
@@ -311,7 +357,12 @@ try {{
         Ok(pdf_path.clone())
     } else {
         let error_msg = String::from_utf8_lossy(&output.stderr);
-        Err(format!("PDF conversion failed: {}", error_msg))
+        // Provide helpful error message if file might be locked
+        if error_msg.contains("locked") || error_msg.contains("being used") || error_msg.contains("access") {
+            Err(format!("PDF conversion failed - the DOCX file may be open in Word. Please close it and try again. Error: {}", error_msg))
+        } else {
+            Err(format!("PDF conversion failed: {}", error_msg))
+        }
     }
 }
 
@@ -553,6 +604,167 @@ fn generate_prescription_docx(
     }
 }
 
+// ============================================================================
+// DATABASE BACKUP AND RESTORE
+// ============================================================================
+
+/// Get the path to the backups folder
+#[tauri::command]
+fn get_backups_path() -> Result<String, String> {
+    let docs_dir = dirs::document_dir()
+        .ok_or("Could not find Documents directory")?;
+    let backups_path = docs_dir.join("PBS_Admin").join("Backups");
+
+    // Create backups folder if it doesn't exist
+    if !backups_path.exists() {
+        std::fs::create_dir_all(&backups_path)
+            .map_err(|e| format!("Failed to create backups folder: {}", e))?;
+    }
+
+    Ok(backups_path.to_string_lossy().to_string())
+}
+
+/// Get the database file path
+fn get_database_path() -> Result<std::path::PathBuf, String> {
+    // Database is at C:\Dev\PBS_Admin\prisma\dev.db
+    let db_path = std::path::PathBuf::from(r"C:\Dev\PBS_Admin\prisma\dev.db");
+    if !db_path.exists() {
+        return Err(format!("Database not found at: {}", db_path.display()));
+    }
+    Ok(db_path)
+}
+
+/// Create a backup of the database
+#[tauri::command]
+fn create_database_backup() -> Result<serde_json::Value, String> {
+    let db_path = get_database_path()?;
+    let backups_path = get_backups_path()?;
+
+    // Generate backup filename with timestamp
+    let timestamp = chrono::Local::now().format("%Y-%m-%d-%H%M%S").to_string();
+    let backup_filename = format!("pbs-admin-backup-{}.db", timestamp);
+    let backup_path = std::path::Path::new(&backups_path).join(&backup_filename);
+
+    // Copy the database file
+    std::fs::copy(&db_path, &backup_path)
+        .map_err(|e| format!("Failed to create backup: {}", e))?;
+
+    println!("Backup created: {}", backup_path.display());
+
+    Ok(serde_json::json!({
+        "file_path": backup_path.to_string_lossy().to_string(),
+        "file_name": backup_filename
+    }))
+}
+
+/// Restore database from a backup file
+#[tauri::command]
+fn restore_database_backup(backup_path: String) -> Result<String, String> {
+    let backup_file = std::path::Path::new(&backup_path);
+
+    // Validate backup file exists
+    if !backup_file.exists() {
+        return Err(format!("Backup file not found: {}", backup_path));
+    }
+
+    // Validate it's a .db file
+    if backup_file.extension().and_then(|e| e.to_str()) != Some("db") {
+        return Err("Invalid backup file: must be a .db file".to_string());
+    }
+
+    let db_path = get_database_path()?;
+
+    // Create a safety backup before restoring (in case restore goes wrong)
+    let safety_backup = db_path.with_extension("db.pre-restore-backup");
+    std::fs::copy(&db_path, &safety_backup)
+        .map_err(|e| format!("Failed to create safety backup: {}", e))?;
+
+    // Restore the backup
+    match std::fs::copy(&backup_file, &db_path) {
+        Ok(_) => {
+            // Remove safety backup on success
+            let _ = std::fs::remove_file(&safety_backup);
+            println!("Database restored from: {}", backup_path);
+            Ok("Database restored successfully. Please restart the application.".to_string())
+        }
+        Err(e) => {
+            // Try to restore from safety backup
+            let _ = std::fs::copy(&safety_backup, &db_path);
+            Err(format!("Failed to restore database: {}. Original database preserved.", e))
+        }
+    }
+}
+
+/// List available backup files
+#[tauri::command]
+fn list_database_backups() -> Result<Vec<serde_json::Value>, String> {
+    let backups_path = get_backups_path()?;
+    let backups_dir = std::path::Path::new(&backups_path);
+
+    let mut backups = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(backups_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("db") {
+                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                    if file_name.starts_with("pbs-admin-backup-") {
+                        let metadata = std::fs::metadata(&path).ok();
+                        let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+                        let created = metadata
+                            .and_then(|m| m.created().ok())
+                            .map(|t| {
+                                let datetime: chrono::DateTime<chrono::Local> = t.into();
+                                datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+                            })
+                            .unwrap_or_default();
+
+                        backups.push(serde_json::json!({
+                            "fileName": file_name,
+                            "filePath": path.to_string_lossy().to_string(),
+                            "createdAt": created,
+                            "sizeBytes": size
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by filename (which includes timestamp) descending
+    backups.sort_by(|a, b| {
+        let name_a = a["fileName"].as_str().unwrap_or("");
+        let name_b = b["fileName"].as_str().unwrap_or("");
+        name_b.cmp(name_a)
+    });
+
+    Ok(backups)
+}
+
+/// Delete a backup file
+#[tauri::command]
+fn delete_backup_file(backup_path: String) -> Result<String, String> {
+    let backup_file = std::path::Path::new(&backup_path);
+
+    // Validate the file is in the backups folder (security check)
+    let backups_path = get_backups_path()?;
+    if !backup_path.starts_with(&backups_path) {
+        return Err("Cannot delete files outside the backups folder".to_string());
+    }
+
+    // Validate it's a backup file
+    if let Some(file_name) = backup_file.file_name().and_then(|n| n.to_str()) {
+        if !file_name.starts_with("pbs-admin-backup-") {
+            return Err("Cannot delete non-backup files".to_string());
+        }
+    }
+
+    std::fs::remove_file(&backup_file)
+        .map_err(|e| format!("Failed to delete backup: {}", e))?;
+
+    Ok("Backup deleted successfully".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -574,7 +786,12 @@ pub fn run() {
             convert_docx_to_pdf,
             generate_prescription_docx,
             save_temp_audio_file,
-            transcribe_audio
+            transcribe_audio,
+            get_backups_path,
+            create_database_backup,
+            restore_database_backup,
+            list_database_backups,
+            delete_backup_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

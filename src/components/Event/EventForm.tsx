@@ -61,12 +61,19 @@ export function EventForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isFormValid, setIsFormValid] = useState(false);
 
-  // Sync notes when event changes (e.g., when Clinical Notes are generated)
+  // Sync notes when event changes (e.g., when Prescription or Clinical Notes are generated)
+  // Use event.eventId + event.notes to ensure we detect updates to the same event
   useEffect(() => {
-    if (event?.notes && event.notes !== formData.notes) {
-      setFormData(prev => ({ ...prev, notes: event.notes || "" }));
+    if (event?.notes !== undefined) {
+      setFormData(prev => {
+        // Only update if notes actually changed
+        if (prev.notes !== event.notes) {
+          return { ...prev, notes: event.notes || "" };
+        }
+        return prev;
+      });
     }
-  }, [event?.notes]);
+  }, [event?.eventId, event?.notes]);
 
   // Check if all required fields are valid
   const checkFormValidity = () => {

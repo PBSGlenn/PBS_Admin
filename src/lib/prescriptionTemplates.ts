@@ -18,7 +18,7 @@ const DEFAULT_TEMPLATE: PrescriptionTemplate = {
 
 **Prescription for "{{pet_name}}" {{client_surname}}, a {{pet_breed}}**
 
-**Owner:** {{client_name}}\
+**Owner:** {{client_name}}
 {{client_address}}
 
 **To the Pharmacist,**

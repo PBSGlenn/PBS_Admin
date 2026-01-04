@@ -17,6 +17,7 @@ import {
 import type { Client, Pet } from '../types';
 import { formatISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { parseAgeToDateOfBirth } from '../utils/ageUtils';
 
 const TIMEZONE = 'Australia/Melbourne';
 
@@ -25,6 +26,24 @@ const DOG_FORM_ID = import.meta.env.VITE_JOTFORM_DOG_FORM_ID;
 const CAT_FORM_ID = import.meta.env.VITE_JOTFORM_CAT_FORM_ID;
 const API_BASE = 'https://api.jotform.com';
 const PROCESSED_SUBMISSIONS_KEY = 'pbs_admin_processed_jotform_submissions';
+
+/**
+ * Normalize sex value from questionnaire format to database format
+ * Questionnaire uses: "Male", "Female", "Males Neutered", "Females Spayed"
+ * Database uses: "Male", "Female", "Neutered", "Spayed", "Unknown"
+ */
+function mapSexValue(questionnaireSex: string | undefined): string {
+  if (!questionnaireSex) return '';
+  const normalized = questionnaireSex.toLowerCase().trim();
+
+  // Check for neutered/spayed first (more specific)
+  if (normalized.includes('neutered')) return 'Neutered';
+  if (normalized.includes('spayed')) return 'Spayed';
+  if (normalized.includes('male')) return 'Male';
+  if (normalized.includes('female')) return 'Female';
+
+  return questionnaireSex; // Return original if no match
+}
 
 /**
  * Jotform submission record
@@ -215,8 +234,12 @@ export function parseSubmission(submission: JotformSubmission): ParsedQuestionna
     const petName = answers['8']?.answer as string || '';
     const breed = answers['19']?.answer as string || '';
     const age = answers['23']?.answer as string || '';
-    const sex = answers['22']?.answer as string || '';
+    const rawSex = answers['22']?.answer as string || '';
+    const sex = mapSexValue(rawSex); // Normalize sex value
     const weight = answers['69']?.answer as string || undefined;
+
+    // Log extracted pet info for debugging
+    console.log(`Questionnaire pet info - Name: ${petName}, Breed: ${breed}, Age: ${age}, Sex: ${rawSex} → ${sex}, Weight: ${weight}`);
 
     // Validate required fields
     if (!firstName || !lastName || !email || !petName) {
@@ -454,11 +477,20 @@ export async function processQuestionnaire(
     let pet = await findExistingPet(client.clientId, parsed.pet.name);
 
     if (pet) {
+      // Calculate DOB from age if pet doesn't already have one
+      let calculatedDob: string | undefined;
+      if (!pet.dateOfBirth && parsed.pet.age) {
+        calculatedDob = parseAgeToDateOfBirth(parsed.pet.age) || undefined;
+        if (calculatedDob) {
+          console.log(`✓ Calculated DOB from age "${parsed.pet.age}": ${calculatedDob}`);
+        }
+      }
+
       // Update pet details with questionnaire data
       await updatePet(pet.petId, {
         breed: parsed.pet.breed || pet.breed || undefined,
         sex: parsed.pet.sex || pet.sex || undefined,
-        // Note: We don't update dateOfBirth from age string here to avoid overwriting existing accurate data
+        dateOfBirth: calculatedDob || pet.dateOfBirth || undefined,
         notes: pet.notes
           ? `${pet.notes}\n\nQuestionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`
           : `Questionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`,

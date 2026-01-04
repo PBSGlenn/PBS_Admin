@@ -543,7 +543,11 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
           <div className="space-y-2">
             {/* Generate DOCX Button */}
             <Button
-              onClick={() => generateDOCXMutation.mutate()}
+              onClick={() => {
+                // Reset mutation state before regenerating
+                generateDOCXMutation.reset();
+                generateDOCXMutation.mutate();
+              }}
               disabled={generateDOCXMutation.isPending || !event?.eventId || !clientFolderPath}
               className="w-full h-8 text-[11px]"
               variant={docxFilePath ? "outline" : "default"}
@@ -556,7 +560,7 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
               ) : docxFilePath ? (
                 <>
                   <FileCheck className="mr-2 h-3 w-3" />
-                  DOCX Generated
+                  Regenerate DOCX
                 </>
               ) : (
                 <>
@@ -569,7 +573,11 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
             {/* Convert to PDF Button */}
             {docxFilePath && (
               <Button
-                onClick={() => convertToPDFMutation.mutate()}
+                onClick={() => {
+                  // Reset mutation state before converting (clears any previous error)
+                  convertToPDFMutation.reset();
+                  convertToPDFMutation.mutate();
+                }}
                 disabled={convertToPDFMutation.isPending}
                 className="w-full h-8 text-[11px]"
                 variant={pdfFilePath ? "outline" : "default"}
@@ -582,7 +590,7 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
                 ) : pdfFilePath ? (
                   <>
                     <FileCheck className="mr-2 h-3 w-3" />
-                    PDF Generated
+                    Regenerate PDF
                   </>
                 ) : (
                   <>
@@ -604,6 +612,11 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
             {docxFilePath && (
               <p className="text-[10px] text-green-600">
                 ✓ DOCX saved: {docxFilePath.split('\\').pop()}
+              </p>
+            )}
+            {docxFilePath && !pdfFilePath && !convertToPDFMutation.isPending && (
+              <p className="text-[10px] text-amber-600">
+                ⚠ Close the DOCX in Word before converting to PDF
               </p>
             )}
             {convertToPDFMutation.isError && (

@@ -15,10 +15,11 @@ import { EmailTemplateManager } from "../EmailTemplateManager/EmailTemplateManag
 import { PromptTemplateManager } from "../PromptTemplateManager/PromptTemplateManager";
 import { TranscriptionTool } from "../TranscriptionTool/TranscriptionTool";
 import { MedicationUpdateChecker } from "../MedicationUpdateChecker/MedicationUpdateChecker";
+import { BackupManager } from "../BackupManager/BackupManager";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
 import { isMonthlyUpdateDue } from "@/lib/services/medicationUpdateService";
 import { toast } from "sonner";
-import { Bell, Settings, Mail, FileText, FileAudio, Pill } from "lucide-react";
+import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ export function Dashboard() {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [isTranscriptionToolOpen, setIsTranscriptionToolOpen] = useState(false);
   const [isMedicationUpdateCheckerOpen, setIsMedicationUpdateCheckerOpen] = useState(false);
+  const [isBackupManagerOpen, setIsBackupManagerOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
 
   // Check for monthly medication updates on mount
@@ -169,15 +171,24 @@ export function Dashboard() {
           <div className="flex items-center gap-2">
             {/* Notification Bell */}
             {notificationCount > 0 && (
-              <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="relative h-8 w-8 p-0"
+                onClick={() => {
+                  // Scroll to tasks section
+                  document.getElementById('tasks-section')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                title={`${notificationCount} task${notificationCount > 1 ? 's' : ''} due or overdue`}
+              >
                 <Bell className="h-5 w-5 text-muted-foreground" />
                 <Badge
                   variant="destructive"
-                  className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+                  className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
                 >
                   {notificationCount}
                 </Badge>
-              </div>
+              </Button>
             )}
             {/* Settings Menu */}
             <DropdownMenu>
@@ -216,6 +227,14 @@ export function Dashboard() {
                 >
                   <FileAudio className="h-3.5 w-3.5 mr-2" />
                   Audio Transcription Tool
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setIsBackupManagerOpen(true)}
+                >
+                  <Database className="h-3.5 w-3.5 mr-2" />
+                  Backup & Restore
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -267,7 +286,7 @@ export function Dashboard() {
           </Card>
 
           {/* Tasks Overview */}
-          <Card>
+          <Card id="tasks-section">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Tasks</CardTitle>
               <CardDescription className="text-xs">
@@ -291,6 +310,12 @@ export function Dashboard() {
       <MedicationUpdateChecker
         isOpen={isMedicationUpdateCheckerOpen}
         onClose={() => setIsMedicationUpdateCheckerOpen(false)}
+      />
+
+      {/* Backup Manager Dialog */}
+      <BackupManager
+        isOpen={isBackupManagerOpen}
+        onClose={() => setIsBackupManagerOpen(false)}
       />
     </div>
   );

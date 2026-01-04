@@ -153,6 +153,84 @@ export function ConsultationEventPanel({
   const [newTaskOffset, setNewTaskOffset] = useState("1 week");
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>(2);
 
+  // Processing log state - tracks what has been done in this consultation
+  const [processingLog, setProcessingLog] = useState<{
+    transcriptSaved?: string;
+    clinicalNotesGenerated?: string;
+    comprehensiveReportGenerated?: string;
+    vetReportGenerated?: string;
+    tasksCreated?: string;
+  }>({});
+
+  // Helper to update event notes with processing log
+  // currentNotesContent: Pass the current notes content to avoid stale state issues
+  //                      (e.g., when clinical notes were just generated and saved)
+  const updateProcessingLog = async (
+    newLogEntry: Partial<typeof processingLog>,
+    currentNotesContent?: string
+  ) => {
+    if (!event?.eventId) return;
+
+    const updatedLog = { ...processingLog, ...newLogEntry };
+    setProcessingLog(updatedLog);
+
+    // Build the processing log HTML section
+    const logEntries: string[] = [];
+    if (updatedLog.transcriptSaved) {
+      logEntries.push(`<li>✓ Transcript saved: ${updatedLog.transcriptSaved}</li>`);
+    }
+    if (updatedLog.clinicalNotesGenerated) {
+      logEntries.push(`<li>✓ Clinical notes generated: ${updatedLog.clinicalNotesGenerated}</li>`);
+    }
+    if (updatedLog.comprehensiveReportGenerated) {
+      logEntries.push(`<li>✓ Comprehensive report: ${updatedLog.comprehensiveReportGenerated}</li>`);
+    }
+    if (updatedLog.vetReportGenerated) {
+      logEntries.push(`<li>✓ Vet report: ${updatedLog.vetReportGenerated}</li>`);
+    }
+    if (updatedLog.tasksCreated) {
+      logEntries.push(`<li>✓ Tasks created: ${updatedLog.tasksCreated}</li>`);
+    }
+
+    // Get existing notes content (without the processing log section)
+    // Use passed currentNotesContent if available, otherwise fall back to event.notes
+    let existingContent = currentNotesContent ?? event.notes ?? "";
+    // Remove existing processing log section if present
+    const logMarker = "<!-- PROCESSING_LOG -->";
+    const logEndMarker = "<!-- /PROCESSING_LOG -->";
+    const logStartIdx = existingContent.indexOf(logMarker);
+    if (logStartIdx !== -1) {
+      const logEndIdx = existingContent.indexOf(logEndMarker);
+      if (logEndIdx !== -1) {
+        existingContent = existingContent.substring(0, logStartIdx) + existingContent.substring(logEndIdx + logEndMarker.length);
+      }
+    }
+
+    // Build the processing log section
+    const processingLogHtml = logEntries.length > 0
+      ? `${logMarker}<hr/><h3>Processing Log</h3><ul>${logEntries.join("")}</ul>${logEndMarker}`
+      : "";
+
+    // Combine existing content with processing log
+    const updatedNotes = existingContent.trim() + processingLogHtml;
+
+    try {
+      const updatedEvent = await updateEvent(event.eventId, {
+        notes: updatedNotes
+      });
+
+      // Notify parent of update
+      if (onSave && updatedEvent) {
+        onSave(updatedEvent);
+      }
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+    } catch (error) {
+      console.error("Failed to update processing log:", error);
+    }
+  };
+
   // Load all files from client folder
   useEffect(() => {
     const loadFiles = async () => {
@@ -256,13 +334,17 @@ export function ConsultationEventPanel({
 
       return { filePath: result.filePath, fileName: result.fileName };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       // Clear textarea and switch to confirmation view
       setTranscriptText("");
       setIsEditing(false);
 
       // Refresh txt files dropdown to show newly saved file
       setRefreshTrigger(prev => prev + 1);
+
+      // Update processing log
+      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
+      updateProcessingLog({ transcriptSaved: `${result.fileName} (${timestamp})` });
 
       // Invalidate queries to refresh event data
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
@@ -418,10 +500,13 @@ export function ConsultationEventPanel({
       setShowClinicalNotesOptions(false);
       setHasGeneratedNotes(true);
 
-      // Update parent with the new event data (so Notes field refreshes)
-      if (onSave && result.updatedEvent) {
-        onSave(result.updatedEvent);
-      }
+      // Update processing log - pass the generated clinical notes content
+      // so the log is appended to the actual notes, not stale event.notes
+      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
+      updateProcessingLog({ clinicalNotesGenerated: timestamp }, result.content);
+
+      // Note: updateProcessingLog will call onSave with the updated event
+      // which includes both the clinical notes and the processing log
 
       // Invalidate queries to refresh event data with new notes
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
@@ -555,6 +640,10 @@ export function ConsultationEventPanel({
       // Collapse the options panel back to single button and mark as generated
       setShowComprehensiveOptions(false);
       setHasGeneratedComprehensive(true);
+
+      // Update processing log
+      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
+      updateProcessingLog({ comprehensiveReportGenerated: `${result.docxFileName} (${timestamp})` });
 
       // Invalidate queries to refresh event data
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
@@ -790,6 +879,10 @@ Return ONLY valid JSON array, no other text.`
       toast.success(`Created ${createdTasks.length} task${createdTasks.length !== 1 ? 's' : ''}`);
       setShowTaskOptions(false);
       setHasCreatedTasks(true);
+
+      // Update processing log with task count
+      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
+      updateProcessingLog({ tasksCreated: `${createdTasks.length} task${createdTasks.length !== 1 ? 's' : ''} (${timestamp})` });
 
       // Invalidate queries to refresh task lists
       queryClient.invalidateQueries({ queryKey: ["tasks", clientId] });

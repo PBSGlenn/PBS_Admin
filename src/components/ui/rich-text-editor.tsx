@@ -2,6 +2,7 @@
 // Tiptap-based rich text editor with formatting toolbar
 
 import { useEditor, EditorContent } from '@tiptap/react';
+import { useEffect, useRef } from 'react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -35,6 +36,9 @@ export function RichTextEditor({
   placeholder = "Start typing...",
   className = ""
 }: RichTextEditorProps) {
+  // Track if we're updating content programmatically to avoid loops
+  const isUpdatingRef = useRef(false);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -52,7 +56,10 @@ export function RichTextEditor({
     ],
     content,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      // Don't call onChange if we're programmatically setting content
+      if (!isUpdatingRef.current) {
+        onChange(editor.getHTML());
+      }
     },
     editorProps: {
       attributes: {
@@ -60,6 +67,16 @@ export function RichTextEditor({
       },
     },
   });
+
+  // Sync external content changes to the editor
+  // This handles when content is updated from outside (e.g., AI generation)
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      isUpdatingRef.current = true;
+      editor.commands.setContent(content, { emitUpdate: false });
+      isUpdatingRef.current = false;
+    }
+  }, [content, editor]);
 
   if (!editor) {
     return null;

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { EventForm } from "./EventForm";
 import { ConsultationEventPanel } from "./ConsultationEventPanel";
 import { PrescriptionEventPanel } from "./PrescriptionEventPanel";
+import { ReportSentEventPanel } from "./ReportSentEventPanel";
 import { getClientById } from "@/lib/services/clientService";
 import type { Event } from "@/lib/types";
 
@@ -63,7 +64,11 @@ export function EventFormModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-6xl max-h-[90vh] overflow-y-auto"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-sm">
             {isEditing ? "Edit Event" : "Create Event"}
@@ -100,6 +105,8 @@ export function EventFormModal({
                 ? "Consultation Processing"
                 : eventType === "Prescription"
                 ? "Prescription Details"
+                : eventType === "ReportSent"
+                ? "Report Delivery"
                 : "Event-Specific Options"}
             </h3>
 
@@ -116,6 +123,16 @@ export function EventFormModal({
               />
             ) : eventType === "Prescription" ? (
               <PrescriptionEventPanel
+                clientId={clientId}
+                event={currentEvent}
+                formData={formData}
+                clientFolderPath={client?.folderPath ?? undefined}
+                clientName={client ? `${client.firstName} ${client.lastName}` : undefined}
+                onSave={handleEventSave}
+                onClose={onClose}
+              />
+            ) : eventType === "ReportSent" ? (
+              <ReportSentEventPanel
                 clientId={clientId}
                 event={currentEvent}
                 formData={formData}

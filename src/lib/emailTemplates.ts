@@ -163,6 +163,29 @@ Best regards,
 Pet Behaviour Services`,
     variables: ['clientFirstName', 'content'],
     description: 'General purpose email template'
+  },
+  {
+    id: 'vet-report-cover',
+    name: 'Veterinary Report Cover Letter',
+    subject: 'Behaviour Consultation Report - {{petName}} {{clientLastName}}',
+    body: `Dear Colleague,
+
+Please find attached my behaviour consultation report for {{petName}} {{clientLastName}}, seen on {{consultationDate}}.
+
+This report summarises my assessment findings and management recommendations. Please feel free to contact me if you have any questions regarding the case or would like to discuss the recommendations further.
+
+If pharmacological intervention has been recommended, I am happy to discuss dosing, monitoring, and any potential drug interactions relevant to this patient.
+
+Kind regards,
+
+Dr. Glenn Tobiansky
+BVSc MANZCVS (Veterinary Behaviour), KPA-CTP
+Pet Behaviour Services
+Melbourne & Mornington Peninsula
+grubbface@hotmail.com
+0402 857 064`,
+    variables: ['petName', 'clientLastName', 'consultationDate'],
+    description: 'Cover letter for sending reports to referring veterinarians'
   }
 ];
 

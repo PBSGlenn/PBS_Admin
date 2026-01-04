@@ -2,7 +2,6 @@
 // Convert markdown reports to Word documents using Pandoc
 
 import { invoke } from "@tauri-apps/api/core";
-import { createEvent } from "./eventService";
 
 export interface DocxConversionOptions {
   mdFilePath: string;
@@ -66,13 +65,7 @@ export async function convertReportToDocx(
       templatePath: templateFilePath,
     });
 
-    // Create event tracking the conversion
-    await createEvent({
-      clientId,
-      eventType: "Note",
-      date: new Date().toISOString(),
-      notes: `<h2>Consultation Report Converted to DOCX</h2><p><strong>File:</strong> ${docxFileName}</p><p><strong>Source:</strong> ${mdFilePath.split('\\').pop()}</p><p><strong>Template:</strong> ${templateName}</p><p>Report converted to Word document with letterhead template.</p>`,
-    });
+    // Note: Event tracking removed - calling code (panels) handle their own tracking
 
     return {
       docxFilePath,
@@ -133,13 +126,7 @@ export async function convertReportToDocxDirectly(
       templatePath: templateFilePath,
     });
 
-    // Create event tracking the conversion
-    await createEvent({
-      clientId,
-      eventType: "Note",
-      date: new Date().toISOString(),
-      notes: `<h2>${reportType === 'clientReport' ? 'Client Report' : reportType === 'practitionerReport' ? 'Practitioner Report' : 'Vet Report'} Converted to DOCX</h2><p><strong>File:</strong> ${docxFileName}</p><p><strong>Template:</strong> ${templateName}</p><p>Report converted directly from memory to Word document (no intermediate markdown file).</p>`,
-    });
+    // Note: Event tracking removed - calling code (panels) handle their own tracking
 
     return {
       docxFilePath,
