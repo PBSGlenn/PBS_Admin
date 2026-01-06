@@ -54,6 +54,8 @@ interface ExistingReport {
   name: string;
   path: string;
   type: "client" | "vet";
+  emailed?: boolean; // Tracked in event notes
+  emailedDate?: string;
 }
 
 export function ReportSentEventPanel({
@@ -85,51 +87,78 @@ export function ReportSentEventPanel({
   // Email state
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [emailingReportPath, setEmailingReportPath] = useState<string | null>(null); // Track which report is being emailed
 
-  // Helper to update event notes progressively
-  const updateEventNotes = async (status: {
-    consultationDate?: string;
-    reportType?: string;
-    docxGenerated?: string;
-    pdfConverted?: string;
-    emailOpened?: string;
-    markedSent?: string;
-    recipient?: string;
-  }) => {
+  // Report log state - tracks all generated reports and their email status
+  const [reportLog, setReportLog] = useState<Array<{
+    fileName: string;
+    reportType: "client" | "vet";
+    generatedDate: string;
+    emailed: boolean;
+    emailedTo?: string;
+    emailedDate?: string;
+  }>>([]);
+
+  // Parse existing notes to extract report log
+  useEffect(() => {
+    if (!event?.notes) return;
+
+    // Parse report log from notes if present
+    const logMatch = event.notes.match(/<!--REPORT_LOG:([\s\S]*?)-->/);
+    if (logMatch) {
+      try {
+        const parsed = JSON.parse(logMatch[1]);
+        setReportLog(parsed);
+      } catch (e) {
+        console.warn("Failed to parse report log from notes");
+      }
+    }
+  }, [event?.notes]);
+
+  // Helper to update event notes with report log
+  const updateEventNotes = async (newReportLog?: typeof reportLog) => {
     if (!event?.eventId) return;
 
+    const logToUse = newReportLog || reportLog;
     const consultation = consultations.find(c => c.eventId === selectedConsultationId);
     const pet = pets[0];
 
-    let notesHtml = `<h2>Report Delivery</h2>`;
-    notesHtml += `<p><strong>Type:</strong> ${status.reportType || (reportType === "client" ? "Client Report" : "Vet Report")}</p>`;
+    let notesHtml = `<h2>Report Delivery Log</h2>`;
 
-    if (status.consultationDate || consultation) {
-      notesHtml += `<p><strong>Source Consultation:</strong> ${status.consultationDate || consultation?.formattedDate || "Unknown"}</p>`;
+    if (consultation) {
+      notesHtml += `<p><strong>Source Consultation:</strong> ${consultation.formattedDate}</p>`;
     }
     if (pet) {
       notesHtml += `<p><strong>Pet:</strong> ${pet.name}</p>`;
     }
-    if (reportType === "vet" && vetClinicName) {
-      notesHtml += `<p><strong>Vet Clinic:</strong> ${vetClinicName}</p>`;
+
+    notesHtml += `<hr/><h3>Reports</h3>`;
+
+    if (logToUse.length === 0) {
+      notesHtml += `<p><em>No reports generated yet</em></p>`;
+    } else {
+      notesHtml += `<table style="width:100%; border-collapse: collapse; font-size: 11px;">`;
+      notesHtml += `<tr style="background: #f5f5f5;"><th style="text-align:left; padding:4px; border-bottom:1px solid #ddd;">Report</th><th style="text-align:left; padding:4px; border-bottom:1px solid #ddd;">Generated</th><th style="text-align:left; padding:4px; border-bottom:1px solid #ddd;">Email Status</th></tr>`;
+
+      for (const entry of logToUse) {
+        const typeLabel = entry.reportType === "client" ? "Client" : "Vet";
+        const emailStatus = entry.emailed
+          ? `✓ Sent to ${entry.emailedTo} (${entry.emailedDate})`
+          : "Not sent";
+        const emailStyle = entry.emailed ? "color: green;" : "color: #888;";
+
+        notesHtml += `<tr>`;
+        notesHtml += `<td style="padding:4px; border-bottom:1px solid #eee;"><strong>${typeLabel}:</strong> ${entry.fileName}</td>`;
+        notesHtml += `<td style="padding:4px; border-bottom:1px solid #eee;">${entry.generatedDate}</td>`;
+        notesHtml += `<td style="padding:4px; border-bottom:1px solid #eee; ${emailStyle}">${emailStatus}</td>`;
+        notesHtml += `</tr>`;
+      }
+
+      notesHtml += `</table>`;
     }
 
-    notesHtml += `<hr/><h3>Progress</h3><ul>`;
-
-    if (status.docxGenerated) {
-      notesHtml += `<li>✓ DOCX generated: ${status.docxGenerated}</li>`;
-    }
-    if (status.pdfConverted) {
-      notesHtml += `<li>✓ PDF converted: ${status.pdfConverted}</li>`;
-    }
-    if (status.emailOpened) {
-      notesHtml += `<li>✓ Email draft opened: ${status.emailOpened}</li>`;
-    }
-    if (status.markedSent) {
-      notesHtml += `<li>✓ <strong>Sent to ${status.recipient || recipientEmail}:</strong> ${status.markedSent}</li>`;
-    }
-
-    notesHtml += `</ul>`;
+    // Store machine-readable log in HTML comment
+    notesHtml += `\n<!--REPORT_LOG:${JSON.stringify(logToUse)}-->`;
 
     try {
       await updateEvent(event.eventId, {
@@ -148,12 +177,52 @@ export function ReportSentEventPanel({
     }
   };
 
-  // Track current progress for notes
-  const [progressState, setProgressState] = useState<{
-    docxGenerated?: string;
-    pdfConverted?: string;
-    emailOpened?: string;
-  }>({});
+  // Add report to log
+  const addReportToLog = async (fileName: string, type: "client" | "vet") => {
+    const timestamp = format(new Date(), "d MMM yyyy HH:mm");
+    const newEntry = {
+      fileName,
+      reportType: type,
+      generatedDate: timestamp,
+      emailed: false
+    };
+    const newLog = [...reportLog, newEntry];
+    setReportLog(newLog);
+    await updateEventNotes(newLog);
+  };
+
+  // Mark report as emailed in log (adds to log if not already present)
+  const markReportAsEmailed = async (fileName: string, emailedTo: string, fileType?: "client" | "vet") => {
+    const timestamp = format(new Date(), "d MMM yyyy HH:mm");
+
+    // Check if report exists in log
+    const existingEntry = reportLog.find(entry => entry.fileName === fileName);
+
+    let newLog: typeof reportLog;
+    if (existingEntry) {
+      // Update existing entry
+      newLog = reportLog.map(entry =>
+        entry.fileName === fileName
+          ? { ...entry, emailed: true, emailedTo, emailedDate: timestamp }
+          : entry
+      );
+    } else {
+      // Add new entry for pre-existing report being emailed
+      const newEntry = {
+        fileName,
+        reportType: fileType || reportType,
+        generatedDate: "Pre-existing",
+        emailed: true,
+        emailedTo,
+        emailedDate: timestamp
+      };
+      newLog = [...reportLog, newEntry];
+    }
+
+    setReportLog(newLog);
+    await updateEventNotes(newLog);
+  };
+
 
   // Fetch consultations for this client
   const { data: consultations = [] } = useQuery({
@@ -367,12 +436,9 @@ export function ReportSentEventPanel({
       toast.success(`${reportType === "client" ? "Client" : "Vet"} report generated successfully`);
       setIsGenerating(false);
 
-      // Update event notes with DOCX generation
+      // Add report to log
       const fileName = docxResult.docxFilePath.split("\\").pop() || "report.docx";
-      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
-      const newProgress = { ...progressState, docxGenerated: `${fileName} (${timestamp})` };
-      setProgressState(newProgress);
-      await updateEventNotes(newProgress);
+      await addReportToLog(fileName, reportType);
     },
     onError: (error) => {
       toast.error("Failed to generate report", {
@@ -409,12 +475,9 @@ export function ReportSentEventPanel({
       setGeneratedPdfPath(pdfPath);
       toast.success("PDF created successfully");
 
-      // Update event notes with PDF conversion
+      // Add PDF to log (replaces DOCX entry or adds new)
       const fileName = pdfPath.split("\\").pop() || "report.pdf";
-      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
-      const newProgress = { ...progressState, pdfConverted: `${fileName} (${timestamp})` };
-      setProgressState(newProgress);
-      await updateEventNotes(newProgress);
+      await addReportToLog(fileName, reportType);
     } catch (error) {
       toast.error("Failed to convert to PDF", {
         description: error instanceof Error ? error.message : "Make sure MS Word is installed"
@@ -464,37 +527,48 @@ export function ReportSentEventPanel({
 
     try {
       await invoke("plugin:opener|open_url", { url: mailtoLink });
-      toast.info("Email app opened - don't forget to attach the PDF!", {
+      toast.info("Email app opened - don't forget to attach the report!", {
         description: "Manually attach the report file and click Send in your email app",
         duration: 5000
       });
-
-      // Update event notes with email opened
-      const timestamp = format(new Date(), "d MMM yyyy HH:mm");
-      const newProgress = { ...progressState, emailOpened: `${to} (${timestamp})` };
-      setProgressState(newProgress);
-      await updateEventNotes(newProgress);
     } catch (error) {
       console.error("Failed to open email app:", error);
       toast.error("Failed to open email app");
-      return; // Don't mark as sent if we couldn't open the email app
     }
   };
 
   // Handle marking as sent (updates event tracking)
   const handleMarkAsSent = async () => {
-    // Update event notes with final "marked as sent" status
-    const timestamp = format(new Date(), "d MMM yyyy HH:mm");
-    const newProgress = {
-      ...progressState,
-      markedSent: timestamp,
-      recipient: recipientEmail
-    };
-    setProgressState(newProgress);
-    await updateEventNotes(newProgress);
+    // Get the report file name and type being emailed
+    let reportFileName: string | undefined;
+    let fileType: "client" | "vet" | undefined;
+
+    if (emailingReportPath) {
+      reportFileName = emailingReportPath.split("\\").pop();
+      // Determine type from filename
+      if (reportFileName?.includes("client-report")) {
+        fileType = "client";
+      } else if (reportFileName?.includes("vet-report")) {
+        fileType = "vet";
+      }
+    } else if (generatedPdfPath) {
+      reportFileName = generatedPdfPath.split("\\").pop();
+      fileType = reportType;
+    } else if (generatedDocxPath) {
+      reportFileName = generatedDocxPath.split("\\").pop();
+      fileType = reportType;
+    } else if (existingReportsForType[0]) {
+      reportFileName = existingReportsForType[0].name;
+      fileType = existingReportsForType[0].type;
+    }
+
+    if (reportFileName) {
+      await markReportAsEmailed(reportFileName, recipientEmail, fileType);
+    }
 
     setEmailSent(true);
     setShowEmailDialog(false);
+    setEmailingReportPath(null);
     toast.success("Report marked as sent");
   };
 
@@ -615,21 +689,47 @@ export function ReportSentEventPanel({
               <p className="text-[10px] font-medium text-blue-800 mb-1">
                 Existing {reportType === "client" ? "Client" : "Vet"} Reports:
               </p>
-              <div className="space-y-1">
-                {existingReportsForType.map((report, idx) => (
-                  <div key={idx} className="flex items-center justify-between">
-                    <span className="text-[10px] text-blue-700">{report.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleOpenDocument(report.path)}
-                      className="h-5 px-1.5 text-[9px]"
-                    >
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      Open
-                    </Button>
-                  </div>
-                ))}
+              <div className="space-y-1.5">
+                {existingReportsForType.map((report, idx) => {
+                  const logEntry = reportLog.find(entry => entry.fileName === report.name);
+                  const isEmailed = logEntry?.emailed || false;
+
+                  return (
+                    <div key={idx} className="flex items-center justify-between gap-1">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[10px] text-blue-700 block truncate">{report.name}</span>
+                        {isEmailed && logEntry && (
+                          <span className="text-[9px] text-green-600">
+                            ✓ Sent to {logEntry.emailedTo} ({logEntry.emailedDate})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenDocument(report.path)}
+                          className="h-5 px-1.5 text-[9px]"
+                          title="Open document"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEmailingReportPath(report.path);
+                            setShowEmailDialog(true);
+                          }}
+                          className={`h-5 px-1.5 text-[9px] ${isEmailed ? 'text-green-600' : 'text-blue-600'}`}
+                          title={isEmailed ? "Send again" : "Send via email"}
+                        >
+                          <Mail className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -776,14 +876,17 @@ export function ReportSentEventPanel({
       {/* Email Draft Dialog */}
       <EmailDraftDialog
         isOpen={showEmailDialog}
-        onClose={() => setShowEmailDialog(false)}
+        onClose={() => {
+          setShowEmailDialog(false);
+          setEmailingReportPath(null);
+        }}
         onSend={handleOpenEmailApp}
         onMarkAsSent={handleMarkAsSent}
         initialTo={recipientEmail}
         initialSubject={getEmailContent().subject}
         initialBody={getEmailContent().body}
         clientName={clientName || ""}
-        attachmentReminder={`${(generatedPdfPath || generatedDocxPath || existingReportsForType[0]?.path)?.split("\\").pop() || "Report"}\n\nLocation: ${clientFolderPath}`}
+        attachmentReminder={`${(emailingReportPath || generatedPdfPath || generatedDocxPath || existingReportsForType[0]?.path)?.split("\\").pop() || "Report"}\n\nLocation: ${clientFolderPath}`}
       />
     </div>
   );
