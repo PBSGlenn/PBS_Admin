@@ -10,11 +10,11 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution, and support for both web-based (Gmail) and desktop email clients. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/create email/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
+**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
 
-**Last Updated**: 2026-01-07
+**Last Updated**: 2026-01-27
 
-**Next Session**: Fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX.
+**Next Session**: Production readiness review - fix Event notes not updating after prescription generation, fix letterhead not appearing in generated DOCX.
 
 ---
 
@@ -34,11 +34,13 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 | **Notifications** | Sonner | Toast notifications for in-app alerts |
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
 | **Email Templates** | localStorage + Variable System | Customizable templates with dynamic content |
+| **Email Sending** | Resend API | Direct email delivery with attachments |
+| **Email Receiving** | ImprovMX | Email forwarding to personal inbox |
 | **Prescription Templates** | localStorage + Pandoc | Template-based prescription generation |
 | **AI Services** | Anthropic Claude Opus 4.5 | Report generation, task extraction |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
 | **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
-| **External Services** | Supabase, Jotform API | Booking sync, questionnaire downloads |
+| **External Services** | Supabase, Jotform API, Resend | Booking sync, questionnaire downloads, email |
 
 ---
 
@@ -91,7 +93,8 @@ PBS_Admin/
 │   │   │   ├── multiReportGenerationService.ts # ✅ Multi-report generation (3 types)
 │   │   │   ├── transcriptFileService.ts # ✅ Transcript file management
 │   │   │   ├── docxConversionService.ts # ✅ MD → DOCX conversion with Pandoc
-│   │   │   └── pdfConversionService.ts # ✅ DOCX → PDF conversion with MS Word
+│   │   │   ├── pdfConversionService.ts # ✅ DOCX → PDF conversion with MS Word
+│   │   │   └── emailService.ts    # ✅ Resend API email sending with attachments
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
 │   │   │   ├── report-system-prompt.ts  # ✅ Report generation methodology (legacy)
 │   │   │   └── promptTemplates.ts  # ✅ Multi-prompt template management system
@@ -478,31 +481,38 @@ const emailContent = processTemplate(template.body, {
 
 **Email Draft Dialog**:
 ```typescript
-import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
+import { EmailDraftDialog, EmailAttachment } from "@/components/ui/email-draft-dialog";
 
 <EmailDraftDialog
   isOpen={isOpen}
   onClose={() => setIsOpen(false)}
   onSend={(to, subject, body) => {
-    // Open mailto: link for desktop clients
+    // Fallback: Open mailto: link for desktop clients
     const mailtoLink = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.open(mailtoLink, '_blank');
+  }}
+  onEmailSent={() => {
+    // Called after successful Resend delivery
+    console.log("Email sent successfully");
   }}
   initialTo={client.email}
   initialSubject={processedSubject}
   initialBody={processedBody}
   clientName={client.firstName + ' ' + client.lastName}
+  attachments={[{ path: "/path/to/file.pdf", name: "report.pdf" }]}
 />
 ```
 
 **Features**:
+- **Direct sending via Resend API** with file attachments
 - Editable To, Subject, and Body fields
-- Amber alert box for attachment reminders (optional)
-- Shows PDF filename and folder location for consultation reports
+- Attachment preview with remove buttons
+- Automatic email signature with logo
 - Character count display
 - Copy to clipboard for web-based email clients (Gmail)
-- Open in email app for desktop clients (Outlook, Thunderbird, Mail)
+- Open in email app fallback for desktop clients
 - Edit tracking indicator
+- Loading state during send
 
 **Accessing Template Manager**:
 1. Click Settings (gear icon) in Dashboard header
@@ -524,6 +534,118 @@ import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
 - `@radix-ui/react-tabs` - Template preview tabs
 - `@radix-ui/react-dropdown-menu` - Settings menu
 - `@radix-ui/react-icons` - UI icons
+
+---
+
+### Email Sending System (Resend API)
+
+**Purpose**: Direct email delivery from PBS Admin with file attachments, replacing manual mailto: workflow.
+
+**Technology**: Resend API via Tauri backend command
+
+**Architecture**:
+```
+PBS Admin (Frontend)
+        │
+        │ sendEmail({ to, subject, body, attachments })
+        ▼
+emailService.ts (TypeScript)
+        │
+        │ invoke("send_email", { ... })
+        ▼
+lib.rs (Rust Backend)
+        │
+        │ Read files, encode Base64, POST to Resend API
+        ▼
+Resend API (api.resend.com)
+        │
+        │ Delivers email
+        ▼
+Recipient Inbox
+```
+
+**Email Receiving**:
+- ImprovMX forwards `glenn@petbehaviourservices.com.au` → personal Gmail
+- MX records point to `mx1.improvmx.com` and `mx2.improvmx.com`
+- Reply from Gmail using "Send mail as" feature
+
+**Configuration** (`.env`):
+```bash
+# Resend API for sending emails
+VITE_RESEND_API_KEY=re_xxxxxxxxxxxx
+VITE_EMAIL_FROM=glenn@petbehaviourservices.com.au
+```
+
+**DNS Requirements** (Vercel):
+```
+MX   @   mx1.improvmx.com (priority 10)
+MX   @   mx2.improvmx.com (priority 20)
+TXT  @   v=spf1 include:spf.improvmx.com include:amazonses.com ~all
+TXT  resend._domainkey   (DKIM record from Resend)
+```
+
+**Email Service** (`src/lib/services/emailService.ts`):
+```typescript
+import { sendEmail, isEmailServiceConfigured } from "@/lib/services/emailService";
+
+// Check if Resend is configured
+if (isEmailServiceConfigured()) {
+  const result = await sendEmail({
+    to: "client@example.com",
+    subject: "Consultation Report",
+    body: "Please find attached...",
+    attachments: ["/path/to/report.pdf"],
+    includeSignature: true, // Adds logo and contact info
+  });
+
+  if (result.success) {
+    console.log("Email sent:", result.id);
+  } else {
+    console.error("Failed:", result.error);
+  }
+}
+```
+
+**Email Signature**:
+- Automatically appended to all emails when `includeSignature: true`
+- Includes: Glenn Tobiansky name, website link, phone number, PBS logo
+- Logo hosted at: `https://petbehaviourservices.com.au/images/pbs-logo-transparent.png`
+
+**Context Menu Integration**:
+Right-click on email field in Client view shows:
+- Paste
+- Copy email address
+- Compose email...
+- **Send with attachment →** (submenu showing files from client folder)
+  - Reports section (files containing "report" or "clinical")
+  - Other Files section (questionnaires, transcripts, etc.)
+- Open client folder
+
+**Tauri Backend Command** (`src-tauri/src/lib.rs`):
+```rust
+#[tauri::command]
+async fn send_email(
+    api_key: String,
+    from: String,
+    to: String,
+    subject: String,
+    html_body: String,
+    attachment_paths: Option<Vec<String>>,
+) -> Result<serde_json::Value, String>
+```
+
+**Helper Functions**:
+- `sendConsultationReport()` - Pre-filled template for sending client reports
+- `sendVetReport()` - Pre-filled template for vet communications
+- `sendQuestionnaireReminder()` - Pre-filled template for questionnaire reminders
+- `getEmailSignature()` - Returns HTML signature for preview
+- `isEmailServiceConfigured()` - Checks if API key is set
+
+**Implementation Files**:
+- [emailService.ts](src/lib/services/emailService.ts) - Email sending service
+- [email-draft-dialog.tsx](src/components/ui/email-draft-dialog.tsx) - UI component
+- [email-input.tsx](src/components/ui/email-input.tsx) - Context menu with attachments
+- [lib.rs](src-tauri/src/lib.rs) - Rust backend command (send_email)
 
 ---
 
