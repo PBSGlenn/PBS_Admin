@@ -285,6 +285,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
                     className={`h-7 text-[11px] ${errors.email ? "border-destructive" : ""}`}
                     clientFirstName={formData.firstName}
                     clientLastName={formData.lastName}
+                    clientFolderPath={currentFolderPath}
                   />
                   {errors.email && (
                     <p className="text-[10px] text-destructive">{errors.email}</p>

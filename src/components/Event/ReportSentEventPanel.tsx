@@ -34,7 +34,7 @@ import { getClientById } from "@/lib/services/clientService";
 import { generateClientReport, generateVeterinaryReport } from "@/lib/services/multiReportGenerationService";
 import { convertReportToDocxDirectly } from "@/lib/services/docxConversionService";
 import { getEmailTemplate, processTemplate } from "@/lib/emailTemplates";
-import { EmailDraftDialog } from "@/components/ui/email-draft-dialog";
+import { EmailDraftDialog, EmailAttachment } from "@/components/ui/email-draft-dialog";
 import type { Event } from "@/lib/types";
 
 type ReportType = "client" | "vet";
@@ -882,10 +882,43 @@ export function ReportSentEventPanel({
         }}
         onSend={handleOpenEmailApp}
         onMarkAsSent={handleMarkAsSent}
+        onEmailSent={async (to, subject) => {
+          // Mark report as emailed when sent via Resend
+          let reportFileName: string | undefined;
+          let fileType: "client" | "vet" | undefined;
+
+          const reportPath = emailingReportPath || generatedPdfPath || generatedDocxPath || existingReportsForType[0]?.path;
+          if (reportPath) {
+            reportFileName = reportPath.split("\\").pop();
+            if (reportFileName?.includes("client-report")) {
+              fileType = "client";
+            } else if (reportFileName?.includes("vet-report")) {
+              fileType = "vet";
+            } else {
+              fileType = reportType;
+            }
+          }
+
+          if (reportFileName) {
+            await markReportAsEmailed(reportFileName, to, fileType);
+          }
+
+          setEmailSent(true);
+          setEmailingReportPath(null);
+        }}
         initialTo={recipientEmail}
         initialSubject={getEmailContent().subject}
         initialBody={getEmailContent().body}
         clientName={clientName || ""}
+        attachments={(() => {
+          // Determine which file to attach
+          const reportPath = emailingReportPath || generatedPdfPath || generatedDocxPath || existingReportsForType[0]?.path;
+          if (reportPath) {
+            const fileName = reportPath.split("\\").pop() || "report";
+            return [{ path: reportPath, name: fileName }];
+          }
+          return [];
+        })()}
         attachmentReminder={`${(emailingReportPath || generatedPdfPath || generatedDocxPath || existingReportsForType[0]?.path)?.split("\\").pop() || "Report"}\n\nLocation: ${clientFolderPath}`}
       />
     </div>

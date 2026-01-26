@@ -41,7 +41,13 @@
       "Bash(npx ts-node:*)",
       "Bash(cmd /c \"dir /s /b C:\\\\Users\\\\grubb\\\\Documents\\\\*mcdonald* 2>nul\")",
       "Bash(cmd /c \"dir /ad /s C:\\\\Users\\\\grubb\\\\Documents\\\\PBS_Admin 2>nul\")",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(copy \"C:\\\\Users\\\\grubb\\\\Downloads\\\\zoho-domain-verification.html\" \"C:\\\\Dev\\\\pet-behaviour\\\\public\"\")",
+      "Bash(git check-ignore:*)",
+      "Bash(grep:*)",
+      "Bash(cargo build:*)"
     ],
     "deny": [],
     "ask": []

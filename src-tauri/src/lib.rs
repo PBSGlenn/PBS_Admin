@@ -765,6 +765,164 @@ fn delete_backup_file(backup_path: String) -> Result<String, String> {
     Ok("Backup deleted successfully".to_string())
 }
 
+// ============================================================================
+// EMAIL SENDING VIA RESEND API
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EmailAttachment {
+    filename: String,
+    content: String, // Base64 encoded content
+}
+
+#[derive(Debug, Serialize)]
+struct ResendEmailRequest {
+    from: String,
+    to: Vec<String>,
+    subject: String,
+    html: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attachments: Option<Vec<ResendAttachment>>,
+}
+
+#[derive(Debug, Serialize)]
+struct ResendAttachment {
+    filename: String,
+    content: String, // Base64 encoded
+}
+
+#[derive(Debug, Deserialize)]
+struct ResendEmailResponse {
+    id: String,
+}
+
+/// Send an email via Resend API with optional attachments
+#[tauri::command]
+async fn send_email(
+    api_key: String,
+    from: String,
+    to: String,
+    subject: String,
+    html_body: String,
+    attachment_paths: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    println!("Sending email to: {}", to);
+    println!("Subject: {}", subject);
+
+    // Process attachments if provided
+    let attachments: Option<Vec<ResendAttachment>> = if let Some(paths) = attachment_paths {
+        let mut att_list = Vec::new();
+        for path in paths {
+            let file_path = std::path::Path::new(&path);
+            if !file_path.exists() {
+                return Err(format!("Attachment file not found: {}", path));
+            }
+
+            // Read file and encode as base64
+            let file_data = fs::read(&path)
+                .map_err(|e| format!("Failed to read attachment {}: {}", path, e))?;
+
+            let base64_content = base64_encode(&file_data);
+
+            let filename = file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("attachment")
+                .to_string();
+
+            println!("Attaching file: {} ({} bytes)", filename, file_data.len());
+
+            att_list.push(ResendAttachment {
+                filename,
+                content: base64_content,
+            });
+        }
+        Some(att_list)
+    } else {
+        None
+    };
+
+    // Build request body
+    let email_request = ResendEmailRequest {
+        from,
+        to: vec![to.clone()],
+        subject: subject.clone(),
+        html: html_body,
+        attachments,
+    };
+
+    // Send request to Resend API
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.resend.com/emails")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&email_request)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send email request: {}", e))?;
+
+    // Check response status
+    let status = response.status();
+    let response_text = response.text().await
+        .unwrap_or_else(|_| "Unknown error".to_string());
+
+    if !status.is_success() {
+        return Err(format!("Resend API error ({}): {}", status, response_text));
+    }
+
+    // Parse response
+    let response_json: serde_json::Value = serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    let email_id = response_json["id"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+
+    println!("Email sent successfully! ID: {}", email_id);
+
+    Ok(serde_json::json!({
+        "success": true,
+        "id": email_id,
+        "to": to,
+        "subject": subject
+    }))
+}
+
+/// Simple base64 encoding function
+fn base64_encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < data.len() {
+        let b0 = data[i] as usize;
+        let b1 = if i + 1 < data.len() { data[i + 1] as usize } else { 0 };
+        let b2 = if i + 2 < data.len() { data[i + 2] as usize } else { 0 };
+
+        result.push(ALPHABET[b0 >> 2] as char);
+        result.push(ALPHABET[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
+
+        if i + 1 < data.len() {
+            result.push(ALPHABET[((b1 & 0x0f) << 2) | (b2 >> 6)] as char);
+        } else {
+            result.push('=');
+        }
+
+        if i + 2 < data.len() {
+            result.push(ALPHABET[b2 & 0x3f] as char);
+        } else {
+            result.push('=');
+        }
+
+        i += 3;
+    }
+
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -791,7 +949,8 @@ pub fn run() {
             create_database_backup,
             restore_database_backup,
             list_database_backups,
-            delete_backup_file
+            delete_backup_file,
+            send_email
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
