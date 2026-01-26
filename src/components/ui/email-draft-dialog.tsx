@@ -2,7 +2,7 @@
 // Allows preview and editing of email before sending
 // Supports direct sending via Resend API with attachments
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "./button";
 import {
   Dialog,
@@ -70,6 +70,18 @@ export function EmailDraftDialog({
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // Sync state when dialog opens with new values
+  useEffect(() => {
+    if (isOpen) {
+      setTo(initialTo);
+      setSubject(initialSubject);
+      setBody(initialBody);
+      setAttachments(initialAttachments);
+      setIsEditing(false);
+      setCopied(false);
+    }
+  }, [isOpen, initialTo, initialSubject, initialBody, JSON.stringify(initialAttachments)]);
 
   const emailConfigured = isEmailServiceConfigured();
 
@@ -158,17 +170,6 @@ ${body}`;
     setIsEditing(false);
     onClose();
   };
-
-  // Update state when props change
-  if (initialTo !== to && !isEditing) {
-    setTo(initialTo);
-  }
-  if (initialSubject !== subject && !isEditing) {
-    setSubject(initialSubject);
-  }
-  if (initialBody !== body && !isEditing) {
-    setBody(initialBody);
-  }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCancel()}>
