@@ -15,6 +15,7 @@ import { getClientById } from "@/lib/services/clientService";
 import type { Event, EventProcessingState } from "@/lib/types";
 import { Plus, Edit, Trash2, FileCheck } from "lucide-react";
 import { format } from "date-fns";
+import { truncateHtml } from "@/lib/utils/sanitize";
 
 export interface EventsTableProps {
   clientId: number;
@@ -139,18 +140,9 @@ export function EventsTable({ clientId }: EventsTableProps) {
     }
   };
 
-  const stripHtml = (html: string) => {
-    // Create a temporary DOM element to parse HTML
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || "";
-  };
-
+  // Use sanitized HTML truncation utility
   const truncateNotes = (notes: string | null) => {
-    if (!notes) return "—";
-    // Strip HTML tags first, then truncate
-    const plainText = stripHtml(notes);
-    return plainText.length > 50 ? plainText.substring(0, 50) + "..." : plainText;
+    return truncateHtml(notes, 50);
   };
 
   return (
