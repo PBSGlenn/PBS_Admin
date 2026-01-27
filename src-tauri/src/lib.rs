@@ -1,19 +1,146 @@
 // PBS Admin - Tauri Application Entry Point
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::process::Command;
 use reqwest::blocking::get;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// PATH VALIDATION FOR SECURITY
+// ============================================================================
+
+/// Get the base PBS_Admin directory in Documents
+fn get_pbs_admin_base_path() -> Result<PathBuf, String> {
+    match dirs::document_dir() {
+        Some(docs_path) => Ok(docs_path.join("PBS_Admin")),
+        None => Err("Could not find Documents folder".to_string()),
+    }
+}
+
+/// Validate that a path is within allowed directories (PBS_Admin folder structure)
+/// This prevents directory traversal attacks (e.g., ../../../etc/passwd)
+fn validate_path_within_pbs_admin(path: &str) -> Result<PathBuf, String> {
+    let path_obj = Path::new(path);
+
+    // Canonicalize to resolve any ../ or symlinks
+    let canonical_path = match path_obj.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            // If path doesn't exist yet (for new files), check parent
+            if let Some(parent) = path_obj.parent() {
+                let canonical_parent = parent.canonicalize()
+                    .map_err(|_| format!("Invalid path: parent directory does not exist: {}", path))?;
+                // Reconstruct full path with canonical parent
+                let file_name = path_obj.file_name()
+                    .ok_or_else(|| format!("Invalid path: no file name: {}", path))?;
+                canonical_parent.join(file_name)
+            } else {
+                return Err(format!("Invalid path: {}", path));
+            }
+        }
+    };
+
+    // Get the allowed base path
+    let base_path = get_pbs_admin_base_path()?;
+    let canonical_base = base_path.canonicalize()
+        .unwrap_or(base_path); // If base doesn't exist, use non-canonical
+
+    // Also allow system temp directory for temp files
+    let temp_dir = std::env::temp_dir();
+    let temp_pbs = temp_dir.join("PBS_Admin");
+
+    // Check if path is within allowed directories
+    if canonical_path.starts_with(&canonical_base) || canonical_path.starts_with(&temp_pbs) {
+        Ok(canonical_path)
+    } else {
+        Err(format!(
+            "Access denied: path '{}' is outside allowed directory. Files must be within Documents/PBS_Admin/",
+            path
+        ))
+    }
+}
+
+/// Validate path for read operations (file must exist within allowed dirs)
+fn validate_read_path(path: &str) -> Result<PathBuf, String> {
+    let path_obj = Path::new(path);
+
+    if !path_obj.exists() {
+        return Err(format!("File does not exist: {}", path));
+    }
+
+    validate_path_within_pbs_admin(path)
+}
+
+/// Validate path for write operations (parent must exist within allowed dirs)
+fn validate_write_path(path: &str) -> Result<PathBuf, String> {
+    validate_path_within_pbs_admin(path)
+}
+
+// ============================================================================
+// DATABASE PATH
+// ============================================================================
+
+/// Get the database path (Tauri command for frontend)
+#[tauri::command]
+fn get_database_path() -> Result<String, String> {
+    match dirs::document_dir() {
+        Some(docs_path) => {
+            let data_dir = docs_path.join("PBS_Admin").join("data");
+            if !data_dir.exists() {
+                fs::create_dir_all(&data_dir)
+                    .map_err(|e| format!("Failed to create data directory: {}", e))?;
+            }
+            let db_path = data_dir.join("pbs_admin.db");
+            Ok(db_path.to_string_lossy().to_string())
+        },
+        None => Err("Could not find Documents folder".to_string()),
+    }
+}
+
+/// Internal function to get database path for backup operations
+fn get_database_path_internal() -> Result<PathBuf, String> {
+    match dirs::document_dir() {
+        Some(docs_path) => {
+            let db_path = docs_path.join("PBS_Admin").join("data").join("pbs_admin.db");
+            if !db_path.exists() {
+                return Err(format!("Database not found at: {}", db_path.display()));
+            }
+            Ok(db_path)
+        },
+        None => Err("Could not find Documents folder".to_string()),
+    }
+}
+
+// ============================================================================
+// FILE AND FOLDER OPERATIONS
+// ============================================================================
+
 #[tauri::command]
 fn create_folder(path: String) -> Result<String, String> {
+    // Validate path is within allowed directories
+    // For folder creation, we need to check the parent path
     let folder_path = Path::new(&path);
 
     // Check if folder already exists
     if folder_path.exists() {
         return Err(format!("Folder already exists: {}", path));
+    }
+
+    // Validate parent directory is within PBS_Admin
+    if let Some(parent) = folder_path.parent() {
+        let base_path = get_pbs_admin_base_path()?;
+        let canonical_parent = parent.canonicalize()
+            .map_err(|_| format!("Parent directory does not exist: {}", parent.display()))?;
+        let canonical_base = base_path.canonicalize().unwrap_or(base_path);
+
+        if !canonical_parent.starts_with(&canonical_base) {
+            return Err(format!(
+                "Access denied: cannot create folder outside Documents/PBS_Admin/: {}",
+                path
+            ));
+        }
     }
 
     // Create the folder
@@ -44,15 +171,11 @@ fn get_default_client_records_path() -> Result<String, String> {
 
 #[tauri::command]
 fn read_text_file(file_path: String) -> Result<String, String> {
-    let path = Path::new(&file_path);
-
-    // Check if file exists
-    if !path.exists() {
-        return Err(format!("File does not exist: {}", file_path));
-    }
+    // Validate path is within allowed directories
+    let validated_path = validate_read_path(&file_path)?;
 
     // Read file content
-    match fs::read_to_string(path) {
+    match fs::read_to_string(&validated_path) {
         Ok(content) => Ok(content),
         Err(e) => Err(format!("Failed to read file: {}", e)),
     }
@@ -60,17 +183,18 @@ fn read_text_file(file_path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn write_text_file(file_path: String, content: String) -> Result<String, String> {
-    let path = Path::new(&file_path);
+    // Validate path is within allowed directories
+    let validated_path = validate_write_path(&file_path)?;
 
     // Ensure parent directory exists
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = validated_path.parent() {
         if !parent.exists() {
             return Err(format!("Parent directory does not exist: {}", parent.display()));
         }
     }
 
     // Write content to file
-    match fs::File::create(path) {
+    match fs::File::create(&validated_path) {
         Ok(mut file) => {
             file.write_all(content.as_bytes())
                 .map_err(|e| format!("Failed to write file: {}", e))?;
@@ -82,17 +206,18 @@ fn write_text_file(file_path: String, content: String) -> Result<String, String>
 
 #[tauri::command]
 fn write_binary_file(file_path: String, data: Vec<u8>) -> Result<String, String> {
-    let path = Path::new(&file_path);
+    // Validate path is within allowed directories
+    let validated_path = validate_write_path(&file_path)?;
 
     // Ensure parent directory exists
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = validated_path.parent() {
         if !parent.exists() {
             return Err(format!("Parent directory does not exist: {}", parent.display()));
         }
     }
 
     // Write binary data to file
-    match fs::File::create(path) {
+    match fs::File::create(&validated_path) {
         Ok(mut file) => {
             file.write_all(&data)
                 .map_err(|e| format!("Failed to write file: {}", e))?;
@@ -104,10 +229,11 @@ fn write_binary_file(file_path: String, data: Vec<u8>) -> Result<String, String>
 
 #[tauri::command]
 fn download_file(url: String, file_path: String) -> Result<String, String> {
-    let path = Path::new(&file_path);
+    // Validate path is within allowed directories
+    let validated_path = validate_write_path(&file_path)?;
 
     // Ensure parent directory exists
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = validated_path.parent() {
         if !parent.exists() {
             return Err(format!("Parent directory does not exist: {}", parent.display()));
         }
@@ -127,7 +253,7 @@ fn download_file(url: String, file_path: String) -> Result<String, String> {
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
     // Write to file
-    match fs::File::create(path) {
+    match fs::File::create(&validated_path) {
         Ok(mut file) => {
             file.write_all(&bytes)
                 .map_err(|e| format!("Failed to write file: {}", e))?;
@@ -139,19 +265,15 @@ fn download_file(url: String, file_path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn list_files(directory: String, pattern: Option<String>) -> Result<Vec<String>, String> {
-    let dir_path = Path::new(&directory);
+    // Validate directory is within allowed paths
+    let validated_dir = validate_read_path(&directory)?;
 
-    // Check if directory exists
-    if !dir_path.exists() {
-        return Err(format!("Directory does not exist: {}", directory));
-    }
-
-    if !dir_path.is_dir() {
+    if !validated_dir.is_dir() {
         return Err(format!("Path is not a directory: {}", directory));
     }
 
     // Read directory entries
-    let entries = fs::read_dir(dir_path)
+    let entries = fs::read_dir(&validated_dir)
         .map_err(|e| format!("Failed to read directory: {}", e))?;
 
     let mut files = Vec::new();
@@ -624,20 +746,11 @@ fn get_backups_path() -> Result<String, String> {
     Ok(backups_path.to_string_lossy().to_string())
 }
 
-/// Get the database file path
-fn get_database_path() -> Result<std::path::PathBuf, String> {
-    // Database is at C:\Dev\PBS_Admin\prisma\dev.db
-    let db_path = std::path::PathBuf::from(r"C:\Dev\PBS_Admin\prisma\dev.db");
-    if !db_path.exists() {
-        return Err(format!("Database not found at: {}", db_path.display()));
-    }
-    Ok(db_path)
-}
 
 /// Create a backup of the database
 #[tauri::command]
 fn create_database_backup() -> Result<serde_json::Value, String> {
-    let db_path = get_database_path()?;
+    let db_path = get_database_path_internal()?;
     let backups_path = get_backups_path()?;
 
     // Generate backup filename with timestamp
@@ -672,7 +785,7 @@ fn restore_database_backup(backup_path: String) -> Result<String, String> {
         return Err("Invalid backup file: must be a .db file".to_string());
     }
 
-    let db_path = get_database_path()?;
+    let db_path = get_database_path_internal()?;
 
     // Create a safety backup before restoring (in case restore goes wrong)
     let safety_backup = db_path.with_extension("db.pre-restore-backup");
@@ -933,6 +1046,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             create_folder,
             get_default_client_records_path,
+            get_database_path,
             get_templates_path,
             read_text_file,
             write_text_file,
