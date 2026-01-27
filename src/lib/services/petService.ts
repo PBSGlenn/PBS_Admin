@@ -37,12 +37,12 @@ export async function getPetsByClientId(clientId: number): Promise<Pet[]> {
 }
 
 /**
- * Find pet by name and client
+ * Find pet by name and client (case-insensitive name match)
  */
 export async function findPetByNameAndClient(name: string, clientId: number): Promise<Pet | null> {
   const pets = await query<Pet>(`
     SELECT * FROM Pet
-    WHERE name = ? AND clientId = ?
+    WHERE LOWER(name) = LOWER(?) AND clientId = ?
     LIMIT 1
   `, [name, clientId]);
 

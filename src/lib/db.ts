@@ -2,18 +2,32 @@
 // Uses Tauri's SQL plugin to access the SQLite database from the frontend
 
 import Database from "@tauri-apps/plugin-sql";
+import { invoke } from "@tauri-apps/api/core";
 
 let db: Database | null = null;
+let dbPath: string | null = null;
+
+/**
+ * Get the database path from the Tauri backend
+ * Database is stored in Documents/PBS_Admin/data/pbs_admin.db
+ */
+async function getDatabasePath(): Promise<string> {
+  if (!dbPath) {
+    dbPath = await invoke<string>("get_database_path");
+  }
+  return dbPath;
+}
 
 /**
  * Get or create the database connection
+ * Uses dynamic path from Tauri backend (Documents/PBS_Admin/data/)
  */
 export async function getDatabase(): Promise<Database> {
   if (!db) {
     try {
-      // Use absolute path to the migrated database
-      db = await Database.load("sqlite:C:\\Dev\\PBS_Admin\\prisma\\dev.db");
-      console.log("Database connected successfully");
+      const path = await getDatabasePath();
+      db = await Database.load(`sqlite:${path}`);
+      console.log("Database connected successfully:", path);
     } catch (error) {
       console.error("Failed to connect to database:", error);
       throw error;
@@ -51,4 +65,11 @@ export async function closeDatabase(): Promise<void> {
     await db.close();
     db = null;
   }
+}
+
+/**
+ * Get the current database path (for display/debugging)
+ */
+export async function getCurrentDatabasePath(): Promise<string> {
+  return getDatabasePath();
 }

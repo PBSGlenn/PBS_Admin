@@ -51,19 +51,36 @@ export async function getClientById(clientId: number): Promise<ClientWithRelatio
 }
 
 /**
- * Search for clients by email or mobile
+ * Search for clients by email or mobile (efficient SQL-based lookup)
+ * Email is matched case-insensitively, mobile is normalized for comparison
  */
-export async function findClientByEmailOrMobile(email: string, mobile: string): Promise<Client | null> {
-  const normalizedEmail = normalizeEmail(email);
-  const normalizedMobile = normalizeMobile(mobile);
+export async function findClientByEmailOrMobile(email: string | null, mobile: string | null): Promise<Client | null> {
+  // Try email first (most reliable)
+  if (email) {
+    const normalizedEmail = normalizeEmail(email);
+    const byEmail = await query<Client>(`
+      SELECT * FROM Client
+      WHERE LOWER(email) = LOWER(?)
+      LIMIT 1
+    `, [normalizedEmail]);
 
-  const clients = await query<Client>(`
-    SELECT * FROM Client
-    WHERE email = ? OR mobile = ?
-    LIMIT 1
-  `, [normalizedEmail, normalizedMobile]);
+    if (byEmail.length > 0) return byEmail[0];
+  }
 
-  return clients.length > 0 ? clients[0] : null;
+  // Fallback to mobile if provided
+  if (mobile) {
+    const normalizedMobile = normalizeMobile(mobile);
+    // Also try with formatted version (e.g., 0412 345 678 vs 0412345678)
+    const byMobile = await query<Client>(`
+      SELECT * FROM Client
+      WHERE REPLACE(REPLACE(mobile, ' ', ''), '-', '') = ?
+      LIMIT 1
+    `, [normalizedMobile]);
+
+    if (byMobile.length > 0) return byMobile[0];
+  }
+
+  return null;
 }
 
 /**

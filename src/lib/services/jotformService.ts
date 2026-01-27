@@ -4,12 +4,12 @@
  */
 
 import {
-  getAllClients,
   updateClient,
+  findClientByEmailOrMobile,
 } from './clientService';
 import {
-  getAllPets,
   updatePet,
+  findPetByNameAndClient,
 } from './petService';
 import {
   createEvent,
@@ -275,52 +275,24 @@ export function parseSubmission(submission: JotformSubmission): ParsedQuestionna
 
 /**
  * Find existing client by email (primary) or mobile (fallback)
+ * Uses efficient SQL-based lookup instead of loading all clients
  */
 async function findExistingClient(
   email: string,
   phone: string
 ): Promise<Client | null> {
-  const clients = await getAllClients();
-
-  // Try to match by email first (most reliable)
-  if (email) {
-    const byEmail = clients.find(c =>
-      c.email.toLowerCase() === email.toLowerCase()
-    );
-    if (byEmail) return byEmail;
-  }
-
-  // Fallback to mobile if provided
-  if (phone) {
-    // Remove all non-digit characters for comparison
-    const cleanPhone = phone.replace(/\D/g, '');
-    const byMobile = clients.find(c => {
-      if (!c.mobile) return false;
-      const cleanClientMobile = c.mobile.replace(/\D/g, '');
-      return cleanClientMobile === cleanPhone;
-    });
-    if (byMobile) return byMobile;
-  }
-
-  return null;
+  return findClientByEmailOrMobile(email, phone);
 }
 
 /**
  * Find existing pet by name within a client's pets
+ * Uses efficient SQL-based lookup instead of loading all pets
  */
 async function findExistingPet(
   clientId: number,
   petName: string
 ): Promise<Pet | null> {
-  const allPets = await getAllPets();
-  const clientPets = allPets.filter(p => p.clientId === clientId);
-
-  // Match by name (case-insensitive)
-  const matchedPet = clientPets.find(p =>
-    p.name.toLowerCase() === petName.toLowerCase()
-  );
-
-  return matchedPet || null;
+  return findPetByNameAndClient(petName, clientId);
 }
 
 /**

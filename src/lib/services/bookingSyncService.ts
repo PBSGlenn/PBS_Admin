@@ -5,13 +5,13 @@
 
 import { supabase } from '../supabaseClient';
 import {
-  getAllClients,
   createClient,
   updateClient,
+  findClientByEmailOrMobile,
 } from './clientService';
 import {
-  getAllPets,
   createPet,
+  findPetByNameAndClient,
 } from './petService';
 import {
   createEvent,
@@ -81,34 +81,13 @@ export interface BookingSyncResult {
 
 /**
  * Find existing client by email (primary) or mobile (fallback)
+ * Uses efficient SQL-based lookup instead of loading all clients
  */
 async function findExistingClient(
   email: string,
   mobile: string | null
 ): Promise<Client | null> {
-  const clients = await getAllClients();
-
-  // Try to match by email first (most reliable)
-  if (email) {
-    const byEmail = clients.find(c =>
-      c.email.toLowerCase() === email.toLowerCase()
-    );
-    if (byEmail) return byEmail;
-  }
-
-  // Fallback to mobile if provided
-  if (mobile) {
-    // Remove all non-digit characters for comparison
-    const cleanMobile = mobile.replace(/\D/g, '');
-    const byMobile = clients.find(c => {
-      if (!c.mobile) return false;
-      const cleanClientMobile = c.mobile.replace(/\D/g, '');
-      return cleanClientMobile === cleanMobile;
-    });
-    if (byMobile) return byMobile;
-  }
-
-  return null;
+  return findClientByEmailOrMobile(email, mobile);
 }
 
 /**
@@ -127,18 +106,13 @@ function splitCustomerName(fullName: string): { firstName: string; lastName: str
 
 /**
  * Find existing pet by name for a client
+ * Uses efficient SQL-based lookup instead of loading all pets
  */
 async function findExistingPet(
   clientId: number,
   petName: string
 ): Promise<Pet | null> {
-  const pets = await getAllPets();
-  const clientPets = pets.filter(p => p.clientId === clientId);
-
-  // Case-insensitive match by name
-  return clientPets.find(p =>
-    p.name.toLowerCase() === petName.toLowerCase()
-  ) || null;
+  return findPetByNameAndClient(petName, clientId);
 }
 
 /**
