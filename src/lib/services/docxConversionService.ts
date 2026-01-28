@@ -2,6 +2,7 @@
 // Convert markdown reports to Word documents using Pandoc
 
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "../utils/logger";
 
 export interface DocxConversionOptions {
   mdFilePath: string;
@@ -73,7 +74,7 @@ export async function convertReportToDocx(
       success: true,
     };
   } catch (error) {
-    console.error("DOCX conversion failed:", error);
+    logger.error("DOCX conversion failed:", error);
     return {
       docxFilePath: "",
       docxFileName: "",
@@ -134,7 +135,7 @@ export async function convertReportToDocxDirectly(
       success: true,
     };
   } catch (error) {
-    console.error("DOCX conversion failed:", error);
+    logger.error("DOCX conversion failed:", error);
     return {
       docxFilePath: "",
       docxFileName: "",
@@ -186,7 +187,7 @@ export async function checkTemplateExists(templateName: string): Promise<boolean
 
     return files.length > 0;
   } catch (error) {
-    console.error("Failed to check template:", error);
+    logger.error("Failed to check template:", error);
     return false;
   }
 }

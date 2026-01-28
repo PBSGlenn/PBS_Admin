@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readTextFile, exists } from "@tauri-apps/plugin-fs";
 import { format } from "date-fns";
+import { logger } from "../utils/logger";
 
 export interface TranscriptSaveResult {
   success: boolean;
@@ -83,7 +84,7 @@ export async function saveTranscriptFile(
       fileName
     };
   } catch (error) {
-    console.error("Failed to save transcript:", error);
+    logger.error("Failed to save transcript:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error"
@@ -117,7 +118,7 @@ export async function readTranscriptFile(filePath: string): Promise<{
       content
     };
   } catch (error) {
-    console.error("Failed to read transcript:", error);
+    logger.error("Failed to read transcript:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error"
@@ -207,7 +208,7 @@ export async function copyQuestionnaireFile(
       fileName
     };
   } catch (error) {
-    console.error("Failed to copy questionnaire:", error);
+    logger.error("Failed to copy questionnaire:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error"
@@ -262,7 +263,7 @@ export async function listQuestionnaireFiles(
       files: questionnaireFiles
     };
   } catch (error) {
-    console.error("Failed to list questionnaires:", error);
+    logger.error("Failed to list questionnaires:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error"

@@ -18,7 +18,19 @@ import { getTasksForDashboard, markTaskDone, deleteTask, getTaskById } from "@/l
 import { getClientById } from "@/lib/services/clientService";
 import { formatDate, isTaskOverdue } from "@/lib/utils/dateUtils";
 import { getPriorityColor } from "@/lib/utils";
-import { Check, Edit, Trash2, Mail } from "lucide-react";
+import { Check, Trash2, Mail } from "lucide-react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
+import { LoadingCard, LoadingSpinner } from "../ui/loading-spinner";
 import { TaskForm } from "../Task/TaskForm";
 import { EmailDraftDialog } from "../ui/email-draft-dialog";
 import { getQuestionnaireReminderTemplate, processTemplate } from "@/lib/emailTemplates";
@@ -31,6 +43,7 @@ export function TasksOverview() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEmailDraftOpen, setIsEmailDraftOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState({ to: "", subject: "", body: "" });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: tasks, isLoading, error } = useQuery({
     queryKey: ["tasks", "dashboard"],
@@ -44,9 +57,12 @@ export function TasksOverview() {
       queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
       setIsDialogOpen(false);
       setSelectedTask(null);
+      toast.success("Task deleted successfully");
     },
     onError: (error) => {
-      alert(`Failed to delete task: ${error}`);
+      toast.error("Failed to delete task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -55,9 +71,12 @@ export function TasksOverview() {
     mutationFn: markTaskDone,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
+      toast.success("Task marked as done");
     },
     onError: (error) => {
-      alert(`Failed to mark task as done: ${error}`);
+      toast.error("Failed to mark task as done", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -81,9 +100,13 @@ export function TasksOverview() {
 
   const handleDelete = () => {
     if (!selectedTask) return;
-    if (window.confirm(`Are you sure you want to delete this task? This action cannot be undone.`)) {
-      deleteMutation.mutate(selectedTask.taskId);
-    }
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = () => {
+    if (!selectedTask) return;
+    deleteMutation.mutate(selectedTask.taskId);
+    setShowDeleteConfirm(false);
   };
 
   const handleSendReminder = async () => {
@@ -93,7 +116,9 @@ export function TasksOverview() {
       // Get client details for email
       const client = await getClientById(selectedTask.clientId);
       if (!client || !client.email) {
-        alert("Cannot send reminder: Client email not found");
+        toast.error("Cannot send reminder", {
+          description: "Client email not found",
+        });
         return;
       }
 
@@ -126,7 +151,7 @@ export function TasksOverview() {
       // Get email template
       const template = getQuestionnaireReminderTemplate(petSpecies);
       if (!template) {
-        alert("Email template not found");
+        toast.error("Email template not found");
         return;
       }
 
@@ -156,7 +181,9 @@ export function TasksOverview() {
 
     } catch (error) {
       console.error("Failed to prepare reminder:", error);
-      alert("Failed to prepare reminder email. Please try again.");
+      toast.error("Failed to prepare reminder email", {
+        description: "Please try again.",
+      });
     }
   };
 
@@ -167,13 +194,10 @@ export function TasksOverview() {
     // Open default email client
     window.open(mailtoLink, '_blank');
 
-    // Optional: Show confirmation
-    setTimeout(() => {
-      if (confirm("Email client opened. Did you send the reminder?")) {
-        // Could mark task as "reminder sent" or add a note
-        console.log("Reminder sent to", to);
-      }
-    }, 1000);
+    // Show toast notification
+    toast.success("Email client opened", {
+      description: `Reminder prepared for ${to}`,
+    });
   };
 
   const handleCloseDialog = () => {
@@ -195,9 +219,7 @@ export function TasksOverview() {
   return (
     <div>
       {isLoading ? (
-        <div className="text-center py-4">
-          <p className="text-xs text-muted-foreground">Loading tasks...</p>
-        </div>
+        <LoadingCard message="Loading tasks..." />
       ) : error ? (
         <div className="text-center py-4">
           <p className="text-xs text-destructive">Error loading tasks</p>
@@ -371,6 +393,34 @@ export function TasksOverview() {
         initialBody={emailDraft.body}
         clientName={selectedClientName}
       />
+
+      {/* Delete Task Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

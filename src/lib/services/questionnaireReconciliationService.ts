@@ -8,6 +8,7 @@ import type { Client, Pet } from '../types';
 import { getClientById, updateClient } from './clientService';
 import { getAllPets, updatePet, createPet } from './petService';
 import { parseAgeToDateOfBirth } from '../utils/ageUtils';
+import { logger } from '../utils/logger';
 
 /**
  * Questionnaire data structure (from saved JSON file)
@@ -92,17 +93,17 @@ export async function findQuestionnaireFile(
     const jsonFiles = files.filter(f => f.endsWith('.json'));
 
     if (jsonFiles.length === 0) {
-      console.warn(`No questionnaire JSON file found for submission ${submissionId} in ${folderPath}`);
+      logger.warn(`No questionnaire JSON file found for submission ${submissionId} in ${folderPath}`);
       return null;
     }
 
     if (jsonFiles.length > 1) {
-      console.warn(`Multiple questionnaire JSON files found for submission ${submissionId}, using first one`);
+      logger.warn(`Multiple questionnaire JSON files found for submission ${submissionId}, using first one`);
     }
 
     return jsonFiles[0];
   } catch (error) {
-    console.error('Failed to find questionnaire file:', error);
+    logger.error('Failed to find questionnaire file:', error);
     return null;
   }
 }
@@ -133,7 +134,7 @@ export async function readQuestionnaireFile(filePath: string): Promise<Questionn
 
     return data;
   } catch (error) {
-    console.error('Failed to read questionnaire file:', error);
+    logger.error('Failed to read questionnaire file:', error);
     throw new Error(`Failed to read questionnaire: ${error}`);
   }
 }

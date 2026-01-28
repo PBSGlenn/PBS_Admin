@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FileText, Clipboard } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 
 export interface TranscriptInputProps {
   transcriptSource: 'file' | 'pasted' | null;
@@ -57,7 +58,9 @@ export function TranscriptInput({
       }
     } catch (error) {
       console.error('Failed to open file dialog:', error);
-      alert('Failed to open file picker. Please try pasting the transcript instead.');
+      toast.error("Failed to open file picker", {
+        description: "Please try pasting the transcript instead.",
+      });
     }
   };
 

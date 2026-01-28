@@ -19,6 +19,9 @@ import { formatAustralianMobile, getRawPhoneNumber } from "@/lib/utils/phoneUtil
 import { AUSTRALIAN_STATES } from "@/lib/constants";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, Save, X } from "lucide-react";
+import { toast } from "sonner";
+import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
+import { UnsavedChangesDialog } from "../ui/unsaved-changes-dialog";
 
 export interface ClientFormProps {
   onClose: () => void;
@@ -44,6 +47,17 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isFormValid, setIsFormValid] = useState(false);
+
+  // Track unsaved changes
+  const {
+    isDirty,
+    markDirty,
+    markClean,
+    showUnsavedDialog,
+    handleNavigationAttempt,
+    confirmDiscard,
+    cancelDiscard,
+  } = useUnsavedChanges();
 
   // Folder creation dialog state
   const [showFolderDialog, setShowFolderDialog] = useState(false);
@@ -98,7 +112,9 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
       setShowFolderDialog(true);
     },
     onError: (error) => {
-      alert(`Failed to save client: ${error}`);
+      toast.error("Failed to save client", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -121,7 +137,9 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
         setCreatedFolderPath(folderPath);
         setShowSuccessDialog(true);
       } catch (error) {
-        alert(`Failed to create folder: ${error}`);
+        toast.error("Failed to create folder", {
+          description: error instanceof Error ? error.message : String(error),
+        });
         // If folder creation failed, still close the form
         if (onSave && savedClient) onSave(savedClient);
         onClose();
@@ -191,6 +209,7 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
     }
 
     setFormData(prev => ({ ...prev, [field]: value }));
+    markDirty(); // Track that form has been modified
 
     // Real-time validation for the field being changed
     let fieldError = "";
@@ -225,7 +244,7 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={onClose}
+                onClick={() => handleNavigationAttempt(onClose)}
                 className="h-7 w-7"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
@@ -422,7 +441,7 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={onClose}
+                onClick={() => handleNavigationAttempt(onClose)}
                 size="sm"
                 className="h-7 text-[11px]"
               >
@@ -460,6 +479,13 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
         open={showSuccessDialog}
         folderPath={createdFolderPath}
         onClose={handleSuccessClose}
+      />
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        isOpen={showUnsavedDialog}
+        onCancel={cancelDiscard}
+        onConfirm={confirmDiscard}
       />
     </div>
   );

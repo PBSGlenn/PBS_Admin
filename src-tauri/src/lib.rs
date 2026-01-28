@@ -1036,6 +1036,168 @@ fn base64_encode(data: &[u8]) -> String {
     result
 }
 
+// ============================================================================
+// ANTHROPIC AI API
+// ============================================================================
+
+/// Request body for Anthropic Claude API
+#[derive(Debug, Serialize)]
+struct AnthropicRequest {
+    model: String,
+    max_tokens: u32,
+    system: Vec<AnthropicSystemMessage>,
+    messages: Vec<AnthropicMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicSystemMessage {
+    #[serde(rename = "type")]
+    msg_type: String,
+    text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<AnthropicCacheControl>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicCacheControl {
+    #[serde(rename = "type")]
+    control_type: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicContentBlock>,
+    usage: AnthropicUsage,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicContentBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicUsage {
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+/// Generate AI report using Anthropic Claude API
+/// API key is read from environment variable, never exposed to frontend
+#[tauri::command]
+async fn generate_ai_report(
+    system_prompt: String,
+    user_prompt: String,
+    max_tokens: u32,
+) -> Result<serde_json::Value, String> {
+    // Get API key from environment variable (set in .env file at project root)
+    // Load .env file from project root
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+    if let Some(dir) = exe_dir {
+        // Try loading from various locations
+        let _ = dotenvy::from_path(dir.join(".env"));
+        let _ = dotenvy::from_path(dir.join("../.env"));
+        let _ = dotenvy::from_path(dir.join("../../.env"));
+    }
+    // Also try current directory and standard locations
+    let _ = dotenvy::dotenv();
+
+    let api_key = std::env::var("VITE_ANTHROPIC_API_KEY")
+        .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+        .map_err(|_| "Anthropic API key not configured. Set VITE_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY environment variable.".to_string())?;
+
+    let model = "claude-opus-4-5-20251101";
+
+    println!("Generating AI report with model: {}", model);
+    println!("System prompt length: {} chars", system_prompt.len());
+    println!("User prompt length: {} chars", user_prompt.len());
+    println!("Max tokens: {}", max_tokens);
+
+    // Build request
+    let request = AnthropicRequest {
+        model: model.to_string(),
+        max_tokens,
+        system: vec![AnthropicSystemMessage {
+            msg_type: "text".to_string(),
+            text: system_prompt,
+            cache_control: Some(AnthropicCacheControl {
+                control_type: "ephemeral".to_string(),
+            }),
+        }],
+        messages: vec![AnthropicMessage {
+            role: "user".to_string(),
+            content: user_prompt,
+        }],
+    };
+
+    // Send request to Anthropic API
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", &api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send request to Anthropic API: {}", e))?;
+
+    // Check response status
+    let status = response.status();
+    let response_text = response.text().await
+        .unwrap_or_else(|_| "Unknown error".to_string());
+
+    if !status.is_success() {
+        println!("Anthropic API error ({}): {}", status, response_text);
+        return Err(format!("Anthropic API error ({}): {}", status, response_text));
+    }
+
+    // Parse response
+    let api_response: AnthropicResponse = serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse Anthropic response: {}. Response: {}", e, response_text))?;
+
+    // Extract text content
+    let content = api_response.content
+        .iter()
+        .filter_map(|block| {
+            if block.block_type == "text" {
+                block.text.clone()
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    if content.is_empty() {
+        return Err("No text content in Anthropic API response".to_string());
+    }
+
+    println!("AI report generated successfully!");
+    println!("Input tokens: {}, Output tokens: {}",
+        api_response.usage.input_tokens, api_response.usage.output_tokens);
+
+    Ok(serde_json::json!({
+        "success": true,
+        "content": content,
+        "usage": {
+            "input_tokens": api_response.usage.input_tokens,
+            "output_tokens": api_response.usage.output_tokens,
+            "total_tokens": api_response.usage.input_tokens + api_response.usage.output_tokens
+        }
+    }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1064,7 +1226,8 @@ pub fn run() {
             restore_database_backup,
             list_database_backups,
             delete_backup_file,
-            send_email
+            send_email,
+            generate_ai_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

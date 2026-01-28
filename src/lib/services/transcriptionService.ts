@@ -12,6 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "../utils/logger";
 
 /**
  * Transcription result with both raw and speaker-labeled versions
@@ -122,7 +123,7 @@ async function transcribeWithWhisper(
 
     return result;
   } catch (error) {
-    console.error("Whisper transcription error:", error);
+    logger.error("Whisper transcription error:", error);
     throw new Error(`Transcription failed: ${error}`);
   }
 }
@@ -226,7 +227,7 @@ Vet: I see. And when you say aggression, can you describe exactly what behaviors
       }
     };
   } catch (error) {
-    console.error("Claude speaker labeling error:", error);
+    logger.error("Claude speaker labeling error:", error);
     throw new Error(`Speaker labeling failed: ${error}`);
   }
 }
@@ -249,7 +250,7 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResult> {
   try {
     // Step 1: Transcribe with Whisper
-    console.log("Starting Whisper transcription...");
+    logger.debug("Starting Whisper transcription...");
     const whisperResult = await transcribeWithWhisper(
       audioFilePath,
       options.language || 'en'
@@ -262,13 +263,13 @@ export async function transcribeAudio(
       };
     }
 
-    console.log(`Whisper completed. Duration: ${whisperResult.duration}s`);
+    logger.debug(`Whisper completed. Duration: ${whisperResult.duration}s`);
 
     // Step 2: Add speaker labels with Claude
-    console.log("Adding speaker labels with Claude...");
+    logger.debug("Adding speaker labels with Claude...");
     const claudeResult = await addSpeakerLabels(whisperResult.text, options);
 
-    console.log("Speaker labeling completed.");
+    logger.debug("Speaker labeling completed.");
 
     // Step 3: Calculate actual costs
     const whisperCost = (whisperResult.duration / 60) * 0.006;
@@ -290,7 +291,7 @@ export async function transcribeAudio(
     };
 
   } catch (error) {
-    console.error("Transcription error:", error);
+    logger.error("Transcription error:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error)
@@ -319,7 +320,7 @@ export async function saveTranscript(
 
     return { success: true };
   } catch (error) {
-    console.error("Save transcript error:", error);
+    logger.error("Save transcript error:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error)

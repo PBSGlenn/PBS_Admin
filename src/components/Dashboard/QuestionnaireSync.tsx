@@ -15,6 +15,17 @@ import {
   TableRow,
 } from '../ui/table';
 import { Download, RefreshCw, CheckCircle2, XCircle, FileText, FileJson } from 'lucide-react';
+import { LoadingSpinner } from '../ui/loading-spinner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 import {
   fetchUnprocessedSubmissions,
   syncAllQuestionnaires,
@@ -28,6 +39,7 @@ export function QuestionnaireSync() {
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<QuestionnaireSyncResult[]>([]);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Fetch unprocessed submissions on mount
   useEffect(() => {
@@ -63,11 +75,14 @@ export function QuestionnaireSync() {
   };
 
   const handleClearTracking = () => {
-    if (window.confirm('Clear processed questionnaire tracking? This will allow re-processing of all questionnaires (for testing purposes).')) {
-      localStorage.removeItem('pbs_admin_processed_jotform_submissions');
-      setSyncResults([]);
-      loadSubmissions();
-    }
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearTracking = () => {
+    localStorage.removeItem('pbs_admin_processed_jotform_submissions');
+    setSyncResults([]);
+    loadSubmissions();
+    setShowClearConfirm(false);
   };
 
   const formatDateTime = (dateString: string) => {
@@ -270,6 +285,25 @@ export function QuestionnaireSync() {
           </Table>
         </div>
       )}
+
+      {/* Clear Tracking Confirmation Dialog */}
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear Tracking Data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will allow re-processing of all questionnaires (for testing purposes).
+              Previously processed questionnaires will appear as new again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmClearTracking}>
+              Clear Tracking
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -4,6 +4,8 @@
  */
 
 import { supabase } from '../supabaseClient';
+import { withTransaction } from '../db';
+import { logger } from '../utils/logger';
 import {
   createClient,
   updateClient,
@@ -117,6 +119,7 @@ async function findExistingPet(
 
 /**
  * Import a single website booking into PBS_Admin
+ * Uses database transaction to ensure atomic operation
  */
 export async function importWebsiteBooking(
   booking: WebsiteBooking
@@ -124,160 +127,166 @@ export async function importWebsiteBooking(
   try {
     const { firstName, lastName } = splitCustomerName(booking.customer_name);
 
-    // 1. Find or create client
-    let client = await findExistingClient(
+    // Check for existing client before transaction (read operation)
+    const existingClient = await findExistingClient(
       booking.customer_email,
       booking.customer_phone
     );
+    const isNewClient = !existingClient;
 
-    const isNewClient = !client;
+    // Wrap all write operations in a transaction
+    const result = await withTransaction(async () => {
+      let client: Client;
 
-    if (client) {
-      // Update existing client with any new information
-      const updatedClient = await updateClient(client.clientId, {
-        firstName: client.firstName,
-        lastName: client.lastName,
-        email: booking.customer_email, // Update email in case it changed
-        mobile: booking.customer_phone || client.mobile,
-        streetAddress: client.streetAddress || '',
-        city: client.city || '',
-        state: client.state || 'VIC',
-        postcode: booking.customer_postcode || client.postcode || '',
-        stripeCustomerId: booking.stripe_customer_id || client.stripeCustomerId || undefined,
-        folderPath: client.folderPath || undefined,
-        notes: client.notes || undefined,
-      });
-      client = updatedClient;
-    } else {
-      // Create new client
-      client = await createClient({
-        firstName,
-        lastName,
-        email: booking.customer_email,
-        mobile: booking.customer_phone || '',
-        streetAddress: '',
-        city: '',
-        state: 'VIC',
-        postcode: booking.customer_postcode || '',
-        stripeCustomerId: booking.stripe_customer_id || undefined,
-        folderPath: undefined,
-        notes: `Imported from website booking ${booking.booking_reference}\n${booking.problem_description || ''}`.trim(),
-      });
-    }
+      // 1. Create or update client
+      if (existingClient) {
+        // Update existing client with any new information
+        client = await updateClient(existingClient.clientId, {
+          firstName: existingClient.firstName,
+          lastName: existingClient.lastName,
+          email: booking.customer_email, // Update email in case it changed
+          mobile: booking.customer_phone || existingClient.mobile,
+          streetAddress: existingClient.streetAddress || '',
+          city: existingClient.city || '',
+          state: existingClient.state || 'VIC',
+          postcode: booking.customer_postcode || existingClient.postcode || '',
+          stripeCustomerId: booking.stripe_customer_id || existingClient.stripeCustomerId || undefined,
+          folderPath: existingClient.folderPath || undefined,
+          notes: existingClient.notes || undefined,
+        });
+      } else {
+        // Create new client
+        client = await createClient({
+          firstName,
+          lastName,
+          email: booking.customer_email,
+          mobile: booking.customer_phone || '',
+          streetAddress: '',
+          city: '',
+          state: 'VIC',
+          postcode: booking.customer_postcode || '',
+          stripeCustomerId: booking.stripe_customer_id || undefined,
+          folderPath: undefined,
+          notes: `Imported from website booking ${booking.booking_reference}\n${booking.problem_description || ''}`.trim(),
+        });
+      }
 
-    // 2. Find or create pet
-    let pet = await findExistingPet(client.clientId, booking.pet_name);
+      // 2. Find or create pet
+      let pet = await findExistingPet(client.clientId, booking.pet_name);
 
-    if (!pet) {
-      pet = await createPet({
+      if (!pet) {
+        pet = await createPet({
+          clientId: client.clientId,
+          name: booking.pet_name,
+          species: booking.pet_species || '',
+          breed: booking.pet_breed || '',
+          sex: undefined,
+          dateOfBirth: undefined,
+          notes: booking.problem_description || undefined,
+        });
+      }
+
+      // 3. Create "Note" event for new clients only
+      let noteEventId: number | undefined;
+      if (isNewClient) {
+        const noteEvent = await createEvent({
+          clientId: client.clientId,
+          eventType: 'Note',
+          date: booking.booking_date, // When client was created on website
+          notes: '<p>Client created via website booking</p>',
+          calendlyEventUri: undefined,
+          calendlyStatus: undefined,
+          invoiceFilePath: undefined,
+          hostedInvoiceUrl: undefined,
+          parentEventId: undefined,
+        });
+        noteEventId = noteEvent.eventId;
+      }
+
+      // 4. Create "Booking" event
+      // Handle time with or without seconds (HH:mm or HH:mm:ss)
+      const timeWithSeconds = booking.consultation_time.includes(':')
+        ? (booking.consultation_time.split(':').length === 3
+            ? booking.consultation_time
+            : `${booking.consultation_time}:00`)
+        : `${booking.consultation_time}:00:00`;
+
+      const consultationDateTime = `${booking.consultation_date}T${timeWithSeconds}`;
+      const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
+      const isoDate = formatISO(zonedDate);
+
+      const bookingNotes = `
+        <h2>Website Booking Details</h2>
+        <p><strong>Booking Reference:</strong> ${booking.booking_reference}</p>
+        <p><strong>Service:</strong> ${booking.service_type} (${booking.service_delivery})</p>
+        <p><strong>Pet:</strong> ${booking.pet_name}${booking.pet_species ? ` (${booking.pet_species})` : ''}</p>
+
+        ${booking.zoom_link ? `<p><strong>Zoom Link:</strong> <a href="${booking.zoom_link}" target="_blank">${booking.zoom_link}</a></p>` : ''}
+        ${booking.customer_postcode ? `<p><strong>Postcode:</strong> ${booking.customer_postcode}</p>` : ''}
+
+        <h3>Pricing</h3>
+        <p><strong>Base Price:</strong> $${booking.base_price.toFixed(2)}</p>
+        ${booking.travel_charge > 0 ? `<p><strong>Travel Charge:</strong> $${booking.travel_charge.toFixed(2)}</p>` : ''}
+        <p><strong>Total:</strong> $${booking.total_price.toFixed(2)} ${booking.currency}</p>
+        <p><strong>Payment Status:</strong> ${booking.payment_status}</p>
+
+        ${booking.referral_required ? `
+          <h3>Referral</h3>
+          ${booking.referral_file_path
+            ? `<p><strong>Referral File:</strong> ${booking.referral_file_name || 'Uploaded'}</p>`
+            : `<p><strong>Status:</strong> Pending - Client will submit later</p>`
+          }
+        ` : ''}
+
+        ${booking.problem_description ? `
+          <h3>Problem Description</h3>
+          <p>${booking.problem_description}</p>
+        ` : ''}
+
+        ${booking.notes ? `
+          <h3>Additional Notes</h3>
+          <p>${booking.notes}</p>
+        ` : ''}
+
+        <p><em>Stripe Session: ${booking.stripe_session_id || 'N/A'}</em></p>
+      `.trim();
+
+      const bookingEvent = await createEvent({
         clientId: client.clientId,
-        name: booking.pet_name,
-        species: booking.pet_species || '',
-        breed: booking.pet_breed || '',
-        sex: undefined,
-        dateOfBirth: undefined,
-        notes: booking.problem_description || undefined,
-      });
-    }
-
-    // 3. Create "Note" event for new clients only
-    let noteEventId: number | undefined;
-    if (isNewClient) {
-      const noteEvent = await createEvent({
-        clientId: client.clientId,
-        eventType: 'Note',
-        date: booking.booking_date, // When client was created on website
-        notes: '<p>Client created via website booking</p>',
+        eventType: 'Booking',
+        date: isoDate,
+        notes: bookingNotes,
         calendlyEventUri: undefined,
         calendlyStatus: undefined,
         invoiceFilePath: undefined,
-        hostedInvoiceUrl: undefined,
+        hostedInvoiceUrl: booking.stripe_session_id
+          ? `https://dashboard.stripe.com/payments/${booking.stripe_payment_intent_id}`
+          : undefined,
         parentEventId: undefined,
       });
-      noteEventId = noteEvent.eventId;
-    }
 
-    // 4. Create "Booking" event
-    // Handle time with or without seconds (HH:mm or HH:mm:ss)
-    const timeWithSeconds = booking.consultation_time.includes(':')
-      ? (booking.consultation_time.split(':').length === 3
-          ? booking.consultation_time
-          : `${booking.consultation_time}:00`)
-      : `${booking.consultation_time}:00:00`;
-
-    const consultationDateTime = `${booking.consultation_date}T${timeWithSeconds}`;
-    const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
-    const isoDate = formatISO(zonedDate);
-
-    const bookingNotes = `
-      <h2>Website Booking Details</h2>
-      <p><strong>Booking Reference:</strong> ${booking.booking_reference}</p>
-      <p><strong>Service:</strong> ${booking.service_type} (${booking.service_delivery})</p>
-      <p><strong>Pet:</strong> ${booking.pet_name}${booking.pet_species ? ` (${booking.pet_species})` : ''}</p>
-
-      ${booking.zoom_link ? `<p><strong>Zoom Link:</strong> <a href="${booking.zoom_link}" target="_blank">${booking.zoom_link}</a></p>` : ''}
-      ${booking.customer_postcode ? `<p><strong>Postcode:</strong> ${booking.customer_postcode}</p>` : ''}
-
-      <h3>Pricing</h3>
-      <p><strong>Base Price:</strong> $${booking.base_price.toFixed(2)}</p>
-      ${booking.travel_charge > 0 ? `<p><strong>Travel Charge:</strong> $${booking.travel_charge.toFixed(2)}</p>` : ''}
-      <p><strong>Total:</strong> $${booking.total_price.toFixed(2)} ${booking.currency}</p>
-      <p><strong>Payment Status:</strong> ${booking.payment_status}</p>
-
-      ${booking.referral_required ? `
-        <h3>Referral</h3>
-        ${booking.referral_file_path
-          ? `<p><strong>Referral File:</strong> ${booking.referral_file_name || 'Uploaded'}</p>`
-          : `<p><strong>Status:</strong> Pending - Client will submit later</p>`
-        }
-      ` : ''}
-
-      ${booking.problem_description ? `
-        <h3>Problem Description</h3>
-        <p>${booking.problem_description}</p>
-      ` : ''}
-
-      ${booking.notes ? `
-        <h3>Additional Notes</h3>
-        <p>${booking.notes}</p>
-      ` : ''}
-
-      <p><em>Stripe Session: ${booking.stripe_session_id || 'N/A'}</em></p>
-    `.trim();
-
-    const bookingEvent = await createEvent({
-      clientId: client.clientId,
-      eventType: 'Booking',
-      date: isoDate,
-      notes: bookingNotes,
-      calendlyEventUri: undefined,
-      calendlyStatus: undefined,
-      invoiceFilePath: undefined,
-      hostedInvoiceUrl: booking.stripe_session_id
-        ? `https://dashboard.stripe.com/payments/${booking.stripe_payment_intent_id}`
-        : undefined,
-      parentEventId: undefined,
+      return { client, pet, noteEventId, bookingEvent };
     });
 
-    // Trigger automation for the newly created Booking event
+    // Trigger automation outside of transaction (it creates additional records)
     // This will auto-create the questionnaire check task
-    await onEventCreated(bookingEvent);
+    await onEventCreated(result.bookingEvent);
 
     return {
       success: true,
       bookingId: booking.id,
       bookingReference: booking.booking_reference,
-      clientId: client.clientId,
+      clientId: result.client.clientId,
       clientName: booking.customer_name,
-      petId: pet.petId,
+      petId: result.pet.petId,
       petName: booking.pet_name,
-      noteEventId,
-      bookingEventId: bookingEvent.eventId,
+      noteEventId: result.noteEventId,
+      bookingEventId: result.bookingEvent.eventId,
       isNewClient,
     };
 
   } catch (error) {
-    console.error('Failed to import booking:', error);
+    logger.error('Failed to import booking:', error);
     return {
       success: false,
       bookingId: booking.id,
@@ -308,7 +317,7 @@ export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
 
     // If column doesn't exist (error code 42703), retry without the filter
     if (errorWithSync && errorWithSync.code === '42703') {
-      console.log('synced_to_admin column does not exist, fetching all confirmed bookings');
+      logger.debug('synced_to_admin column does not exist, fetching all confirmed bookings');
 
       const queryWithoutSync = supabase
         .from('bookings')
@@ -319,7 +328,7 @@ export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
       const { data: dataWithoutSync, error: errorWithoutSync } = await queryWithoutSync;
 
       if (errorWithoutSync) {
-        console.error('Supabase query error:', errorWithoutSync);
+        logger.error('Supabase query error:', errorWithoutSync);
         return [];
       }
 
@@ -328,13 +337,13 @@ export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
 
     // If different error, log it and return empty
     if (errorWithSync) {
-      console.error('Supabase query error:', errorWithSync);
+      logger.error('Supabase query error:', errorWithSync);
       return [];
     }
 
     return (dataWithSync || []) as WebsiteBooking[];
   } catch (error) {
-    console.error('Failed to fetch bookings from Supabase:', error);
+    logger.error('Failed to fetch bookings from Supabase:', error);
     return [];
   }
 }
@@ -354,17 +363,17 @@ export async function markBookingAsSynced(bookingId: string): Promise<boolean> {
       // If column doesn't exist (error code 42703), just return true
       // This allows the sync to work even without the column
       if (error.code === '42703') {
-        console.log('synced_to_admin column does not exist, skipping sync marker');
+        logger.debug('synced_to_admin column does not exist, skipping sync marker');
         return true;
       }
 
-      console.error('Failed to mark booking as synced:', error);
+      logger.error('Failed to mark booking as synced:', error);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error('Error marking booking as synced:', error);
+    logger.error('Error marking booking as synced:', error);
     return false;
   }
 }

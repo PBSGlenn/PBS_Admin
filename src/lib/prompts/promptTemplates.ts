@@ -1,6 +1,8 @@
 // PBS Admin - AI Prompt Templates
 // Manages system prompts for various report generation types
 
+import { logger } from '../utils/logger';
+
 export interface PromptTemplate {
   id: string;
   name: string;
@@ -464,7 +466,7 @@ export function saveCustomPromptTemplate(template: PromptTemplate): void {
 
     localStorage.setItem('pbs_admin_prompt_templates', JSON.stringify(customTemplates));
   } catch (error) {
-    console.error('Failed to save prompt template:', error);
+    logger.error('Failed to save prompt template:', error);
     throw new Error('Failed to save prompt template');
   }
 }
@@ -479,7 +481,7 @@ export function loadCustomPromptTemplates(): PromptTemplate[] {
       return JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Failed to load custom prompt templates:', error);
+    logger.error('Failed to load custom prompt templates:', error);
   }
   return [];
 }
@@ -497,7 +499,7 @@ export function deleteCustomPromptTemplate(templateId: string): boolean {
       return true;
     }
   } catch (error) {
-    console.error('Failed to delete prompt template:', error);
+    logger.error('Failed to delete prompt template:', error);
   }
   return false;
 }

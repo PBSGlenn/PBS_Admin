@@ -18,6 +18,7 @@ import { getClientsForDashboard } from "@/lib/services/clientService";
 import { formatFullName } from "@/lib/utils";
 import { formatDate } from "@/lib/utils/dateUtils";
 import { Plus, Search } from "lucide-react";
+import { LoadingCard } from "../ui/loading-spinner";
 
 interface ClientsListProps {
   onNewClient?: () => void;
@@ -72,9 +73,7 @@ export function ClientsList({ onNewClient, onEditClient }: ClientsListProps) {
       {/* Table */}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-xs text-muted-foreground">Loading clients...</p>
-          </div>
+          <LoadingCard message="Loading clients..." />
         ) : error ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-xs text-destructive">Error loading clients</p>

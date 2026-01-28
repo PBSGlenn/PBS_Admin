@@ -12,6 +12,18 @@ import { getPetsByClientId, deletePet } from "@/lib/services/petService";
 import type { Pet } from "@/lib/types";
 import { calculateAge } from "@/lib/utils/ageUtils";
 import { Plus, Edit, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
+import { LoadingSpinner } from "../ui/loading-spinner";
 
 export interface PetsTableProps {
   clientId: number;
@@ -21,6 +33,7 @@ export function PetsTable({ clientId }: PetsTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
+  const [petToDelete, setPetToDelete] = useState<Pet | null>(null);
 
   // Fetch pets for this client
   const { data: pets = [], isLoading } = useQuery({
@@ -34,15 +47,23 @@ export function PetsTable({ clientId }: PetsTableProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pets", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+      toast.success("Pet deleted successfully");
     },
     onError: (error) => {
-      alert(`Failed to delete pet: ${error}`);
+      toast.error("Failed to delete pet", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
   const handleDelete = (pet: Pet) => {
-    if (window.confirm(`Are you sure you want to delete ${pet.name}? This action cannot be undone.`)) {
-      deleteMutation.mutate(pet.petId);
+    setPetToDelete(pet);
+  };
+
+  const confirmDelete = () => {
+    if (petToDelete) {
+      deleteMutation.mutate(petToDelete.petId);
+      setPetToDelete(null);
     }
   };
 
@@ -182,6 +203,34 @@ export function PetsTable({ clientId }: PetsTableProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Pet Confirmation Dialog */}
+      <AlertDialog open={!!petToDelete} onOpenChange={(open) => !open && setPetToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Pet?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {petToDelete?.name}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

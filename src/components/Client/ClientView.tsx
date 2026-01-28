@@ -21,6 +21,9 @@ import { formatAustralianMobile, getRawPhoneNumber } from "@/lib/utils/phoneUtil
 import { AUSTRALIAN_STATES } from "@/lib/constants";
 import { ArrowLeft, Save, Folder, FolderOpen, CheckCircle2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
+import { UnsavedChangesDialog } from "../ui/unsaved-changes-dialog";
 
 export interface ClientViewProps {
   client: any;
@@ -68,6 +71,16 @@ export function ClientView({ client, onClose }: ClientViewProps) {
     );
   };
 
+  // Track unsaved changes
+  const {
+    showUnsavedDialog,
+    handleNavigationAttempt,
+    confirmDiscard,
+    cancelDiscard,
+  } = useUnsavedChanges({
+    checkDirty: hasChanges,
+  });
+
   // Folder management state
   const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -105,7 +118,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
     },
     onError: (error) => {
       console.error("Failed to save client:", error);
-      alert(`Failed to save changes: ${error}`);
+      toast.error("Failed to save changes", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -166,7 +181,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
         await invoke("plugin:opener|open_path", { path: currentFolderPath });
       } catch (error) {
         console.error("Failed to open folder:", error);
-        alert(`Could not open folder: ${error}`);
+        toast.error("Could not open folder", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       }
     } else {
       // If no folder path, show creation dialog
@@ -196,7 +213,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
         setCreatedFolderPath(folderPath);
         setShowSuccessDialog(true);
       } catch (error) {
-        alert(`Failed to create folder: ${error}`);
+        toast.error("Failed to create folder", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   };
@@ -223,7 +242,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={onClose}
+                onClick={() => handleNavigationAttempt(onClose)}
                 className="h-7 w-7"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
@@ -494,6 +513,13 @@ export function ClientView({ client, onClose }: ClientViewProps) {
         open={showSuccessDialog}
         folderPath={createdFolderPath}
         onClose={handleSuccessClose}
+      />
+
+      {/* Unsaved Changes Dialog */}
+      <UnsavedChangesDialog
+        isOpen={showUnsavedDialog}
+        onCancel={cancelDiscard}
+        onConfirm={confirmDiscard}
       />
     </div>
   );

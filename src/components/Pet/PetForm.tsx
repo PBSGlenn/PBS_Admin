@@ -13,6 +13,7 @@ import { PET_SPECIES, PET_SEX } from "@/lib/types";
 import type { Pet, PetInput } from "@/lib/types";
 import { parseAgeToDateOfBirth, calculateAge } from "@/lib/utils/ageUtils";
 import { Save, X, Calculator } from "lucide-react";
+import { toast } from "sonner";
 
 export interface PetFormProps {
   clientId: number;
@@ -62,7 +63,9 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
       onClose();
     },
     onError: (error) => {
-      alert(`Failed to create pet: ${error}`);
+      toast.error("Failed to create pet", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -76,7 +79,9 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
       onClose();
     },
     onError: (error) => {
-      alert(`Failed to update pet: ${error}`);
+      toast.error("Failed to update pet", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 

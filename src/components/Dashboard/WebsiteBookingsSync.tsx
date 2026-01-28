@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '../ui/table';
 import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle, Bug } from 'lucide-react';
+import { LoadingSpinner } from '../ui/loading-spinner';
 import {
   fetchUnsyncedBookings,
   syncAllWebsiteBookings,
@@ -186,8 +187,9 @@ export function WebsiteBookingsSync() {
 
       {/* Bookings table */}
       {loading ? (
-        <div className="text-center py-4 text-xs text-muted-foreground">
-          Loading bookings...
+        <div className="flex items-center justify-center py-4 gap-2">
+          <LoadingSpinner size="sm" className="text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Loading bookings...</span>
         </div>
       ) : bookings.length === 0 ? (
         <div className="text-center py-4 text-xs text-muted-foreground">

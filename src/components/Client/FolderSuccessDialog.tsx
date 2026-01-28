@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "../ui/button";
 import { FolderOpen, CheckCircle2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 
 export interface FolderSuccessDialogProps {
   open: boolean;
@@ -20,7 +21,9 @@ export function FolderSuccessDialog({ open, folderPath, onClose }: FolderSuccess
       await invoke("plugin:opener|open_path", { path: folderPath });
     } catch (error) {
       console.error("Failed to open folder:", error);
-      alert(`Could not open folder: ${error}`);
+      toast.error("Could not open folder", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     }
   };
 

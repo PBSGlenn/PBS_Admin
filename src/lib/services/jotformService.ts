@@ -3,6 +3,8 @@
  * Automatically downloads submitted questionnaires and saves them to client folders
  */
 
+import { withTransaction } from '../db';
+import { logger } from '../utils/logger';
 import {
   updateClient,
   findClientByEmailOrMobile,
@@ -129,7 +131,7 @@ function getProcessedSubmissionIds(): Set<string> {
     const ids = JSON.parse(stored);
     return new Set(Array.isArray(ids) ? ids : []);
   } catch (error) {
-    console.error('Failed to read processed submissions from localStorage:', error);
+    logger.error('Failed to read processed submissions from localStorage:', error);
     return new Set();
   }
 }
@@ -143,7 +145,7 @@ function markSubmissionAsProcessed(submissionId: string): void {
     processed.add(submissionId);
     localStorage.setItem(PROCESSED_SUBMISSIONS_KEY, JSON.stringify([...processed]));
   } catch (error) {
-    console.error('Failed to save processed submission to localStorage:', error);
+    logger.error('Failed to save processed submission to localStorage:', error);
   }
 }
 
@@ -161,7 +163,7 @@ export async function fetchUnprocessedSubmissions(): Promise<JotformSubmission[]
 
       const response = await fetch(url);
       if (!response.ok) {
-        console.error(`Failed to fetch submissions for form ${formId}:`, response.statusText);
+        logger.error(`Failed to fetch submissions for form ${formId}:`, response.statusText);
         continue;
       }
 
@@ -184,12 +186,12 @@ export async function fetchUnprocessedSubmissions(): Promise<JotformSubmission[]
     const processedIds = getProcessedSubmissionIds();
     const unprocessedSubmissions = recentSubmissions.filter(sub => !processedIds.has(sub.id));
 
-    console.log(`Found ${recentSubmissions.length} recent submissions, ${unprocessedSubmissions.length} unprocessed`);
+    logger.debug(`Found ${recentSubmissions.length} recent submissions, ${unprocessedSubmissions.length} unprocessed`);
 
     return unprocessedSubmissions;
 
   } catch (error) {
-    console.error('Failed to fetch Jotform submissions:', error);
+    logger.error('Failed to fetch Jotform submissions:', error);
     return [];
   }
 }
@@ -239,11 +241,11 @@ export function parseSubmission(submission: JotformSubmission): ParsedQuestionna
     const weight = answers['69']?.answer as string || undefined;
 
     // Log extracted pet info for debugging
-    console.log(`Questionnaire pet info - Name: ${petName}, Breed: ${breed}, Age: ${age}, Sex: ${rawSex} → ${sex}, Weight: ${weight}`);
+    logger.debug(`Questionnaire pet info - Name: ${petName}, Breed: ${breed}, Age: ${age}, Sex: ${rawSex} → ${sex}, Weight: ${weight}`);
 
     // Validate required fields
     if (!firstName || !lastName || !email || !petName) {
-      console.warn('Missing required fields in submission:', submission.id);
+      logger.warn('Missing required fields in submission:', submission.id);
       return null;
     }
 
@@ -268,7 +270,7 @@ export function parseSubmission(submission: JotformSubmission): ParsedQuestionna
     };
 
   } catch (error) {
-    console.error('Failed to parse submission:', error);
+    logger.error('Failed to parse submission:', error);
     return null;
   }
 }
@@ -342,9 +344,9 @@ async function downloadSubmissionFiles(
         content: jsonContent
       });
       result.json = true;
-      console.log('✓ JSON saved to:', jsonPath);
+      logger.debug('JSON saved to:', jsonPath);
     } catch (error) {
-      console.error('Failed to write JSON file:', error);
+      logger.error('Failed to write JSON file:', error);
     }
 
     // 2. Download and save PDF using Tauri command (bypasses CORS)
@@ -359,21 +361,22 @@ async function downloadSubmissionFiles(
         filePath: pdfPath
       });
       result.pdf = true;
-      console.log('✓ PDF downloaded to:', pdfPath);
+      logger.debug('PDF downloaded to:', pdfPath);
     } catch (error) {
-      console.error('Failed to download/save PDF:', error);
+      logger.error('Failed to download/save PDF:', error);
     }
 
     return result;
 
   } catch (error) {
-    console.error('Failed to download submission files:', error);
+    logger.error('Failed to download submission files:', error);
     return result;
   }
 }
 
 /**
  * Process a single questionnaire submission
+ * Uses database transaction for atomic database operations
  */
 export async function processQuestionnaire(
   submission: JotformSubmission
@@ -392,7 +395,7 @@ export async function processQuestionnaire(
       };
     }
 
-    // Find existing client
+    // Find existing client (read operation before transaction)
     const client = await findExistingClient(parsed.email, parsed.phone);
 
     if (!client) {
@@ -419,81 +422,88 @@ export async function processQuestionnaire(
       };
     }
 
-    // Download files to client folder
+    // Download files to client folder (outside transaction - file operations)
     const filesDownloaded = await downloadSubmissionFiles(
       submission,
       parsed,
       client.folderPath
     );
 
-    // Update client address if questionnaire has address data
-    if (parsed.address) {
-      const shouldUpdateAddress =
-        !client.streetAddress ||
-        !client.city ||
-        !client.state ||
-        !client.postcode;
+    // Find existing pet before transaction (read operation)
+    const existingPet = await findExistingPet(client.clientId, parsed.pet.name);
 
-      if (shouldUpdateAddress) {
-        await updateClient(client.clientId, {
-          streetAddress: parsed.address.street || client.streetAddress || undefined,
-          city: parsed.address.city || client.city || undefined,
-          state: parsed.address.state || client.state || undefined,
-          postcode: parsed.address.postcode || client.postcode || undefined,
-        });
-        console.log('✓ Updated client address from questionnaire');
-      }
-    }
+    // Wrap all database write operations in a transaction
+    const result = await withTransaction(async () => {
+      // Update client address if questionnaire has address data
+      if (parsed.address) {
+        const shouldUpdateAddress =
+          !client.streetAddress ||
+          !client.city ||
+          !client.state ||
+          !client.postcode;
 
-    // Find existing pet and update with questionnaire data
-    let pet = await findExistingPet(client.clientId, parsed.pet.name);
-
-    if (pet) {
-      // Calculate DOB from age if pet doesn't already have one
-      let calculatedDob: string | undefined;
-      if (!pet.dateOfBirth && parsed.pet.age) {
-        calculatedDob = parseAgeToDateOfBirth(parsed.pet.age) || undefined;
-        if (calculatedDob) {
-          console.log(`✓ Calculated DOB from age "${parsed.pet.age}": ${calculatedDob}`);
+        if (shouldUpdateAddress) {
+          await updateClient(client.clientId, {
+            streetAddress: parsed.address.street || client.streetAddress || undefined,
+            city: parsed.address.city || client.city || undefined,
+            state: parsed.address.state || client.state || undefined,
+            postcode: parsed.address.postcode || client.postcode || undefined,
+          });
+          logger.debug('Updated client address from questionnaire');
         }
       }
 
-      // Update pet details with questionnaire data
-      await updatePet(pet.petId, {
-        breed: parsed.pet.breed || pet.breed || undefined,
-        sex: parsed.pet.sex || pet.sex || undefined,
-        dateOfBirth: calculatedDob || pet.dateOfBirth || undefined,
-        notes: pet.notes
-          ? `${pet.notes}\n\nQuestionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`
-          : `Questionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`,
-      });
-      console.log('✓ Updated pet details from questionnaire');
-    }
+      // Update pet details if pet exists
+      let pet = existingPet;
+      if (pet) {
+        // Calculate DOB from age if pet doesn't already have one
+        let calculatedDob: string | undefined;
+        if (!pet.dateOfBirth && parsed.pet.age) {
+          calculatedDob = parseAgeToDateOfBirth(parsed.pet.age) || undefined;
+          if (calculatedDob) {
+            logger.debug(`Calculated DOB from age "${parsed.pet.age}": ${calculatedDob}`);
+          }
+        }
 
-    // Create "Questionnaire Received" event
-    const event = await createEvent({
-      clientId: client.clientId,
-      eventType: 'QuestionnaireReceived',
-      date: formatISO(toZonedTime(new Date(parsed.submittedAt), TIMEZONE)),
-      notes: `
-        <p><strong>Submission ID:</strong> ${parsed.submissionId}</p>
-        <p><strong>Form Type:</strong> ${parsed.formType === 'dog' ? 'Dog' : 'Cat'} Behaviour Questionnaire</p>
-        <p><strong>Pet:</strong> ${parsed.pet.name} (${parsed.pet.species})</p>
-        <p><strong>Breed:</strong> ${parsed.pet.breed}</p>
-        <p><strong>Age:</strong> ${parsed.pet.age}</p>
-        <p><strong>Sex:</strong> ${parsed.pet.sex}</p>
-        ${parsed.pet.weight ? `<p><strong>Weight:</strong> ${parsed.pet.weight}</p>` : ''}
-        <p><em>Files saved to client folder:</em></p>
-        <ul>
-          <li>${filesDownloaded.json ? '✓' : '✗'} JSON data</li>
-          <li>${filesDownloaded.pdf ? '✓' : '✗'} PDF questionnaire</li>
-        </ul>
-      `.trim(),
-      calendlyEventUri: undefined,
-      calendlyStatus: undefined,
-      invoiceFilePath: undefined,
-      hostedInvoiceUrl: undefined,
-      parentEventId: undefined,
+        // Update pet details with questionnaire data
+        await updatePet(pet.petId, {
+          breed: parsed.pet.breed || pet.breed || undefined,
+          sex: parsed.pet.sex || pet.sex || undefined,
+          dateOfBirth: calculatedDob || pet.dateOfBirth || undefined,
+          notes: pet.notes
+            ? `${pet.notes}\n\nQuestionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`
+            : `Questionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`,
+        });
+        logger.debug('Updated pet details from questionnaire');
+      }
+
+      // Create "Questionnaire Received" event
+      const event = await createEvent({
+        clientId: client.clientId,
+        eventType: 'QuestionnaireReceived',
+        date: formatISO(toZonedTime(new Date(parsed.submittedAt), TIMEZONE)),
+        notes: `
+          <p><strong>Submission ID:</strong> ${parsed.submissionId}</p>
+          <p><strong>Form Type:</strong> ${parsed.formType === 'dog' ? 'Dog' : 'Cat'} Behaviour Questionnaire</p>
+          <p><strong>Pet:</strong> ${parsed.pet.name} (${parsed.pet.species})</p>
+          <p><strong>Breed:</strong> ${parsed.pet.breed}</p>
+          <p><strong>Age:</strong> ${parsed.pet.age}</p>
+          <p><strong>Sex:</strong> ${parsed.pet.sex}</p>
+          ${parsed.pet.weight ? `<p><strong>Weight:</strong> ${parsed.pet.weight}</p>` : ''}
+          <p><em>Files saved to client folder:</em></p>
+          <ul>
+            <li>${filesDownloaded.json ? '✓' : '✗'} JSON data</li>
+            <li>${filesDownloaded.pdf ? '✓' : '✗'} PDF questionnaire</li>
+          </ul>
+        `.trim(),
+        calendlyEventUri: undefined,
+        calendlyStatus: undefined,
+        invoiceFilePath: undefined,
+        hostedInvoiceUrl: undefined,
+        parentEventId: undefined,
+      });
+
+      return { pet, event };
     });
 
     return {
@@ -501,14 +511,14 @@ export async function processQuestionnaire(
       submissionId: submission.id,
       clientId: client.clientId,
       clientName: `${client.firstName} ${client.lastName}`,
-      petId: pet?.petId,
+      petId: result.pet?.petId,
       petName: parsed.pet.name,
-      eventId: event.eventId,
+      eventId: result.event.eventId,
       filesDownloaded,
     };
 
   } catch (error) {
-    console.error('Failed to process questionnaire:', error);
+    logger.error('Failed to process questionnaire:', error);
     return {
       success: false,
       submissionId: submission.id,

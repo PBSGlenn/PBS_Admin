@@ -13,6 +13,7 @@ import { getRulesForTrigger } from "./rules";
 import { createTask } from "../services/taskService";
 import { createEvent } from "../services/eventService";
 import { createQuestionnaireCheckDate, subtractDaysFromDate, addDaysToDate } from "../utils/dateUtils";
+import { logger } from "../utils/logger";
 
 /**
  * Execute automation rules for a given trigger and context
@@ -31,7 +32,7 @@ export async function executeAutomation(
         continue;
       }
 
-      console.log(`[Automation] Executing rule: ${rule.name}`);
+      logger.debug(`[Automation] Executing rule: ${rule.name}`);
 
       let actionsExecuted = 0;
       const errors: string[] = [];
@@ -44,7 +45,7 @@ export async function executeAutomation(
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           errors.push(`Action ${action.type} failed: ${errorMessage}`);
-          console.error(`[Automation] Action failed:`, error);
+          logger.error(`[Automation] Action failed:`, error);
         }
       }
 
@@ -55,7 +56,7 @@ export async function executeAutomation(
         errors: errors.length > 0 ? errors : undefined,
       });
     } catch (error) {
-      console.error(`[Automation] Rule ${rule.id} failed:`, error);
+      logger.error(`[Automation] Rule ${rule.id} failed:`, error);
       results.push({
         ruleId: rule.id,
         success: false,
@@ -83,16 +84,16 @@ async function executeAction(action: Action, context: AutomationContext): Promis
 
     case "update.task.status":
       // Implementation for updating task status
-      console.log("[Automation] Update task status action - not yet implemented");
+      logger.debug("[Automation] Update task status action - not yet implemented");
       break;
 
     case "notify":
       // Implementation for notifications (local notifications)
-      console.log("[Automation] Notify action - not yet implemented");
+      logger.debug("[Automation] Notify action - not yet implemented");
       break;
 
     default:
-      console.warn(`[Automation] Unknown action type: ${action.type}`);
+      logger.warn(`[Automation] Unknown action type: ${action.type}`);
   }
 }
 
@@ -144,7 +145,7 @@ async function executeCreateTask(
   };
 
   await createTask(taskInput);
-  console.log(`[Automation] Created task: ${payload.description}`);
+  logger.debug(`[Automation] Created task: ${payload.description}`);
 }
 
 /**
@@ -172,7 +173,7 @@ async function executeCreateEvent(
   };
 
   await createEvent(eventInput);
-  console.log(`[Automation] Created event: ${payload.eventType}`);
+  logger.debug(`[Automation] Created event: ${payload.eventType}`);
 }
 
 /**

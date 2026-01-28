@@ -1,6 +1,8 @@
 // PBS Admin - Email Templates
 // Editable email templates for client communications
 
+import { logger } from './utils/logger';
+
 export interface EmailTemplate {
   id: string;
   name: string;
@@ -250,7 +252,7 @@ export function saveCustomTemplate(template: EmailTemplate): void {
 
     localStorage.setItem('pbs_admin_email_templates', JSON.stringify(customTemplates));
   } catch (error) {
-    console.error('Failed to save template:', error);
+    logger.error('Failed to save template:', error);
   }
 }
 
@@ -264,7 +266,7 @@ export function loadCustomTemplates(): EmailTemplate[] {
       return JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Failed to load custom templates:', error);
+    logger.error('Failed to load custom templates:', error);
   }
   return [];
 }
@@ -282,7 +284,7 @@ export function deleteCustomTemplate(templateId: string): boolean {
       return true;
     }
   } catch (error) {
-    console.error('Failed to delete template:', error);
+    logger.error('Failed to delete template:', error);
   }
   return false;
 }

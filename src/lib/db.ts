@@ -3,6 +3,7 @@
 
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "./utils/logger";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -27,9 +28,9 @@ export async function getDatabase(): Promise<Database> {
     try {
       const path = await getDatabasePath();
       db = await Database.load(`sqlite:${path}`);
-      console.log("Database connected successfully:", path);
+      logger.info("Database connected successfully:", path);
     } catch (error) {
-      console.error("Failed to connect to database:", error);
+      logger.error("Failed to connect to database:", error);
       throw error;
     }
   }
@@ -55,6 +56,97 @@ export async function execute(sql: string, params: any[] = []): Promise<{ rowsAf
     rowsAffected: result.rowsAffected,
     lastInsertId: result.lastInsertId,
   };
+}
+
+/**
+ * Execute multiple operations within a transaction
+ * If any operation fails, all changes are rolled back
+ *
+ * Usage:
+ * ```typescript
+ * const result = await withTransaction(async () => {
+ *   const client = await createClient(clientData);
+ *   const pet = await createPet({ clientId: client.clientId, ...petData });
+ *   const event = await createEvent({ clientId: client.clientId, ...eventData });
+ *   return { client, pet, event };
+ * });
+ * ```
+ */
+export async function withTransaction<T>(
+  operations: () => Promise<T>
+): Promise<T> {
+  const database = await getDatabase();
+
+  try {
+    // Begin transaction
+    await database.execute("BEGIN TRANSACTION");
+    logger.debug("Transaction started");
+
+    // Execute all operations
+    const result = await operations();
+
+    // Commit if all operations succeeded
+    await database.execute("COMMIT");
+    logger.debug("Transaction committed");
+
+    return result;
+  } catch (error) {
+    // Rollback on any error
+    try {
+      await database.execute("ROLLBACK");
+      logger.debug("Transaction rolled back");
+    } catch (rollbackError) {
+      logger.error("Failed to rollback transaction:", rollbackError);
+    }
+
+    // Re-throw the original error
+    throw error;
+  }
+}
+
+/**
+ * Execute a batch of SQL statements within a single transaction
+ * More efficient for multiple independent writes
+ *
+ * Usage:
+ * ```typescript
+ * await executeBatch([
+ *   { sql: "INSERT INTO Task ...", params: [...] },
+ *   { sql: "INSERT INTO Task ...", params: [...] },
+ *   { sql: "INSERT INTO Task ...", params: [...] },
+ * ]);
+ * ```
+ */
+export async function executeBatch(
+  statements: Array<{ sql: string; params?: any[] }>
+): Promise<Array<{ rowsAffected: number; lastInsertId?: number }>> {
+  const database = await getDatabase();
+  const results: Array<{ rowsAffected: number; lastInsertId?: number }> = [];
+
+  try {
+    await database.execute("BEGIN TRANSACTION");
+
+    for (const stmt of statements) {
+      const result = await database.execute(stmt.sql, stmt.params || []);
+      results.push({
+        rowsAffected: result.rowsAffected,
+        lastInsertId: result.lastInsertId,
+      });
+    }
+
+    await database.execute("COMMIT");
+    logger.debug(`Batch executed: ${statements.length} statements`);
+
+    return results;
+  } catch (error) {
+    try {
+      await database.execute("ROLLBACK");
+      logger.debug("Batch transaction rolled back");
+    } catch (rollbackError) {
+      logger.error("Failed to rollback batch transaction:", rollbackError);
+    }
+    throw error;
+  }
 }
 
 /**

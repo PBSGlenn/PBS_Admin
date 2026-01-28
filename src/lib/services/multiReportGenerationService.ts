@@ -1,18 +1,13 @@
 // PBS Admin - Multi-Report Generation Service
 // Generate multiple report types from consultation transcripts using Claude API
+// API calls are made through secure Tauri backend - API key never exposed to browser
 
-import Anthropic from "@anthropic-ai/sdk";
 import {
   getPromptTemplate,
   generateUserPrompt,
   type PromptTemplate
 } from "../prompts/promptTemplates";
-
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-  dangerouslyAllowBrowser: true
-});
+import { generateAIReport } from "./aiService";
 
 export interface ReportGenerationParams {
   clientName: string;
@@ -64,59 +59,38 @@ async function generateSingleReport(
     throw new Error(`Prompt template is disabled: ${templateId}`);
   }
 
-  try {
-    // Generate user prompt with parameters
-    const userPrompt = generateUserPrompt({
-      templateId,
-      clientName: params.clientName,
-      petName: params.petName,
-      petSpecies: params.petSpecies,
-      consultationDate: params.consultationDate,
-      transcript: params.transcript,
-      questionnaire: params.questionnaire,
-      vetClinicName: params.vetClinicName
-    });
+  // Generate user prompt with parameters
+  const userPrompt = generateUserPrompt({
+    templateId,
+    clientName: params.clientName,
+    petName: params.petName,
+    petSpecies: params.petSpecies,
+    consultationDate: params.consultationDate,
+    transcript: params.transcript,
+    questionnaire: params.questionnaire,
+    vetClinicName: params.vetClinicName
+  });
 
-    // Call Claude API with prompt caching
-    const response = await anthropic.messages.create({
-      model: "claude-opus-4-5-20251101",
-      max_tokens: template.maxTokens,
-      system: [
-        {
-          type: "text",
-          text: template.systemPrompt,
-          cache_control: { type: "ephemeral" }
-        }
-      ],
-      messages: [
-        {
-          role: "user",
-          content: userPrompt
-        }
-      ]
-    });
+  // Call Claude API through secure Tauri backend
+  const result = await generateAIReport(
+    template.systemPrompt,
+    userPrompt,
+    template.maxTokens
+  );
 
-    // Extract content from response
-    const content = response.content[0].type === "text"
-      ? response.content[0].text
-      : "";
-
-    // Calculate token usage
-    const tokensUsed = {
-      input: response.usage.input_tokens,
-      output: response.usage.output_tokens,
-      total: response.usage.input_tokens + response.usage.output_tokens
-    };
-
-    return {
-      content,
-      template,
-      tokensUsed
-    };
-  } catch (error) {
-    console.error(`Failed to generate report (${templateId}):`, error);
-    throw error;
+  if (!result.success) {
+    throw new Error(result.error || "AI generation failed");
   }
+
+  return {
+    content: result.content,
+    template,
+    tokensUsed: {
+      input: result.usage.input_tokens,
+      output: result.usage.output_tokens,
+      total: result.usage.total_tokens
+    }
+  };
 }
 
 /**

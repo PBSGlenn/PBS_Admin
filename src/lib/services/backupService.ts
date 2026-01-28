@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
+import { logger } from "../utils/logger";
 
 export interface BackupInfo {
   fileName: string;
@@ -36,7 +37,7 @@ export async function createBackup(): Promise<BackupResult> {
       fileName: result.file_name,
     };
   } catch (error) {
-    console.error("Backup failed:", error);
+    logger.error("Backup failed:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -53,7 +54,7 @@ export async function restoreBackup(backupFilePath: string): Promise<RestoreResu
     await invoke<string>("restore_database_backup", { backupPath: backupFilePath });
     return { success: true };
   } catch (error) {
-    console.error("Restore failed:", error);
+    logger.error("Restore failed:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -69,7 +70,7 @@ export async function listBackups(): Promise<BackupInfo[]> {
     const backups = await invoke<BackupInfo[]>("list_database_backups");
     return backups;
   } catch (error) {
-    console.error("Failed to list backups:", error);
+    logger.error("Failed to list backups:", error);
     return [];
   }
 }
@@ -81,7 +82,7 @@ export async function getBackupsPath(): Promise<string> {
   try {
     return await invoke<string>("get_backups_path");
   } catch (error) {
-    console.error("Failed to get backups path:", error);
+    logger.error("Failed to get backups path:", error);
     return "";
   }
 }
@@ -94,7 +95,7 @@ export async function deleteBackup(backupFilePath: string): Promise<boolean> {
     await invoke<string>("delete_backup_file", { backupPath: backupFilePath });
     return true;
   } catch (error) {
-    console.error("Failed to delete backup:", error);
+    logger.error("Failed to delete backup:", error);
     return false;
   }
 }

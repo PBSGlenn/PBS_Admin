@@ -1,6 +1,8 @@
 // Prescription Template Management System
 // Similar to email templates and AI prompts - allows customizable prescription format
 
+import { logger } from './utils/logger';
+
 export interface PrescriptionTemplate {
   id: string;
   name: string;
@@ -74,7 +76,7 @@ export function getPrescriptionTemplate(): PrescriptionTemplate {
       return customTemplate;
     }
   } catch (error) {
-    console.error('Error loading custom prescription template:', error);
+    logger.error('Error loading custom prescription template:', error);
   }
   return DEFAULT_TEMPLATE;
 }
@@ -86,7 +88,7 @@ export function savePrescriptionTemplate(template: PrescriptionTemplate): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(template));
   } catch (error) {
-    console.error('Error saving prescription template:', error);
+    logger.error('Error saving prescription template:', error);
     throw new Error('Failed to save prescription template');
   }
 }
@@ -98,7 +100,7 @@ export function resetPrescriptionTemplate(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (error) {
-    console.error('Error resetting prescription template:', error);
+    logger.error('Error resetting prescription template:', error);
     throw new Error('Failed to reset prescription template');
   }
 }

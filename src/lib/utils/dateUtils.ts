@@ -4,6 +4,7 @@
 import { format, parseISO, isAfter, isBefore, addDays, subDays, differenceInDays } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { TIMEZONE, DATE_FORMATS } from "../constants";
+import { logger } from "./logger";
 
 /**
  * Convert a Date object to an ISO 8601 string in the Australia/Melbourne timezone
@@ -37,7 +38,7 @@ export function formatDate(isoString: string, formatString: string = DATE_FORMAT
     const date = parseDate(isoString);
     return format(date, formatString);
   } catch (error) {
-    console.error("Error formatting date:", error);
+    logger.error("Error formatting date:", error);
     return isoString;
   }
 }
@@ -50,7 +51,7 @@ export function formatDateObject(date: Date, formatString: string = DATE_FORMATS
     const zonedDate = toZonedTime(date, TIMEZONE);
     return format(zonedDate, formatString);
   } catch (error) {
-    console.error("Error formatting date object:", error);
+    logger.error("Error formatting date object:", error);
     return date.toISOString();
   }
 }
@@ -77,7 +78,7 @@ export function isPast(isoString: string): boolean {
     const date = parseDate(isoString);
     return isBefore(date, now());
   } catch (error) {
-    console.error("Error checking if date is past:", error);
+    logger.error("Error checking if date is past:", error);
     return false;
   }
 }
@@ -90,7 +91,7 @@ export function isFuture(isoString: string): boolean {
     const date = parseDate(isoString);
     return isAfter(date, now());
   } catch (error) {
-    console.error("Error checking if date is future:", error);
+    logger.error("Error checking if date is future:", error);
     return false;
   }
 }
