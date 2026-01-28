@@ -7,12 +7,14 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Badge } from "../ui/badge";
 import { TaskForm } from "./TaskForm";
 import { getTasksByClientId, deleteTask, markTaskDone } from "@/lib/services/taskService";
 import type { Task } from "@/lib/types";
 import { Plus, Edit, Trash2, CheckCircle2 } from "lucide-react";
 import { format, isPast } from "date-fns";
+import { toast } from "sonner";
 
 export interface TasksTableProps {
   clientId: number;
@@ -22,6 +24,7 @@ export function TasksTable({ clientId }: TasksTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [deletingTask, setDeletingTask] = useState<Task | null>(null);
 
   // Fetch tasks for this client
   const { data: tasks = [], isLoading } = useQuery({
@@ -37,7 +40,9 @@ export function TasksTable({ clientId }: TasksTableProps) {
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
     },
     onError: (error) => {
-      alert(`Failed to delete task: ${error}`);
+      toast.error("Failed to delete task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -49,13 +54,20 @@ export function TasksTable({ clientId }: TasksTableProps) {
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
     },
     onError: (error) => {
-      alert(`Failed to mark task as done: ${error}`);
+      toast.error("Failed to mark task as done", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
   const handleDelete = (task: Task) => {
-    if (window.confirm(`Are you sure you want to delete this task? This action cannot be undone.`)) {
-      deleteMutation.mutate(task.taskId);
+    setDeletingTask(task);
+  };
+
+  const confirmDelete = () => {
+    if (deletingTask) {
+      deleteMutation.mutate(deletingTask.taskId);
+      setDeletingTask(null);
     }
   };
 
@@ -254,6 +266,18 @@ export function TasksTable({ clientId }: TasksTableProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deletingTask}
+        onOpenChange={(open) => !open && setDeletingTask(null)}
+        title="Delete Task"
+        description="Are you sure you want to delete this task? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

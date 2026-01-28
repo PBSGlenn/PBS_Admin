@@ -14,11 +14,13 @@ import {
   TableRow,
 } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { getTasksForDashboard, markTaskDone, deleteTask, getTaskById } from "@/lib/services/taskService";
 import { getClientById } from "@/lib/services/clientService";
 import { formatDate, isTaskOverdue } from "@/lib/utils/dateUtils";
 import { getPriorityColor } from "@/lib/utils";
 import { Check, Edit, Trash2, Mail } from "lucide-react";
+import { toast } from "sonner";
 import { TaskForm } from "../Task/TaskForm";
 import { EmailDraftDialog } from "../ui/email-draft-dialog";
 import { getQuestionnaireReminderTemplate, processTemplate } from "@/lib/emailTemplates";
@@ -31,6 +33,7 @@ export function TasksOverview() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEmailDraftOpen, setIsEmailDraftOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState({ to: "", subject: "", body: "" });
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const { data: tasks, isLoading, error } = useQuery({
     queryKey: ["tasks", "dashboard"],
@@ -46,7 +49,9 @@ export function TasksOverview() {
       setSelectedTask(null);
     },
     onError: (error) => {
-      alert(`Failed to delete task: ${error}`);
+      toast.error("Failed to delete task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -57,7 +62,9 @@ export function TasksOverview() {
       queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
     },
     onError: (error) => {
-      alert(`Failed to mark task as done: ${error}`);
+      toast.error("Failed to mark task as done", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -81,8 +88,13 @@ export function TasksOverview() {
 
   const handleDelete = () => {
     if (!selectedTask) return;
-    if (window.confirm(`Are you sure you want to delete this task? This action cannot be undone.`)) {
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedTask) {
       deleteMutation.mutate(selectedTask.taskId);
+      setIsDeleteConfirmOpen(false);
     }
   };
 
@@ -93,7 +105,9 @@ export function TasksOverview() {
       // Get client details for email
       const client = await getClientById(selectedTask.clientId);
       if (!client || !client.email) {
-        alert("Cannot send reminder: Client email not found");
+        toast.error("Cannot send reminder", {
+          description: "Client email address not found",
+        });
         return;
       }
 
@@ -126,7 +140,9 @@ export function TasksOverview() {
       // Get email template
       const template = getQuestionnaireReminderTemplate(petSpecies);
       if (!template) {
-        alert("Email template not found");
+        toast.error("Email template not found", {
+          description: "The questionnaire reminder template is missing",
+        });
         return;
       }
 
@@ -156,7 +172,9 @@ export function TasksOverview() {
 
     } catch (error) {
       console.error("Failed to prepare reminder:", error);
-      alert("Failed to prepare reminder email. Please try again.");
+      toast.error("Failed to prepare reminder email", {
+        description: "Please try again",
+      });
     }
   };
 
@@ -167,13 +185,10 @@ export function TasksOverview() {
     // Open default email client
     window.open(mailtoLink, '_blank');
 
-    // Optional: Show confirmation
-    setTimeout(() => {
-      if (confirm("Email client opened. Did you send the reminder?")) {
-        // Could mark task as "reminder sent" or add a note
-        console.log("Reminder sent to", to);
-      }
-    }, 1000);
+    // Show success toast instead of confirm
+    toast.success("Email client opened", {
+      description: "Reminder email ready to send",
+    });
   };
 
   const handleCloseDialog = () => {
@@ -370,6 +385,18 @@ export function TasksOverview() {
         initialSubject={emailDraft.subject}
         initialBody={emailDraft.body}
         clientName={selectedClientName}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={isDeleteConfirmOpen}
+        onOpenChange={setIsDeleteConfirmOpen}
+        title="Delete Task"
+        description="Are you sure you want to delete this task? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
   );

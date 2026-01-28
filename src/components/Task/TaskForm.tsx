@@ -14,6 +14,7 @@ import type { Task, TaskInput } from "@/lib/types";
 import { TASK_TEMPLATES, getTemplateFormValues } from "@/lib/taskTemplates";
 import { Save, X } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 export interface TaskFormProps {
   clientId?: number;
@@ -84,7 +85,9 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
       onClose();
     },
     onError: (error) => {
-      alert(`Failed to create task: ${error}`);
+      toast.error("Failed to create task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -103,7 +106,9 @@ export function TaskForm({ clientId, eventId, task, onClose, onSave }: TaskFormP
       onClose();
     },
     onError: (error) => {
-      alert(`Failed to update task: ${error}`);
+      toast.error("Failed to update task", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 

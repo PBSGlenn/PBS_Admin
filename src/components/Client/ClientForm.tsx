@@ -18,6 +18,7 @@ import { onClientCreated } from "@/lib/automation/engine";
 import { formatAustralianMobile, getRawPhoneNumber } from "@/lib/utils/phoneUtils";
 import { AUSTRALIAN_STATES } from "@/lib/constants";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { ArrowLeft, Save, X } from "lucide-react";
 
 export interface ClientFormProps {
@@ -98,7 +99,9 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
       setShowFolderDialog(true);
     },
     onError: (error) => {
-      alert(`Failed to save client: ${error}`);
+      toast.error("Failed to save client", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -121,7 +124,9 @@ export function ClientForm({ onClose, onSave }: ClientFormProps) {
         setCreatedFolderPath(folderPath);
         setShowSuccessDialog(true);
       } catch (error) {
-        alert(`Failed to create folder: ${error}`);
+        toast.error("Failed to create folder", {
+          description: error instanceof Error ? error.message : String(error),
+        });
         // If folder creation failed, still close the form
         if (onSave && savedClient) onSave(savedClient);
         onClose();

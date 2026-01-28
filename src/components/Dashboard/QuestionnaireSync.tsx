@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '../ui/table';
 import { Download, RefreshCw, CheckCircle2, XCircle, FileText, FileJson } from 'lucide-react';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import {
   fetchUnprocessedSubmissions,
   syncAllQuestionnaires,
@@ -28,6 +29,7 @@ export function QuestionnaireSync() {
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<QuestionnaireSyncResult[]>([]);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   // Fetch unprocessed submissions on mount
   useEffect(() => {
@@ -63,11 +65,14 @@ export function QuestionnaireSync() {
   };
 
   const handleClearTracking = () => {
-    if (window.confirm('Clear processed questionnaire tracking? This will allow re-processing of all questionnaires (for testing purposes).')) {
-      localStorage.removeItem('pbs_admin_processed_jotform_submissions');
-      setSyncResults([]);
-      loadSubmissions();
-    }
+    setIsClearConfirmOpen(true);
+  };
+
+  const confirmClearTracking = () => {
+    localStorage.removeItem('pbs_admin_processed_jotform_submissions');
+    setSyncResults([]);
+    loadSubmissions();
+    setIsClearConfirmOpen(false);
   };
 
   const formatDateTime = (dateString: string) => {
@@ -270,6 +275,18 @@ export function QuestionnaireSync() {
           </Table>
         </div>
       )}
+
+      {/* Clear Tracking Confirmation Dialog */}
+      <ConfirmDialog
+        open={isClearConfirmOpen}
+        onOpenChange={setIsClearConfirmOpen}
+        title="Clear Tracking Data"
+        description="Clear processed questionnaire tracking? This will allow re-processing of all questionnaires (for testing purposes)."
+        confirmText="Clear"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmClearTracking}
+      />
     </div>
   );
 }

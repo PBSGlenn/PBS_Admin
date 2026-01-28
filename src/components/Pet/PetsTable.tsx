@@ -7,11 +7,13 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { PetForm } from "./PetForm";
 import { getPetsByClientId, deletePet } from "@/lib/services/petService";
 import type { Pet } from "@/lib/types";
 import { calculateAge } from "@/lib/utils/ageUtils";
 import { Plus, Edit, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 export interface PetsTableProps {
   clientId: number;
@@ -21,6 +23,7 @@ export function PetsTable({ clientId }: PetsTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
+  const [deletingPet, setDeletingPet] = useState<Pet | null>(null);
 
   // Fetch pets for this client
   const { data: pets = [], isLoading } = useQuery({
@@ -36,13 +39,20 @@ export function PetsTable({ clientId }: PetsTableProps) {
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
     },
     onError: (error) => {
-      alert(`Failed to delete pet: ${error}`);
+      toast.error("Failed to delete pet", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
   const handleDelete = (pet: Pet) => {
-    if (window.confirm(`Are you sure you want to delete ${pet.name}? This action cannot be undone.`)) {
-      deleteMutation.mutate(pet.petId);
+    setDeletingPet(pet);
+  };
+
+  const confirmDelete = () => {
+    if (deletingPet) {
+      deleteMutation.mutate(deletingPet.petId);
+      setDeletingPet(null);
     }
   };
 
@@ -182,6 +192,18 @@ export function PetsTable({ clientId }: PetsTableProps) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deletingPet}
+        onOpenChange={(open) => !open && setDeletingPet(null)}
+        title="Delete Pet"
+        description={`Are you sure you want to delete ${deletingPet?.name}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

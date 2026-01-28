@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import {
   FileText,
   Copy,
@@ -55,6 +56,8 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
   const [hasChanges, setHasChanges] = useState(false);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
 
   // Load templates on mount and when dialog opens
   useEffect(() => {
@@ -133,7 +136,14 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
       return;
     }
 
-    if (confirm(`Restore "${defaultTemplate.name}" to default? This will discard all your changes.`)) {
+    setIsRestoreConfirmOpen(true);
+  };
+
+  const confirmRestoreDefault = () => {
+    if (!selectedTemplateId) return;
+
+    const defaultTemplate = getDefaultPromptTemplate(selectedTemplateId);
+    if (defaultTemplate) {
       resetToDefaultPromptTemplate(selectedTemplateId);
       toast.success(`Restored "${defaultTemplate.name}" to default`);
       loadTemplates();
@@ -142,6 +152,7 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
       setEditedTemplate({ ...defaultTemplate });
       setHasChanges(false);
     }
+    setIsRestoreConfirmOpen(false);
   };
 
   const handleFieldChange = (field: keyof PromptTemplate, value: any) => {
@@ -156,13 +167,16 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
 
   const handleCancel = () => {
     if (hasChanges) {
-      if (confirm("You have unsaved changes. Are you sure you want to close?")) {
-        setHasChanges(false);
-        onClose();
-      }
+      setIsCloseConfirmOpen(true);
     } else {
       onClose();
     }
+  };
+
+  const confirmClose = () => {
+    setHasChanges(false);
+    setIsCloseConfirmOpen(false);
+    onClose();
   };
 
   const handleCheckForUpdate = async () => {
@@ -478,6 +492,30 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
           </div>
         </div>
       </DialogContent>
+
+      {/* Restore Default Confirmation */}
+      <ConfirmDialog
+        open={isRestoreConfirmOpen}
+        onOpenChange={setIsRestoreConfirmOpen}
+        title="Restore Default"
+        description={`Restore "${editedTemplate?.name}" to default? This will discard all your changes.`}
+        confirmText="Restore"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmRestoreDefault}
+      />
+
+      {/* Close with Unsaved Changes Confirmation */}
+      <ConfirmDialog
+        open={isCloseConfirmOpen}
+        onOpenChange={setIsCloseConfirmOpen}
+        title="Unsaved Changes"
+        description="You have unsaved changes. Are you sure you want to close?"
+        confirmText="Close Without Saving"
+        cancelText="Keep Editing"
+        variant="destructive"
+        onConfirm={confirmClose}
+      />
     </Dialog>
   );
 }

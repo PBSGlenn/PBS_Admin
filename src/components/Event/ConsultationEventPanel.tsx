@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { FileCheck, Loader2, FileText, Sparkles, File, FileImage, FileOutput, ExternalLink, ListTodo, Plus, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { updateEvent } from "@/lib/services/eventService";
@@ -152,6 +153,9 @@ export function ConsultationEventPanel({
   const [newTaskDescription, setNewTaskDescription] = useState("");
   const [newTaskOffset, setNewTaskOffset] = useState("1 week");
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>(2);
+
+  // Confirm dialog for replacing transcript
+  const [isReplaceConfirmOpen, setIsReplaceConfirmOpen] = useState(false);
 
   // Processing log state - tracks what has been done in this consultation
   const [processingLog, setProcessingLog] = useState<{
@@ -351,18 +355,24 @@ export function ConsultationEventPanel({
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
     },
     onError: (error) => {
-      alert(`Failed to save transcript: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error("Failed to save transcript", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   });
 
   const handleSaveTranscript = () => {
-    // If replacing existing transcript, confirm first
+    // If replacing existing transcript, show confirm dialog
     if (event?.transcriptFilePath) {
-      if (!window.confirm("Are you sure you want to replace the existing transcript file?")) {
-        return;
-      }
+      setIsReplaceConfirmOpen(true);
+      return;
     }
 
+    saveTranscriptMutation.mutate();
+  };
+
+  const confirmReplaceTranscript = () => {
+    setIsReplaceConfirmOpen(false);
     saveTranscriptMutation.mutate();
   };
 
@@ -1539,6 +1549,18 @@ Return ONLY valid JSON array, no other text.`
           )}
         </Card>
       )}
+
+      {/* Replace Transcript Confirm Dialog */}
+      <ConfirmDialog
+        open={isReplaceConfirmOpen}
+        onOpenChange={setIsReplaceConfirmOpen}
+        title="Replace Transcript"
+        description="Are you sure you want to replace the existing transcript file? This will overwrite the previous version."
+        confirmText="Replace"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmReplaceTranscript}
+      />
     </div>
   );
 }

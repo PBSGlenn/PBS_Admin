@@ -21,6 +21,7 @@ import { formatAustralianMobile, getRawPhoneNumber } from "@/lib/utils/phoneUtil
 import { AUSTRALIAN_STATES } from "@/lib/constants";
 import { ArrowLeft, Save, Folder, FolderOpen, CheckCircle2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 
 export interface ClientViewProps {
   client: any;
@@ -105,7 +106,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
     },
     onError: (error) => {
       console.error("Failed to save client:", error);
-      alert(`Failed to save changes: ${error}`);
+      toast.error("Failed to save changes", {
+        description: error instanceof Error ? error.message : String(error),
+      });
     },
   });
 
@@ -166,7 +169,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
         await invoke("plugin:opener|open_path", { path: currentFolderPath });
       } catch (error) {
         console.error("Failed to open folder:", error);
-        alert(`Could not open folder: ${error}`);
+        toast.error("Could not open folder", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       }
     } else {
       // If no folder path, show creation dialog
@@ -196,7 +201,9 @@ export function ClientView({ client, onClose }: ClientViewProps) {
         setCreatedFolderPath(folderPath);
         setShowSuccessDialog(true);
       } catch (error) {
-        alert(`Failed to create folder: ${error}`);
+        toast.error("Failed to create folder", {
+          description: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   };

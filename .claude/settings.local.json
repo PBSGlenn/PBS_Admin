@@ -47,7 +47,13 @@
       "Bash(copy \"C:\\\\Users\\\\grubb\\\\Downloads\\\\zoho-domain-verification.html\" \"C:\\\\Dev\\\\pet-behaviour\\\\public\"\")",
       "Bash(git check-ignore:*)",
       "Bash(grep:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git stash:*)",
+      "Bash(curl:*)",
+      "Bash(npm i:*)",
+      "Bash(git fetch:*)"
     ],
     "deny": [],
     "ask": []
