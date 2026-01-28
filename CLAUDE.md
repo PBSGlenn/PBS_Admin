@@ -6,6 +6,60 @@ A Windows 11 desktop application for managing clients, pets, events, tasks, and 
 
 ---
 
+## ⚠️ Before Starting Any Task
+
+**ALWAYS check git state first** to avoid duplicate work:
+
+```bash
+# Check current branch and all branches
+git branch -vv
+
+# See recent commits on current branch
+git log --oneline -10
+
+# Check if there are other worktree branches with recent work
+git branch -a --sort=-committerdate | head -10
+
+# See what's different between branches
+git log main..HEAD --oneline
+```
+
+This project uses **Claude worktrees** - multiple branches may have parallel work in progress. Before starting reviews, refactors, or new features, verify what has already been done in recent commits.
+
+### Branch Cleanup Policy
+
+**When to suggest branch deletion:**
+- Branch has been fully merged to master
+- No unique unmerged commits remain
+- Worktree is no longer actively being used
+
+**Rules for Claude:**
+1. **Never delete branches without explicit user approval**
+2. After completing work and merging, check for cleanup candidates:
+   ```bash
+   # Find merged branches
+   git branch --merged master
+
+   # Check worktree status
+   git worktree list
+   ```
+3. If merged branches exist, ask: *"Branch X has been merged to master. Would you like me to delete it and its worktree?"*
+4. Only delete after user confirms with explicit "yes" or similar
+
+**To delete a branch and its worktree:**
+```bash
+# First remove the worktree
+git worktree remove /path/to/worktree
+
+# Then delete the branch
+git branch -d branch-name
+
+# Delete remote branch if exists
+git push origin --delete branch-name
+```
+
+---
+
 ## Project Overview
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
