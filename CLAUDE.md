@@ -73,9 +73,10 @@ git push origin --delete branch-name
 - UI improvements: ConfirmDialog replaces alert(), toast notifications for errors
 - Code cleanup: Removed unused dependencies (html2canvas, jspdf), dead code deleted
 - Added git state checking and branch cleanup policy to CLAUDE.md
+- **Production build ready**: CSP enabled, relative paths for Tauri webview, NSIS installer working
 
 **Remaining TODO**:
-- Enable CSP in tauri.conf.json for production
+- None - application is production ready
 
 ---
 
