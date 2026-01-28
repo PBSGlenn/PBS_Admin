@@ -14,23 +14,13 @@ import {
   TableRow,
 } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { getTasksForDashboard, markTaskDone, deleteTask, getTaskById } from "@/lib/services/taskService";
 import { getClientById } from "@/lib/services/clientService";
 import { formatDate, isTaskOverdue } from "@/lib/utils/dateUtils";
 import { getPriorityColor } from "@/lib/utils";
-import { Check, Trash2, Mail } from "lucide-react";
+import { Check, Edit, Trash2, Mail } from "lucide-react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
-import { LoadingCard, LoadingSpinner } from "../ui/loading-spinner";
 import { TaskForm } from "../Task/TaskForm";
 import { EmailDraftDialog } from "../ui/email-draft-dialog";
 import { getQuestionnaireReminderTemplate, processTemplate } from "@/lib/emailTemplates";
@@ -43,7 +33,7 @@ export function TasksOverview() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEmailDraftOpen, setIsEmailDraftOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState({ to: "", subject: "", body: "" });
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   const { data: tasks, isLoading, error } = useQuery({
     queryKey: ["tasks", "dashboard"],
@@ -57,7 +47,6 @@ export function TasksOverview() {
       queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
       setIsDialogOpen(false);
       setSelectedTask(null);
-      toast.success("Task deleted successfully");
     },
     onError: (error) => {
       toast.error("Failed to delete task", {
@@ -71,7 +60,6 @@ export function TasksOverview() {
     mutationFn: markTaskDone,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
-      toast.success("Task marked as done");
     },
     onError: (error) => {
       toast.error("Failed to mark task as done", {
@@ -100,13 +88,14 @@ export function TasksOverview() {
 
   const handleDelete = () => {
     if (!selectedTask) return;
-    setShowDeleteConfirm(true);
+    setIsDeleteConfirmOpen(true);
   };
 
   const confirmDelete = () => {
-    if (!selectedTask) return;
-    deleteMutation.mutate(selectedTask.taskId);
-    setShowDeleteConfirm(false);
+    if (selectedTask) {
+      deleteMutation.mutate(selectedTask.taskId);
+      setIsDeleteConfirmOpen(false);
+    }
   };
 
   const handleSendReminder = async () => {
@@ -117,7 +106,7 @@ export function TasksOverview() {
       const client = await getClientById(selectedTask.clientId);
       if (!client || !client.email) {
         toast.error("Cannot send reminder", {
-          description: "Client email not found",
+          description: "Client email address not found",
         });
         return;
       }
@@ -151,7 +140,9 @@ export function TasksOverview() {
       // Get email template
       const template = getQuestionnaireReminderTemplate(petSpecies);
       if (!template) {
-        toast.error("Email template not found");
+        toast.error("Email template not found", {
+          description: "The questionnaire reminder template is missing",
+        });
         return;
       }
 
@@ -182,7 +173,7 @@ export function TasksOverview() {
     } catch (error) {
       console.error("Failed to prepare reminder:", error);
       toast.error("Failed to prepare reminder email", {
-        description: "Please try again.",
+        description: "Please try again",
       });
     }
   };
@@ -194,9 +185,9 @@ export function TasksOverview() {
     // Open default email client
     window.open(mailtoLink, '_blank');
 
-    // Show toast notification
+    // Show success toast instead of confirm
     toast.success("Email client opened", {
-      description: `Reminder prepared for ${to}`,
+      description: "Reminder email ready to send",
     });
   };
 
@@ -219,7 +210,9 @@ export function TasksOverview() {
   return (
     <div>
       {isLoading ? (
-        <LoadingCard message="Loading tasks..." />
+        <div className="text-center py-4">
+          <p className="text-xs text-muted-foreground">Loading tasks...</p>
+        </div>
       ) : error ? (
         <div className="text-center py-4">
           <p className="text-xs text-destructive">Error loading tasks</p>
@@ -394,33 +387,17 @@ export function TasksOverview() {
         clientName={selectedClientName}
       />
 
-      {/* Delete Task Confirmation Dialog */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this task? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={isDeleteConfirmOpen}
+        onOpenChange={setIsDeleteConfirmOpen}
+        title="Delete Task"
+        description="Are you sure you want to delete this task? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

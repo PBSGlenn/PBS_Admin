@@ -7,23 +7,13 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { PetForm } from "./PetForm";
 import { getPetsByClientId, deletePet } from "@/lib/services/petService";
 import type { Pet } from "@/lib/types";
 import { calculateAge } from "@/lib/utils/ageUtils";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
-import { LoadingSpinner } from "../ui/loading-spinner";
 
 export interface PetsTableProps {
   clientId: number;
@@ -33,7 +23,7 @@ export function PetsTable({ clientId }: PetsTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
-  const [petToDelete, setPetToDelete] = useState<Pet | null>(null);
+  const [deletingPet, setDeletingPet] = useState<Pet | null>(null);
 
   // Fetch pets for this client
   const { data: pets = [], isLoading } = useQuery({
@@ -47,7 +37,6 @@ export function PetsTable({ clientId }: PetsTableProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pets", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-      toast.success("Pet deleted successfully");
     },
     onError: (error) => {
       toast.error("Failed to delete pet", {
@@ -57,13 +46,13 @@ export function PetsTable({ clientId }: PetsTableProps) {
   });
 
   const handleDelete = (pet: Pet) => {
-    setPetToDelete(pet);
+    setDeletingPet(pet);
   };
 
   const confirmDelete = () => {
-    if (petToDelete) {
-      deleteMutation.mutate(petToDelete.petId);
-      setPetToDelete(null);
+    if (deletingPet) {
+      deleteMutation.mutate(deletingPet.petId);
+      setDeletingPet(null);
     }
   };
 
@@ -204,33 +193,17 @@ export function PetsTable({ clientId }: PetsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Pet Confirmation Dialog */}
-      <AlertDialog open={!!petToDelete} onOpenChange={(open) => !open && setPetToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Pet?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete {petToDelete?.name}? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deletingPet}
+        onOpenChange={(open) => !open && setDeletingPet(null)}
+        title="Delete Pet"
+        description={`Are you sure you want to delete ${deletingPet?.name}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

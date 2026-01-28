@@ -18,6 +18,7 @@ import { onClientCreated } from "@/lib/automation/engine";
 import { formatAustralianMobile, getRawPhoneNumber } from "@/lib/utils/phoneUtils";
 import { AUSTRALIAN_STATES } from "@/lib/constants";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { ArrowLeft, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";

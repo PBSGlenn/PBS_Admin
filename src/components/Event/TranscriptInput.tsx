@@ -59,7 +59,7 @@ export function TranscriptInput({
     } catch (error) {
       console.error('Failed to open file dialog:', error);
       toast.error("Failed to open file picker", {
-        description: "Please try pasting the transcript instead.",
+        description: "Please try pasting the transcript instead",
       });
     }
   };

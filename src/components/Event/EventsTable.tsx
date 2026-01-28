@@ -8,6 +8,7 @@ import { Badge } from "../ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { EventFormModal } from "./EventFormModal";
 import { QuestionnaireReconciliation } from "../Client/QuestionnaireReconciliation";
 import { getEventsByClientId, deleteEvent } from "@/lib/services/eventService";
@@ -15,19 +16,8 @@ import { getClientById } from "@/lib/services/clientService";
 import type { Event, EventProcessingState } from "@/lib/types";
 import { Plus, Edit, Trash2, FileCheck } from "lucide-react";
 import { format } from "date-fns";
-import { truncateHtml } from "@/lib/utils/sanitize";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
-import { LoadingSpinner } from "../ui/loading-spinner";
+import { truncateHtml } from "@/lib/utils/sanitize";
 
 export interface EventsTableProps {
   clientId: number;
@@ -39,7 +29,7 @@ export function EventsTable({ clientId }: EventsTableProps) {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [reconciliationEvent, setReconciliationEvent] = useState<Event | null>(null);
   const [questionnaireFilePath, setQuestionnaireFilePath] = useState<string>("");
-  const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
+  const [deletingEvent, setDeletingEvent] = useState<Event | null>(null);
 
   // Fetch events for this client
   const { data: events = [], isLoading } = useQuery({
@@ -59,7 +49,6 @@ export function EventsTable({ clientId }: EventsTableProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["events", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-      toast.success("Event deleted successfully");
     },
     onError: (error) => {
       toast.error("Failed to delete event", {
@@ -69,13 +58,13 @@ export function EventsTable({ clientId }: EventsTableProps) {
   });
 
   const handleDelete = (event: Event) => {
-    setEventToDelete(event);
+    setDeletingEvent(event);
   };
 
   const confirmDelete = () => {
-    if (eventToDelete) {
-      deleteMutation.mutate(eventToDelete.eventId);
-      setEventToDelete(null);
+    if (deletingEvent) {
+      deleteMutation.mutate(deletingEvent.eventId);
+      setDeletingEvent(null);
     }
   };
 
@@ -112,15 +101,17 @@ export function EventsTable({ clientId }: EventsTableProps) {
   // Handle opening questionnaire reconciliation
   const handleReviewQuestionnaire = async (event: Event) => {
     if (!client?.folderPath) {
-      toast.error("Client folder not found", {
-        description: "Cannot load questionnaire data.",
+      toast.error("Cannot load questionnaire", {
+        description: "Client folder not found",
       });
       return;
     }
 
     const submissionId = extractSubmissionId(event.notes || "");
     if (!submissionId) {
-      toast.error("Could not extract submission ID from event notes");
+      toast.error("Cannot load questionnaire", {
+        description: "Could not extract submission ID from event notes",
+      });
       return;
     }
 
@@ -130,7 +121,9 @@ export function EventsTable({ clientId }: EventsTableProps) {
       const filePath = await findQuestionnaireFile(submissionId, client.folderPath);
 
       if (!filePath) {
-        toast.error(`Could not find questionnaire file for submission ${submissionId}`);
+        toast.error("Questionnaire file not found", {
+          description: `Could not find file for submission ${submissionId}`,
+        });
         return;
       }
 
@@ -304,33 +297,17 @@ export function EventsTable({ clientId }: EventsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Event Confirmation Dialog */}
-      <AlertDialog open={!!eventToDelete} onOpenChange={(open) => !open && setEventToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Event?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this {eventToDelete?.eventType} event? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deletingEvent}
+        onOpenChange={(open) => !open && setDeletingEvent(null)}
+        title="Delete Event"
+        description={`Are you sure you want to delete this ${deletingEvent?.eventType} event? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

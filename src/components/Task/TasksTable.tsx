@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Badge } from "../ui/badge";
 import { TaskForm } from "./TaskForm";
 import { getTasksByClientId, deleteTask, markTaskDone } from "@/lib/services/taskService";
@@ -14,17 +15,6 @@ import type { Task } from "@/lib/types";
 import { Plus, Edit, Trash2, CheckCircle2 } from "lucide-react";
 import { format, isPast } from "date-fns";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
-import { LoadingSpinner } from "../ui/loading-spinner";
 
 export interface TasksTableProps {
   clientId: number;
@@ -34,7 +24,7 @@ export function TasksTable({ clientId }: TasksTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [deletingTask, setDeletingTask] = useState<Task | null>(null);
 
   // Fetch tasks for this client
   const { data: tasks = [], isLoading } = useQuery({
@@ -48,7 +38,6 @@ export function TasksTable({ clientId }: TasksTableProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-      toast.success("Task deleted successfully");
     },
     onError: (error) => {
       toast.error("Failed to delete task", {
@@ -63,7 +52,6 @@ export function TasksTable({ clientId }: TasksTableProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", clientId] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-      toast.success("Task marked as done");
     },
     onError: (error) => {
       toast.error("Failed to mark task as done", {
@@ -73,13 +61,13 @@ export function TasksTable({ clientId }: TasksTableProps) {
   });
 
   const handleDelete = (task: Task) => {
-    setTaskToDelete(task);
+    setDeletingTask(task);
   };
 
   const confirmDelete = () => {
-    if (taskToDelete) {
-      deleteMutation.mutate(taskToDelete.taskId);
-      setTaskToDelete(null);
+    if (deletingTask) {
+      deleteMutation.mutate(deletingTask.taskId);
+      setDeletingTask(null);
     }
   };
 
@@ -279,33 +267,17 @@ export function TasksTable({ clientId }: TasksTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Task Confirmation Dialog */}
-      <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this task? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deletingTask}
+        onOpenChange={(open) => !open && setDeletingTask(null)}
+        title="Delete Task"
+        description="Are you sure you want to delete this task? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

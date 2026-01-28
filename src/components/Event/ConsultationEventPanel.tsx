@@ -15,17 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FileCheck, Loader2, FileText, Sparkles, File, FileImage, FileOutput, ExternalLink, ListTodo, Plus, Trash2 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { updateEvent } from "@/lib/services/eventService";
@@ -159,10 +150,12 @@ export function ConsultationEventPanel({
 
   // Manual task entry state
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
-  const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
   const [newTaskDescription, setNewTaskDescription] = useState("");
   const [newTaskOffset, setNewTaskOffset] = useState("1 week");
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>(2);
+
+  // Confirm dialog for replacing transcript
+  const [isReplaceConfirmOpen, setIsReplaceConfirmOpen] = useState(false);
 
   // Processing log state - tracks what has been done in this consultation
   const [processingLog, setProcessingLog] = useState<{
@@ -363,15 +356,15 @@ export function ConsultationEventPanel({
     },
     onError: (error) => {
       toast.error("Failed to save transcript", {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });
 
   const handleSaveTranscript = () => {
-    // If replacing existing transcript, confirm first
+    // If replacing existing transcript, show confirm dialog
     if (event?.transcriptFilePath) {
-      setShowReplaceConfirm(true);
+      setIsReplaceConfirmOpen(true);
       return;
     }
 
@@ -379,7 +372,7 @@ export function ConsultationEventPanel({
   };
 
   const confirmReplaceTranscript = () => {
-    setShowReplaceConfirm(false);
+    setIsReplaceConfirmOpen(false);
     saveTranscriptMutation.mutate();
   };
 
@@ -1557,23 +1550,17 @@ Return ONLY valid JSON array, no other text.`
         </Card>
       )}
 
-      {/* Replace Transcript Confirmation Dialog */}
-      <AlertDialog open={showReplaceConfirm} onOpenChange={setShowReplaceConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Replace Transcript?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to replace the existing transcript file? The previous file will be overwritten.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmReplaceTranscript}>
-              Replace
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Replace Transcript Confirm Dialog */}
+      <ConfirmDialog
+        open={isReplaceConfirmOpen}
+        onOpenChange={setIsReplaceConfirmOpen}
+        title="Replace Transcript"
+        description="Are you sure you want to replace the existing transcript file? This will overwrite the previous version."
+        confirmText="Replace"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmReplaceTranscript}
+      />
     </div>
   );
 }

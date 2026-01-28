@@ -32,6 +32,7 @@ import {
 } from "../ui/select";
 import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Plus, Edit, Trash2, RotateCcw, Save, X, Copy } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +42,8 @@ export function EmailTemplateManager() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [resetConfirmId, setResetConfirmId] = useState<string | null>(null);
 
   // Load templates on mount
   useEffect(() => {
@@ -91,10 +94,15 @@ export function EmailTemplateManager() {
   };
 
   const handleDeleteTemplate = (templateId: string) => {
-    if (confirm("Are you sure you want to delete this template?")) {
-      deleteCustomTemplate(templateId);
+    setDeleteConfirmId(templateId);
+  };
+
+  const confirmDeleteTemplate = () => {
+    if (deleteConfirmId) {
+      deleteCustomTemplate(deleteConfirmId);
       loadTemplates();
       toast.success("Template deleted successfully");
+      setDeleteConfirmId(null);
     }
   };
 
@@ -104,11 +112,15 @@ export function EmailTemplateManager() {
       toast.error("This is not a default template");
       return;
     }
+    setResetConfirmId(templateId);
+  };
 
-    if (confirm("Reset this template to its default version? Any customizations will be lost.")) {
-      resetToDefaultTemplate(templateId);
+  const confirmResetTemplate = () => {
+    if (resetConfirmId) {
+      resetToDefaultTemplate(resetConfirmId);
       loadTemplates();
       toast.success("Template reset to default");
+      setResetConfirmId(null);
     }
   };
 
@@ -478,6 +490,30 @@ export function EmailTemplateManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+        title="Delete Template"
+        description="Are you sure you want to delete this template? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmDeleteTemplate}
+      />
+
+      {/* Reset Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!resetConfirmId}
+        onOpenChange={(open) => !open && setResetConfirmId(null)}
+        title="Reset Template"
+        description="Reset this template to its default version? Any customizations will be lost."
+        confirmText="Reset"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={confirmResetTemplate}
+      />
     </div>
   );
 }

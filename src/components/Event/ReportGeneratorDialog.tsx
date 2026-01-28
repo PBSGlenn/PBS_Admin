@@ -18,9 +18,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, readDir } from "@tauri-apps/plugin-fs";
 import { FileText, Loader2, AlertCircle, CheckCircle2, Upload, FolderOpen, FileType, Mail } from "lucide-react";
-import { toast } from "sonner";
 import { format, addDays, parseISO } from "date-fns";
 import { dateToISO } from "@/lib/utils/dateUtils";
+import { toast } from "sonner";
 
 export interface ReportGeneratorDialogProps {
   isOpen: boolean;
@@ -441,7 +441,7 @@ ${results.clientReport ? `<li>Client Report: ${results.clientReport.tokensUsed.t
         queryClient.invalidateQueries({ queryKey: ["client", clientId] });
 
         toast.success("DOCX created successfully", {
-          description: `File: ${result.docxFileName}`,
+          description: result.docxFileName,
         });
       } else {
         setError(`Failed to convert to DOCX: ${result.error}`);
@@ -480,7 +480,7 @@ ${results.clientReport ? `<li>Client Report: ${results.clientReport.tokensUsed.t
         queryClient.invalidateQueries({ queryKey: ["client", clientId] });
 
         toast.success("PDF created successfully", {
-          description: `${result.pdfFileName} - Ready to send to client.`,
+          description: `${result.pdfFileName} - Ready to send to client`,
         });
       } else {
         setError(`Failed to convert to PDF: ${result.error}`);
