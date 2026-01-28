@@ -16,10 +16,11 @@ import { PromptTemplateManager } from "../PromptTemplateManager/PromptTemplateMa
 import { TranscriptionTool } from "../TranscriptionTool/TranscriptionTool";
 import { MedicationUpdateChecker } from "../MedicationUpdateChecker/MedicationUpdateChecker";
 import { BackupManager } from "../BackupManager/BackupManager";
+import { AboutDialog } from "../About/AboutDialog";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
 import { isMonthlyUpdateDue } from "@/lib/services/medicationUpdateService";
 import { toast } from "sonner";
-import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database } from "lucide-react";
+import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -38,6 +39,7 @@ export function Dashboard() {
   const [isTranscriptionToolOpen, setIsTranscriptionToolOpen] = useState(false);
   const [isMedicationUpdateCheckerOpen, setIsMedicationUpdateCheckerOpen] = useState(false);
   const [isBackupManagerOpen, setIsBackupManagerOpen] = useState(false);
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
 
   // Check for monthly medication updates on mount
@@ -236,6 +238,14 @@ export function Dashboard() {
                   <Database className="h-3.5 w-3.5 mr-2" />
                   Backup & Restore
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setIsAboutDialogOpen(true)}
+                >
+                  <Info className="h-3.5 w-3.5 mr-2" />
+                  About
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -316,6 +326,12 @@ export function Dashboard() {
       <BackupManager
         isOpen={isBackupManagerOpen}
         onClose={() => setIsBackupManagerOpen(false)}
+      />
+
+      {/* About Dialog */}
+      <AboutDialog
+        isOpen={isAboutDialogOpen}
+        onClose={() => setIsAboutDialogOpen(false)}
       />
     </div>
   );

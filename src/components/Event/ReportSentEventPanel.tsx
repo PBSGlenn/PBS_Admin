@@ -33,6 +33,7 @@ import { getPetsByClientId } from "@/lib/services/petService";
 import { getClientById } from "@/lib/services/clientService";
 import { generateClientReport, generateVeterinaryReport } from "@/lib/services/multiReportGenerationService";
 import { convertReportToDocxDirectly } from "@/lib/services/docxConversionService";
+import { markConsultationComplete } from "@/lib/services/bookingSyncService";
 import { getEmailTemplate, processTemplate } from "@/lib/emailTemplates";
 import { EmailDraftDialog, EmailAttachment } from "@/components/ui/email-draft-dialog";
 import type { Event } from "@/lib/types";
@@ -901,6 +902,22 @@ export function ReportSentEventPanel({
 
           if (reportFileName) {
             await markReportAsEmailed(reportFileName, to, fileType);
+          }
+
+          // Mark consultation as complete in website booking system (bidirectional sync)
+          if (fileType === "client" && selectedConsultation) {
+            try {
+              const syncResult = await markConsultationComplete(clientId, selectedConsultation.date);
+              if (syncResult.success) {
+                toast.success("Website booking marked as completed", {
+                  description: `Booking ${syncResult.bookingReference} updated`,
+                  duration: 3000
+                });
+              }
+            } catch (error) {
+              // Non-blocking - don't fail the email send if sync fails
+              console.warn("Failed to update website booking status:", error);
+            }
           }
 
           setEmailSent(true);

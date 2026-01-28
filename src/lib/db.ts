@@ -26,10 +26,18 @@ async function getDatabasePath(): Promise<string> {
 export async function getDatabase(): Promise<Database> {
   if (!db) {
     try {
+      console.log("[DB] Getting database path...");
       const path = await getDatabasePath();
-      db = await Database.load(`sqlite:${path}`);
+      console.log("[DB] Database path:", path);
+      // Convert Windows backslashes to forward slashes for SQLite URL
+      const normalizedPath = path.replace(/\\/g, '/');
+      const connectionString = `sqlite:${normalizedPath}`;
+      console.log("[DB] Connection string:", connectionString);
+      db = await Database.load(connectionString);
+      console.log("[DB] Database connected successfully");
       logger.info("Database connected successfully:", path);
     } catch (error) {
+      console.error("[DB] Failed to connect to database:", error);
       logger.error("Failed to connect to database:", error);
       throw error;
     }

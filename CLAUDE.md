@@ -76,7 +76,7 @@ git push origin --delete branch-name
 - **Production build ready**: CSP enabled, relative paths for Tauri webview, NSIS installer working
 
 **Remaining TODO**:
-- None - application is production ready
+- Audio transcription tool: Make functional for large audio clips (currently has size/duration limitations)
 
 ---
 
@@ -2007,7 +2007,9 @@ PBS Admin integrates with the Pet Behaviour Services website (petbehaviourservic
    - Creates Pet record (or matches existing pet by name)
    - Creates "Note" Event (for new clients only) - "Client created via website booking"
    - Creates "Booking" Event with all consultation details
+   - **Downloads referral file** (if uploaded) to client folder
 5. **Marks booking as synced** in Supabase (sets `synced_to_admin: true`)
+6. **When consultation complete**: Updates booking status to 'completed' in Supabase
 
 ### Client Matching Logic
 
@@ -2160,6 +2162,34 @@ VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - ✅ Success: "Imported Sarah Johnson (Max)" + "New Client" badge
 - ❌ Failure: "Failed: Sarah Johnson - {error message}"
 
+### Referral File Download
+
+When importing a booking that has a referral file uploaded, PBS Admin automatically:
+1. Creates a signed URL from Supabase Storage (valid 1 hour)
+2. Downloads the referral file to the client folder
+3. Names it: `referral_{booking_reference}_{YYYYMMDD}.{ext}`
+4. Reports success/failure in the import result
+
+**Requirements**:
+- Client must have a folder path set
+- Booking must have `referral_file_path` populated
+
+### Bidirectional Status Sync
+
+When a consultation report is sent to the client, PBS Admin updates the booking status in Supabase:
+
+1. **Automatic trigger**: When report is emailed via ReportSentEventPanel
+2. **Flow**:
+   - Extracts booking reference from the Booking event notes
+   - Finds the booking in Supabase by reference
+   - Updates status to 'completed'
+   - Shows toast notification on success
+
+**Functions**:
+- `updateBookingStatus(bookingId, status)` - Direct status update
+- `markConsultationComplete(clientId, consultationDate)` - High-level function called after report sent
+- `findBookingByReference(reference)` - Lookup booking by PBS-XXX reference
+
 ### Future Enhancements
 
 **Potential Improvements**:
@@ -2168,7 +2198,7 @@ VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 3. **Background Polling**: Check for new bookings every N minutes
 4. **Duplicate Detection**: Warn if booking might be duplicate (same client + date + time)
 5. **Conflict Resolution**: UI for handling sync conflicts (e.g., different pet details)
-6. **Bidirectional Sync**: Update website booking status from PBS Admin (e.g., mark as completed)
+6. ~~**Bidirectional Sync**: Update website booking status from PBS Admin~~ ✅ Implemented
 7. **Sync History**: Log all sync operations with timestamps
 8. **Selective Import**: Allow user to choose which bookings to import
 

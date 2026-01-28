@@ -76,7 +76,7 @@ export function ClientsList({ onNewClient, onEditClient }: ClientsListProps) {
           <LoadingCard message="Loading clients..." />
         ) : error ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-xs text-destructive">Error loading clients</p>
+            <p className="text-xs text-destructive">Error loading clients: {error instanceof Error ? error.message : String(error)}</p>
           </div>
         ) : filteredClients.length === 0 ? (
           <div className="flex items-center justify-center h-full">

@@ -20,8 +20,9 @@ import {
 } from './eventService';
 import { onEventCreated } from '../automation/engine';
 import type { Client, Pet } from '../types';
-import { formatISO } from 'date-fns';
+import { formatISO, format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { invoke } from '@tauri-apps/api/core';
 
 const TIMEZONE = 'Australia/Melbourne';
 
@@ -78,7 +79,132 @@ export interface BookingSyncResult {
   noteEventId?: number;
   bookingEventId?: number;
   isNewClient: boolean;
+  referralDownloaded?: boolean;
+  referralLocalPath?: string;
   error?: string;
+}
+
+/**
+ * Download referral file from Supabase Storage to client folder
+ * Uses signed URL to access the file and Tauri's download_file command
+ */
+export async function downloadReferralFile(
+  booking: WebsiteBooking,
+  clientFolderPath: string
+): Promise<{ success: boolean; localPath?: string; error?: string }> {
+  if (!booking.referral_file_path) {
+    return { success: false, error: 'No referral file path' };
+  }
+
+  if (!clientFolderPath) {
+    return { success: false, error: 'Client folder not set' };
+  }
+
+  try {
+    // Create a signed URL for the referral file (valid for 1 hour)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('referrals')
+      .createSignedUrl(booking.referral_file_path, 3600);
+
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      logger.error('Failed to create signed URL:', signedUrlError);
+      return {
+        success: false,
+        error: signedUrlError?.message || 'Failed to create signed URL',
+      };
+    }
+
+    // Determine the local filename
+    // Format: referral_{booking_reference}_{original_extension}
+    const originalExtension = booking.referral_file_name?.split('.').pop() || 'pdf';
+    const consultationDateFormatted = format(new Date(booking.consultation_date), 'yyyyMMdd');
+    const localFileName = `referral_${booking.booking_reference}_${consultationDateFormatted}.${originalExtension}`;
+
+    // Normalize paths for Windows
+    const normalizedFolderPath = clientFolderPath.replace(/\//g, '\\');
+    const localFilePath = `${normalizedFolderPath}\\${localFileName}`;
+
+    // Download the file using Tauri command
+    await invoke<string>('download_file', {
+      url: signedUrlData.signedUrl,
+      filePath: localFilePath,
+    });
+
+    logger.info(`Referral file downloaded to: ${localFilePath}`);
+
+    return {
+      success: true,
+      localPath: localFilePath,
+    };
+  } catch (error) {
+    logger.error('Failed to download referral file:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error downloading referral',
+    };
+  }
+}
+
+/**
+ * Update booking status in Supabase (bidirectional sync)
+ * Called when consultation is marked as completed or cancelled in PBS Admin
+ */
+export async function updateBookingStatus(
+  bookingId: string,
+  status: 'completed' | 'cancelled'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', bookingId);
+
+    if (error) {
+      logger.error('Failed to update booking status:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+
+    logger.info(`Booking ${bookingId} status updated to: ${status}`);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error updating booking status:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Find booking by reference in Supabase
+ * Used to get booking ID for status updates
+ */
+export async function findBookingByReference(
+  bookingReference: string
+): Promise<WebsiteBooking | null> {
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('booking_reference', bookingReference)
+      .single();
+
+    if (error) {
+      logger.error('Failed to find booking by reference:', error);
+      return null;
+    }
+
+    return data as WebsiteBooking;
+  } catch (error) {
+    logger.error('Error finding booking by reference:', error);
+    return null;
+  }
 }
 
 /**
@@ -272,6 +398,20 @@ export async function importWebsiteBooking(
     // This will auto-create the questionnaire check task
     await onEventCreated(result.bookingEvent);
 
+    // Download referral file if available and client has folder
+    let referralDownloaded = false;
+    let referralLocalPath: string | undefined;
+
+    if (booking.referral_file_path && result.client.folderPath) {
+      const downloadResult = await downloadReferralFile(booking, result.client.folderPath);
+      referralDownloaded = downloadResult.success;
+      referralLocalPath = downloadResult.localPath;
+
+      if (!downloadResult.success) {
+        logger.warn(`Referral download failed for ${booking.booking_reference}: ${downloadResult.error}`);
+      }
+    }
+
     return {
       success: true,
       bookingId: booking.id,
@@ -283,6 +423,8 @@ export async function importWebsiteBooking(
       noteEventId: result.noteEventId,
       bookingEventId: result.bookingEvent.eventId,
       isNewClient,
+      referralDownloaded,
+      referralLocalPath,
     };
 
   } catch (error) {
@@ -412,4 +554,103 @@ export async function syncAllWebsiteBookings(): Promise<{
     failed,
     results,
   };
+}
+
+/**
+ * Extract booking reference from event notes HTML
+ * Looks for pattern: <strong>Booking Reference:</strong> PBS-XXX
+ */
+function extractBookingReference(notesHtml: string | null | undefined): string | null {
+  if (!notesHtml) return null;
+
+  // Match "Booking Reference:" followed by the reference (PBS-XXX format or similar)
+  const match = notesHtml.match(/Booking Reference:<\/strong>\s*([A-Z]+-\d+)/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Mark a consultation as complete in Supabase
+ * Finds the booking by reference extracted from the client's Booking events
+ * Called when a report is sent or consultation is marked complete
+ */
+export async function markConsultationComplete(
+  clientId: number,
+  consultationDate?: string
+): Promise<{ success: boolean; bookingReference?: string; error?: string }> {
+  try {
+    // Import eventService here to avoid circular dependency
+    const { getEventsByClientId } = await import('./eventService');
+
+    // Get all Booking events for this client
+    const events = await getEventsByClientId(clientId);
+    const bookingEvents = events.filter(e => e.eventType === 'Booking');
+
+    if (bookingEvents.length === 0) {
+      return {
+        success: false,
+        error: 'No booking events found for this client',
+      };
+    }
+
+    // Find the matching booking event
+    let targetBookingEvent = bookingEvents[0]; // Default to most recent
+
+    if (consultationDate) {
+      // Find booking closest to the consultation date
+      const consultationDateObj = new Date(consultationDate);
+      let closestEvent = bookingEvents[0];
+      let closestDiff = Math.abs(new Date(closestEvent.date).getTime() - consultationDateObj.getTime());
+
+      for (const event of bookingEvents) {
+        const diff = Math.abs(new Date(event.date).getTime() - consultationDateObj.getTime());
+        if (diff < closestDiff) {
+          closestEvent = event;
+          closestDiff = diff;
+        }
+      }
+      targetBookingEvent = closestEvent;
+    }
+
+    // Extract booking reference from notes
+    const bookingReference = extractBookingReference(targetBookingEvent.notes);
+
+    if (!bookingReference) {
+      logger.warn('No booking reference found in event notes');
+      return {
+        success: false,
+        error: 'No booking reference found in event notes',
+      };
+    }
+
+    // Find booking in Supabase by reference
+    const booking = await findBookingByReference(bookingReference);
+
+    if (!booking) {
+      logger.warn(`Booking not found in Supabase: ${bookingReference}`);
+      return {
+        success: false,
+        bookingReference,
+        error: 'Booking not found in Supabase',
+      };
+    }
+
+    // Update booking status to completed
+    const result = await updateBookingStatus(booking.id, 'completed');
+
+    if (result.success) {
+      logger.info(`Consultation marked complete: ${bookingReference}`);
+    }
+
+    return {
+      success: result.success,
+      bookingReference,
+      error: result.error,
+    };
+  } catch (error) {
+    logger.error('Error marking consultation complete:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
