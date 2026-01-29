@@ -6,6 +6,14 @@ use std::io::Write;
 use std::process::Command;
 use reqwest::blocking::get;
 use serde::{Deserialize, Serialize};
+use tauri::{
+    Manager,
+    menu::{Menu, MenuItem},
+    tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
+    image::Image as TauriImage,
+};
+use tauri_plugin_autostart::MacosLauncher;
+use image::GenericImageView;
 
 // ============================================================================
 // PATH VALIDATION FOR SECURITY
@@ -1205,6 +1213,80 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]) // Pass args when auto-started
+        ))
+        .setup(|app| {
+            // Create system tray menu
+            let show_item = MenuItem::with_id(app, "show", "Show PBS Admin", true, None::<&str>)?;
+            let hide_item = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+            let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+
+            // Load tray icon from embedded PNG
+            let icon_bytes = include_bytes!("../icons/32x32.png");
+            let icon_img = image::load_from_memory(icon_bytes)
+                .expect("Failed to decode tray icon PNG");
+            let rgba = icon_img.to_rgba8();
+            let (width, height) = icon_img.dimensions();
+            let icon = TauriImage::new_owned(rgba.into_raw(), width, height);
+
+            // Build system tray
+            let _tray = TrayIconBuilder::new()
+                .icon(icon)
+                .menu(&menu)
+                .tooltip("PBS Admin")
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // Double-click to show window
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Check if started with --minimized flag (auto-start)
+            let args: Vec<String> = std::env::args().collect();
+            if args.contains(&"--minimized".to_string()) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Minimize to tray instead of closing (if enabled via settings)
+            // For now, just handle close request
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Hide window instead of closing
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             create_folder,
             get_default_client_records_path,

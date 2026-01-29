@@ -17,10 +17,13 @@ import { TranscriptionTool } from "../TranscriptionTool/TranscriptionTool";
 import { MedicationUpdateChecker } from "../MedicationUpdateChecker/MedicationUpdateChecker";
 import { BackupManager } from "../BackupManager/BackupManager";
 import { AboutDialog } from "../About/AboutDialog";
+import { StartupSettingsDialog } from "../Settings/StartupSettingsDialog";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
 import { isMonthlyUpdateDue } from "@/lib/services/medicationUpdateService";
+import { startScheduledBackups, stopScheduledBackups } from "@/lib/services/backupService";
 import { toast } from "sonner";
-import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info } from "lucide-react";
+import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info, Power, User } from "lucide-react";
+import { useWindow, createWindowId, WINDOW_CONFIGS } from "@/hooks/useWindow";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -40,7 +43,15 @@ export function Dashboard() {
   const [isMedicationUpdateCheckerOpen, setIsMedicationUpdateCheckerOpen] = useState(false);
   const [isBackupManagerOpen, setIsBackupManagerOpen] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
+  const [isStartupSettingsOpen, setIsStartupSettingsOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
+  const { openWindow, closeWindow } = useWindow();
+
+  // Start scheduled backups on mount
+  useEffect(() => {
+    startScheduledBackups();
+    return () => stopScheduledBackups();
+  }, []);
 
   // Check for monthly medication updates on mount
   useEffect(() => {
@@ -68,14 +79,44 @@ export function Dashboard() {
   };
 
   const handleEditClient = (client: any) => {
-    setSelectedClient(client);
-    setCurrentView("view-client");
+    const windowId = createWindowId("client", client.clientId);
+    openWindow({
+      id: windowId,
+      title: `${client.firstName} ${client.lastName}`,
+      icon: <User className="h-4 w-4" />,
+      component: (
+        <ClientView
+          client={client}
+          onClose={() => closeWindow(windowId)}
+        />
+      ),
+      defaultSize: WINDOW_CONFIGS.client.defaultSize,
+      minSize: WINDOW_CONFIGS.client.minSize,
+      data: { clientId: client.clientId },
+    });
   };
 
   const handleClientCreated = (client: any) => {
-    // After creating a client, switch to the ClientView
-    setSelectedClient(client);
-    setCurrentView("view-client");
+    // After creating a client, close the form and open in a window
+    setCurrentView("dashboard");
+    setSelectedClient(null);
+
+    // Open the new client in a window
+    const windowId = createWindowId("client", client.clientId);
+    openWindow({
+      id: windowId,
+      title: `${client.firstName} ${client.lastName}`,
+      icon: <User className="h-4 w-4" />,
+      component: (
+        <ClientView
+          client={client}
+          onClose={() => closeWindow(windowId)}
+        />
+      ),
+      defaultSize: WINDOW_CONFIGS.client.defaultSize,
+      minSize: WINDOW_CONFIGS.client.minSize,
+      data: { clientId: client.clientId },
+    });
   };
 
   const handleCloseForm = () => {
@@ -238,6 +279,13 @@ export function Dashboard() {
                   <Database className="h-3.5 w-3.5 mr-2" />
                   Backup & Restore
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setIsStartupSettingsOpen(true)}
+                >
+                  <Power className="h-3.5 w-3.5 mr-2" />
+                  Startup Settings
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-xs cursor-pointer"
@@ -332,6 +380,12 @@ export function Dashboard() {
       <AboutDialog
         isOpen={isAboutDialogOpen}
         onClose={() => setIsAboutDialogOpen(false)}
+      />
+
+      {/* Startup Settings Dialog */}
+      <StartupSettingsDialog
+        isOpen={isStartupSettingsOpen}
+        onClose={() => setIsStartupSettingsOpen(false)}
       />
     </div>
   );

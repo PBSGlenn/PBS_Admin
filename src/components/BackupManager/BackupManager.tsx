@@ -1,5 +1,5 @@
 // PBS Admin - Backup Manager Component
-// UI for database backup and restore operations
+// UI for database backup and restore operations with scheduled backups
 
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,15 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -40,18 +49,24 @@ import {
   CheckCircle,
   AlertTriangle,
   RefreshCw,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  createBackup,
+  createBackupWithTracking,
   restoreBackup,
   listBackups,
   deleteBackup,
   getBackupsPath,
+  getBackupSettings,
+  saveBackupSettings,
+  restartScheduledBackups,
+  formatFileSize,
   type BackupInfo,
+  type BackupSettings,
 } from "@/lib/services/backupService";
-import { format } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
 
 export interface BackupManagerProps {
   isOpen: boolean;
@@ -64,12 +79,35 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
   const [restoreTarget, setRestoreTarget] = useState<BackupInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupInfo | null>(null);
 
-  // Fetch backups path on mount
+  // Scheduled backup settings state
+  const [settings, setSettings] = useState<BackupSettings>(getBackupSettings());
+  const [hasSettingsChanges, setHasSettingsChanges] = useState(false);
+
+  // Fetch backups path and settings on mount
   useEffect(() => {
     if (isOpen) {
       getBackupsPath().then(setBackupsPath);
+      setSettings(getBackupSettings());
+      setHasSettingsChanges(false);
     }
   }, [isOpen]);
+
+  // Handle settings change
+  const handleSettingChange = <K extends keyof BackupSettings>(
+    key: K,
+    value: BackupSettings[K]
+  ) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    setHasSettingsChanges(true);
+  };
+
+  // Save settings
+  const handleSaveSettings = () => {
+    saveBackupSettings(settings);
+    restartScheduledBackups();
+    setHasSettingsChanges(false);
+    toast.success("Backup settings saved");
+  };
 
   // Query for backup list
   const {
@@ -84,13 +122,15 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
 
   // Create backup mutation
   const createBackupMutation = useMutation({
-    mutationFn: createBackup,
+    mutationFn: createBackupWithTracking,
     onSuccess: (result) => {
       if (result.success) {
         toast.success("Backup created successfully", {
           description: result.fileName,
         });
         refetchBackups();
+        // Refresh settings to show new last backup date
+        setSettings(getBackupSettings());
       } else {
         toast.error("Backup failed", {
           description: result.error,
@@ -159,12 +199,8 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
     }
   };
 
-  // Format file size
-  const formatSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  // Calculate total backup size
+  const totalSize = backups.reduce((sum, b) => sum + b.sizeBytes, 0);
 
   return (
     <>
@@ -181,13 +217,116 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
           </DialogHeader>
 
           <div className="flex-1 overflow-hidden flex flex-col gap-4">
-            {/* Actions Card */}
+            {/* Scheduled Backups Settings */}
+            <Card className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock className="h-4 w-4" />
+                <h3 className="text-sm font-semibold">Scheduled Backups</h3>
+              </div>
+              <div className="grid gap-3">
+                {/* Enable/Disable */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs">Automatic Backups</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Automatically backup your database
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.enabled}
+                    onCheckedChange={(checked) =>
+                      handleSettingChange("enabled", checked)
+                    }
+                  />
+                </div>
+
+                {/* Frequency */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs">Frequency</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      How often to create backups
+                    </p>
+                  </div>
+                  <Select
+                    value={settings.frequency}
+                    onValueChange={(value: BackupSettings["frequency"]) =>
+                      handleSettingChange("frequency", value)
+                    }
+                    disabled={!settings.enabled}
+                  >
+                    <SelectTrigger className="w-28 h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="manual">Manual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Retention */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs">Keep Backups</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Number of backups to retain
+                    </p>
+                  </div>
+                  <Select
+                    value={settings.retentionCount.toString()}
+                    onValueChange={(value) =>
+                      handleSettingChange("retentionCount", parseInt(value, 10))
+                    }
+                  >
+                    <SelectTrigger className="w-28 h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3">Last 3</SelectItem>
+                      <SelectItem value="5">Last 5</SelectItem>
+                      <SelectItem value="7">Last 7</SelectItem>
+                      <SelectItem value="14">Last 14</SelectItem>
+                      <SelectItem value="30">Last 30</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Save button and last backup info */}
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <div className="text-[10px] text-muted-foreground">
+                    {settings.lastBackupDate ? (
+                      <>
+                        Last backup:{" "}
+                        {formatDistanceToNow(parseISO(settings.lastBackupDate), {
+                          addSuffix: true,
+                        })}
+                      </>
+                    ) : (
+                      "No backups yet"
+                    )}
+                  </div>
+                  {hasSettingsChanges && (
+                    <Button
+                      size="sm"
+                      onClick={handleSaveSettings}
+                      className="h-6 text-[10px]"
+                    >
+                      Save Settings
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* Manual Backup Card */}
             <Card className="p-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1">
-                  <h3 className="text-sm font-semibold">Create New Backup</h3>
+                  <h3 className="text-sm font-semibold">Manual Backup</h3>
                   <p className="text-xs text-muted-foreground">
-                    Save a copy of your current database to the backups folder.
+                    Create a backup now • {backups.length} backup{backups.length !== 1 ? "s" : ""} • {formatFileSize(totalSize)}
                   </p>
                 </div>
                 <Button
@@ -203,7 +342,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                   ) : (
                     <>
                       <Download className="mr-2 h-4 w-4" />
-                      Create Backup
+                      Backup Now
                     </>
                   )}
                 </Button>
@@ -268,7 +407,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                             {backup.createdAt}
                           </TableCell>
                           <TableCell className="text-xs text-right">
-                            {formatSize(backup.sizeBytes)}
+                            {formatFileSize(backup.sizeBytes)}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">

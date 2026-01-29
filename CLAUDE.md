@@ -66,9 +66,16 @@ git push origin --delete branch-name
 
 **Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
 
-**Last Updated**: 2026-01-28
+**Last Updated**: 2026-01-29
 
-**Recent Changes** (2026-01-28):
+**Recent Changes** (2026-01-29):
+- **About Dialog**: Version display with GitHub update check
+- **Enhanced Website Coordination**: Automatic referral file download from Supabase Storage, bidirectional status sync (marks booking as completed when report sent)
+- **Scheduled Backups**: Daily/weekly automatic backups with retention policy, backup settings UI in BackupManager
+- **Startup + Background Mode**: System tray with Show/Hide/Quit menu, minimize to tray on close, auto-start at Windows login with `--minimized` flag, Startup Settings UI in Settings menu
+- **Multi-Window System**: Draggable/resizable floating windows for clients using react-rnd, minimize to taskbar, maximize/restore, z-index focus management, cascading window positions
+
+**Previous Changes** (2026-01-28):
 - Security hardening: API keys moved to Tauri backend, Error Boundary added
 - UI improvements: ConfirmDialog replaces alert(), toast notifications for errors
 - Code cleanup: Removed unused dependencies (html2canvas, jspdf), dead code deleted
@@ -131,6 +138,13 @@ PBS_Admin/
 │   │   │   └── EmailTemplateManager.tsx  # ✅ Create/edit/duplicate/delete templates
 │   │   ├── PromptTemplateManager/  # ✅ AI prompt template management UI
 │   │   │   └── PromptTemplateManager.tsx  # ✅ Create/edit/reset prompt templates
+│   │   ├── WindowManager/  # ✅ Multi-window system
+│   │   │   ├── WindowManager.tsx  # ✅ Global container for all windows
+│   │   │   ├── Window.tsx  # ✅ Draggable/resizable window shell (react-rnd)
+│   │   │   ├── WindowTaskbar.tsx  # ✅ Taskbar for minimized windows
+│   │   │   └── index.ts    # ✅ Barrel exports
+│   │   ├── Settings/       # ✅ Settings dialogs
+│   │   │   └── StartupSettingsDialog.tsx  # ✅ Auto-start and minimize to tray settings
 │   │   └── ui/             # ✅ shadcn/ui components (Button, Input, Dialog, Select, etc.)
 │   │       ├── email-input.tsx  # ✅ Email input with context menu (paste/copy/create email)
 │   │       ├── address-input.tsx  # ✅ Address input with context menu (paste/copy/Google Maps)
@@ -156,7 +170,10 @@ PBS_Admin/
 │   │   │   ├── transcriptFileService.ts # ✅ Transcript file management
 │   │   │   ├── docxConversionService.ts # ✅ MD → DOCX conversion with Pandoc
 │   │   │   ├── pdfConversionService.ts # ✅ DOCX → PDF conversion with MS Word
-│   │   │   └── emailService.ts    # ✅ Resend API email sending with attachments
+│   │   │   ├── emailService.ts    # ✅ Resend API email sending with attachments
+│   │   │   ├── autostartService.ts # ✅ Windows auto-start at login
+│   │   │   ├── backupService.ts   # ✅ Scheduled backup service
+│   │   │   └── updateService.ts   # ✅ GitHub release version checking
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
 │   │   │   ├── report-system-prompt.ts  # ✅ Report generation methodology (legacy)
 │   │   │   └── promptTemplates.ts  # ✅ Multi-prompt template management system
@@ -168,8 +185,11 @@ PBS_Admin/
 │   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils, dateOffsetUtils)
 │   │   ├── constants.ts    # ✅ Application constants
 │   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin
+│   ├── contexts/
+│   │   └── WindowContext.tsx  # ✅ Multi-window state management
 │   ├── hooks/
-│   │   └── useTaskNotifications.ts  # ✅ Polling hook for task notifications
+│   │   ├── useTaskNotifications.ts  # ✅ Polling hook for task notifications
+│   │   └── useWindow.ts     # ✅ Hook for opening/managing windows
 │   ├── App.tsx
 │   └── main.tsx
 │
@@ -469,6 +489,87 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 - `@tiptap/extension-underline` - Underline support
 - `@tiptap/extension-text-align` - Text alignment
 - `@tiptap/extension-placeholder` - Placeholder text
+
+---
+
+### Multi-Window System
+
+**Purpose**: Allow multiple client records to be open simultaneously in draggable, resizable windows.
+
+**Technology**: react-rnd (React Resizable and Draggable) + React Context for state management
+
+**Features**:
+- **Draggable windows** - Drag by title bar to reposition
+- **Resizable windows** - Drag edges/corners to resize
+- **Minimize to taskbar** - Windows minimize to a taskbar at the bottom
+- **Maximize/Restore** - Toggle between maximized and normal state
+- **Focus management** - Clicking a window brings it to front (z-index management)
+- **Cascading positions** - New windows offset by 30px for visibility
+- **Re-open detection** - Opening same client focuses existing window instead of duplicating
+
+**Architecture**:
+```
+WindowProvider (Context)
+    │
+    ├── Dashboard (main UI)
+    │     └── useWindow hook → openWindow(), closeWindow()
+    │
+    └── WindowManager (global container, pointer-events: none)
+          │
+          ├── Window (pointer-events: auto, react-rnd)
+          │     ├── Title bar (drag handle)
+          │     ├── Window controls (minimize, maximize, close)
+          │     └── Content (e.g., ClientView)
+          │
+          └── WindowTaskbar (minimized windows)
+```
+
+**Usage**:
+```typescript
+import { useWindow, createWindowId, WINDOW_CONFIGS } from "@/hooks/useWindow";
+
+function MyComponent() {
+  const { openWindow, closeWindow } = useWindow();
+
+  const handleOpenClient = (client: any) => {
+    const windowId = createWindowId("client", client.clientId);
+    openWindow({
+      id: windowId,
+      title: `${client.firstName} ${client.lastName}`,
+      icon: <User className="h-4 w-4" />,
+      component: (
+        <ClientView
+          client={client}
+          onClose={() => closeWindow(windowId)}
+        />
+      ),
+      defaultSize: WINDOW_CONFIGS.client.defaultSize,
+      minSize: WINDOW_CONFIGS.client.minSize,
+      data: { clientId: client.clientId },
+    });
+  };
+}
+```
+
+**Window Configurations**:
+```typescript
+WINDOW_CONFIGS = {
+  client: { defaultSize: { width: 1200, height: 800 }, minSize: { width: 800, height: 600 } },
+  event: { defaultSize: { width: 900, height: 700 }, minSize: { width: 600, height: 500 } },
+  task: { defaultSize: { width: 600, height: 500 }, minSize: { width: 400, height: 400 } },
+  settings: { defaultSize: { width: 700, height: 600 }, minSize: { width: 500, height: 400 } },
+}
+```
+
+**Implementation Files**:
+- [WindowContext.tsx](src/contexts/WindowContext.tsx) - State management (windows, z-index, active window)
+- [WindowManager.tsx](src/components/WindowManager/WindowManager.tsx) - Global container
+- [Window.tsx](src/components/WindowManager/Window.tsx) - Draggable/resizable shell
+- [WindowTaskbar.tsx](src/components/WindowManager/WindowTaskbar.tsx) - Minimized windows bar
+- [useWindow.ts](src/hooks/useWindow.ts) - Hook for window operations
+
+**Packages**:
+- `react-rnd` - React Resizable and Draggable
 
 ---
 
@@ -2455,48 +2556,236 @@ VITE_JOTFORM_CAT_FORM_ID=241828180919868
 
 ## Backup and Restore
 
+### Overview
+
+PBS Admin provides automatic scheduled backups with configurable frequency and retention policies.
+
+**Features**:
+- **Scheduled Backups**: Daily, weekly, or manual-only
+- **Retention Policy**: Automatically delete old backups (configurable: 3-30 backups)
+- **Manual Backup**: Create backup on demand
+- **Restore**: Restore database from any backup file
+- **Backup Manager UI**: Settings menu → Backup & Restore
+
 ### Backup Strategy
 
 **Format**: SQLite database file copy with timestamp
 
-**Location**: User-selected directory (default: Documents/PBS_Admin/Backups/)
+**Location**: `Documents/PBS_Admin/Backups/`
 
 **Naming**: `pbs-admin-backup-YYYY-MM-DD-HHmmss.db`
 
-**Optional**: JSON export for human readability
+**Scheduled Backup Logic**:
+- Checks every hour if backup is due
+- Creates backup if last backup exceeds frequency threshold
+- Applies retention policy after each backup
+- Settings stored in localStorage
 
-**Implementation**:
+### Backup Settings
+
 ```typescript
-// src-tauri/src/backup.rs
-async fn backup_database(destination: String) -> Result<String> {
-  // Copy dev.db to destination
-  // Return backup file path
+interface BackupSettings {
+  enabled: boolean;           // Enable/disable automatic backups
+  frequency: 'daily' | 'weekly' | 'manual';
+  retentionCount: number;     // Number of backups to keep (3-30)
+  lastBackupDate: string | null;
 }
 ```
 
-**UI**: Settings screen with "Backup Now" button, auto-backup schedule
+**Storage Key**: `pbs_admin_backup_settings`
 
----
+### Tauri Backend Commands
+
+```rust
+// Get backups folder path
+get_backups_path() -> Result<String, String>
+
+// Create backup with timestamp
+create_database_backup() -> Result<serde_json::Value, String>
+
+// Restore from backup file
+restore_database_backup(backup_path: String) -> Result<String, String>
+
+// List all backup files
+list_database_backups() -> Result<Vec<serde_json::Value>, String>
+
+// Delete a backup file
+delete_backup_file(backup_path: String) -> Result<String, String>
+```
+
+### Backup Service Functions
+
+```typescript
+// Settings management
+getBackupSettings(): BackupSettings
+saveBackupSettings(settings: Partial<BackupSettings>): void
+
+// Backup operations
+createBackupWithTracking(): Promise<BackupResult>
+restoreBackup(backupPath: string): Promise<RestoreResult>
+listBackups(): Promise<BackupInfo[]>
+deleteBackup(backupPath: string): Promise<boolean>
+
+// Scheduled backups
+startScheduledBackups(): void  // Called on app start
+stopScheduledBackups(): void   // Called on app close
+restartScheduledBackups(): void // Called after settings change
+```
 
 ### Restore Strategy
 
 **Process**:
-1. User selects backup file
-2. Validate backup file (check schema version)
-3. Warn about overwriting current data
-4. Close all database connections
-5. Replace dev.db with backup file
-6. Restart application
+1. User selects backup file from list
+2. Confirmation dialog warns about overwriting data
+3. Safety backup created before restore
+4. Database file replaced with backup
+5. User prompted to restart application
 
-**Implementation**:
-```typescript
-// src-tauri/src/backup.rs
-async fn restore_database(source: String) -> Result<()> {
-  // Validate backup
-  // Replace dev.db
-  // Trigger app restart
-}
+**Safety Features**:
+- Pre-restore safety backup created
+- Original database preserved if restore fails
+- Requires app restart for changes to take effect
+
+### Implementation Files
+
+- [backupService.ts](src/lib/services/backupService.ts) - Backup operations and scheduling
+- [BackupManager.tsx](src/components/BackupManager/BackupManager.tsx) - UI component
+- [lib.rs](src-tauri/src/lib.rs) - Tauri backend commands (lines 740-880)
+
+---
+
+## Startup + Background Mode
+
+### Overview
+
+PBS Admin supports running in the background with a system tray icon and optional auto-start at Windows login.
+
+**Features**:
+- **System Tray Icon**: App minimizes to system tray instead of closing
+- **Tray Menu**: Right-click for Show/Hide/Quit options
+- **Auto-Start**: Optional launch at Windows login
+- **Minimized Start**: When auto-started, app starts minimized to tray
+- **Settings UI**: Configure via Settings menu → Startup Settings
+
+### System Tray
+
+**Tray Icon**: Located in Windows system tray (notification area)
+
+**Menu Options**:
+- **Show PBS Admin**: Bring window to foreground
+- **Hide to Tray**: Minimize window to tray
+- **Quit**: Exit application completely
+
+**Behavior**:
+- Double-click tray icon: Show window
+- Close window (X button): Minimize to tray instead of quit
+- Window stays hidden until user clicks Show or double-clicks icon
+
+### Auto-Start Configuration
+
+**Windows Registry Integration**: Uses `tauri-plugin-autostart` to manage Windows startup entries
+
+**Startup Args**: When auto-started, launches with `--minimized` flag to start hidden
+
+**Tauri Plugin**:
+```rust
+.plugin(tauri_plugin_autostart::init(
+    MacosLauncher::LaunchAgent,
+    Some(vec!["--minimized"])
+))
 ```
+
+### Auto-Start Service
+
+**File**: `src/lib/services/autostartService.ts`
+
+```typescript
+// Check if auto-start is enabled
+isAutoStartEnabled(): Promise<boolean>
+
+// Enable auto-start at Windows login
+enableAutoStart(): Promise<{ success: boolean; error?: string }>
+
+// Disable auto-start
+disableAutoStart(): Promise<{ success: boolean; error?: string }>
+
+// Toggle auto-start state
+toggleAutoStart(enable: boolean): Promise<{ success: boolean; error?: string }>
+
+// Minimize to tray preference (localStorage)
+getMinimizeToTray(): boolean
+setMinimizeToTray(enabled: boolean): void
+```
+
+### Tauri Backend Setup
+
+**File**: `src-tauri/src/lib.rs`
+
+**System Tray Setup**:
+```rust
+.setup(|app| {
+    // Create menu items
+    let show_item = MenuItem::with_id(app, "show", "Show PBS Admin", true, None::<&str>)?;
+    let hide_item = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+
+    // Build tray icon
+    let _tray = TrayIconBuilder::new()
+        .icon(icon)
+        .menu(&menu)
+        .tooltip("PBS Admin")
+        .on_menu_event(...)
+        .on_tray_icon_event(...)
+        .build(app)?;
+
+    // Check for --minimized flag
+    if args.contains(&"--minimized".to_string()) {
+        window.hide();
+    }
+    Ok(())
+})
+```
+
+**Window Close Handler**:
+```rust
+.on_window_event(|window, event| {
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        window.hide();
+        api.prevent_close();
+    }
+})
+```
+
+### Capabilities Permissions
+
+**File**: `src-tauri/capabilities/default.json`
+
+Required permissions:
+```json
+"autostart:default",
+"autostart:allow-enable",
+"autostart:allow-disable",
+"autostart:allow-is-enabled"
+```
+
+### Settings UI
+
+**Component**: `src/components/Settings/StartupSettingsDialog.tsx`
+
+**Access**: Settings menu → Startup Settings
+
+**Options**:
+- **Start at Windows login**: Toggle auto-start on/off
+- **Minimize to system tray**: Toggle close-to-tray behavior
+
+### Implementation Files
+
+- [autostartService.ts](src/lib/services/autostartService.ts) - Auto-start and tray preferences
+- [StartupSettingsDialog.tsx](src/components/Settings/StartupSettingsDialog.tsx) - Settings UI
+- [lib.rs](src-tauri/src/lib.rs) - System tray setup (lines 1215-1290)
+- [Cargo.toml](src-tauri/Cargo.toml) - `tauri-plugin-autostart` dependency
+- [default.json](src-tauri/capabilities/default.json) - Autostart permissions
 
 ---
 
