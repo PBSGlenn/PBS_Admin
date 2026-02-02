@@ -66,9 +66,20 @@ git push origin --delete branch-name
 
 **Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
 
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-02-02
 
-**Recent Changes** (2026-01-29):
+**Recent Changes** (2026-02-02):
+- **Version 0.2.0 Released**: First GitHub release with auto-update support
+- **Auto-Update System**: Check for updates and download/install directly from About dialog
+- **Vet Clinics Directory**: New settings dialog for storing vet clinic contacts (Settings > Vet Clinics Directory). Quick lookup when sending vet reports.
+- **Email Type Switching Fix**: Email recipient now properly switches between client and vet when changing report type
+- **DOCX to PDF Conversion**: Added "Convert to PDF" button for existing DOCX reports in ReportSent panel
+- **Dialog Protection**: Email draft dialogs no longer close when clicking outside (prevents accidental data loss)
+
+**Previous Changes** (2026-01-30):
+- **API Keys Settings**: New settings dialog for configuring Anthropic and Resend API keys in production builds (Settings > API Keys). Keys stored in localStorage, eliminating need for .env file in installed app.
+
+**Previous Changes** (2026-01-29):
 - **About Dialog**: Version display with GitHub update check
 - **Enhanced Website Coordination**: Automatic referral file download from Supabase Storage, bidirectional status sync (marks booking as completed when report sent)
 - **Scheduled Backups**: Daily/weekly automatic backups with retention policy, backup settings UI in BackupManager
@@ -144,7 +155,8 @@ PBS_Admin/
 │   │   │   ├── WindowTaskbar.tsx  # ✅ Taskbar for minimized windows
 │   │   │   └── index.ts    # ✅ Barrel exports
 │   │   ├── Settings/       # ✅ Settings dialogs
-│   │   │   └── StartupSettingsDialog.tsx  # ✅ Auto-start and minimize to tray settings
+│   │   │   ├── StartupSettingsDialog.tsx  # ✅ Auto-start and minimize to tray settings
+│   │   │   └── ApiKeysSettingsDialog.tsx  # ✅ API key configuration for AI and email services
 │   │   └── ui/             # ✅ shadcn/ui components (Button, Input, Dialog, Select, etc.)
 │   │       ├── email-input.tsx  # ✅ Email input with context menu (paste/copy/create email)
 │   │       ├── address-input.tsx  # ✅ Address input with context menu (paste/copy/Google Maps)
@@ -173,7 +185,8 @@ PBS_Admin/
 │   │   │   ├── emailService.ts    # ✅ Resend API email sending with attachments
 │   │   │   ├── autostartService.ts # ✅ Windows auto-start at login
 │   │   │   ├── backupService.ts   # ✅ Scheduled backup service
-│   │   │   └── updateService.ts   # ✅ GitHub release version checking
+│   │   │   ├── updateService.ts   # ✅ GitHub release version checking
+│   │   │   └── apiKeysService.ts  # ✅ API key storage and retrieval from localStorage
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
 │   │   │   ├── report-system-prompt.ts  # ✅ Report generation methodology (legacy)
 │   │   │   └── promptTemplates.ts  # ✅ Multi-prompt template management system
@@ -2789,6 +2802,106 @@ Required permissions:
 
 ---
 
+## API Keys Settings
+
+### Overview
+
+PBS Admin requires API keys for AI report generation (Anthropic Claude) and email sending (Resend). In development, these can be configured via `.env` file, but in production builds the `.env` file is not bundled. The API Keys Settings system allows users to configure these keys directly in the app.
+
+**Features**:
+- **Settings Dialog**: Accessible via Settings menu > API Keys
+- **Local Storage**: Keys stored securely in browser localStorage
+- **Fallback**: Still checks environment variables for development
+- **Validation**: Warns if key format doesn't match expected pattern
+
+### Supported API Keys
+
+| Service | Key Prefix | Purpose |
+|---------|-----------|---------|
+| **Anthropic** | `sk-ant-` | AI report generation (Claude API) |
+| **Resend** | `re_` | Email sending with attachments |
+
+### Architecture
+
+```
+User enters API key in Settings
+        │
+        ▼
+apiKeysService.ts
+        │
+        │ saveApiKeys() → localStorage
+        │ getAnthropicApiKey() / getResendApiKey()
+        ▼
+Services (aiService.ts, emailService.ts)
+        │
+        │ Pass key to backend/API
+        ▼
+Tauri Backend / External API
+```
+
+### Service Functions
+
+```typescript
+import {
+  getApiKeys,
+  saveApiKeys,
+  getAnthropicApiKey,
+  getResendApiKey,
+  isAnthropicConfigured,
+  isResendConfigured,
+  clearApiKeys,
+  maskApiKey,
+} from "@/lib/services/apiKeysService";
+
+// Check if configured
+if (isAnthropicConfigured()) {
+  const key = getAnthropicApiKey(); // Returns key or null
+}
+
+// Save a key
+saveApiKeys({ anthropicApiKey: "sk-ant-..." });
+
+// Mask for display
+maskApiKey("sk-ant-abc123xyz"); // "sk-ant-a••••xyz"
+```
+
+### Key Priority
+
+1. **localStorage** (user-configured via Settings)
+2. **Environment variable** (development fallback)
+
+### Access
+
+Settings menu (gear icon) → API Keys
+
+### Implementation Files
+
+- [apiKeysService.ts](src/lib/services/apiKeysService.ts) - Key storage and retrieval
+- [ApiKeysSettingsDialog.tsx](src/components/Settings/ApiKeysSettingsDialog.tsx) - Settings UI
+- [aiService.ts](src/lib/services/aiService.ts) - Uses apiKeysService for Anthropic key
+- [emailService.ts](src/lib/services/emailService.ts) - Uses apiKeysService for Resend key
+- [lib.rs](src-tauri/src/lib.rs) - Backend accepts API key as parameter
+
+### Storage
+
+Keys stored in localStorage under key: `pbs_admin_api_keys`
+
+```json
+{
+  "anthropicApiKey": "sk-ant-...",
+  "resendApiKey": "re_..."
+}
+```
+
+### Security Notes
+
+- Keys are stored locally on the user's machine
+- Keys are never sent to any server except the respective API providers
+- For production builds, users must configure keys manually (no .env bundling)
+- Clear keys function available for complete removal
+
+---
+
 ## Privacy and Security
 
 ### Local-First Architecture
@@ -2838,6 +2951,100 @@ npm run db:seed             # Seed sample data
 # Generate Prisma Client
 npx prisma generate
 ```
+
+---
+
+## Release Process and Auto-Update
+
+### Overview
+
+PBS Admin supports automatic updates via GitHub Releases. Users can check for updates from **Settings → About → Check for Updates** and download/install directly from the app.
+
+**GitHub Repository**: `PBSGlenn/PBS_Admin`
+
+### Creating a New Release
+
+When ready to release a new version, follow these steps:
+
+**1. Update Version Numbers** (3 files must match):
+```bash
+# package.json
+"version": "0.3.0"
+
+# src-tauri/Cargo.toml
+version = "0.3.0"
+
+# src-tauri/tauri.conf.json
+"version": "0.3.0"
+```
+
+**2. Build the Production Installer**:
+```bash
+cd c:/Dev/PBS_Admin
+node node_modules/@tauri-apps/cli/tauri.js build
+```
+
+Output: `src-tauri/target/release/bundle/nsis/PBS Admin_X.X.X_x64-setup.exe`
+
+**3. Commit, Push, and Create Release**:
+```bash
+# Stage and commit changes
+git add .
+git commit -m "feat: v0.3.0 - Description of changes"
+
+# Push to GitHub
+git push origin master
+
+# Create release with installer attached
+gh release create v0.3.0 "src-tauri/target/release/bundle/nsis/PBS Admin_0.3.0_x64-setup.exe" \
+  --title "v0.3.0 - Release Title" \
+  --notes "Release notes here..."
+```
+
+**Or let Claude do it**: Simply ask "release version 0.3.0" and Claude will:
+1. Update all 3 version files
+2. Build the production installer
+3. Commit and push to GitHub
+4. Create the GitHub release with installer attached
+
+### Auto-Update Architecture
+
+**Update Service** (`src/lib/services/updateService.ts`):
+- Checks GitHub API for latest release: `GET /repos/PBSGlenn/PBS_Admin/releases/latest`
+- Compares semantic versions to detect if update available
+- Extracts installer asset URL (files ending in `-setup.exe` or `_x64-setup.exe`)
+
+**Download & Install** (`src-tauri/src/lib.rs` - `download_and_run_update`):
+- Downloads installer to temp folder: `%TEMP%/PBS_Admin_Updates/`
+- Launches installer executable
+- App closes to allow upgrade
+
+**About Dialog** (`src/components/About/AboutDialog.tsx`):
+- "Check for Updates" button queries GitHub
+- Shows version comparison if update available
+- "Download & Install Update" button triggers download and install
+
+### Version Numbering
+
+Use semantic versioning: `MAJOR.MINOR.PATCH`
+
+- **MAJOR**: Breaking changes or major rewrites
+- **MINOR**: New features, significant improvements (e.g., 0.2.0 for API Keys + Vet Clinics)
+- **PATCH**: Bug fixes, minor improvements
+
+### Release Checklist
+
+- [ ] Update version in `package.json`, `Cargo.toml`, `tauri.conf.json`
+- [ ] Update CLAUDE.md "Recent Changes" section
+- [ ] Build production installer
+- [ ] Test installer on clean system (optional)
+- [ ] Commit with descriptive message
+- [ ] Push to GitHub
+- [ ] Create GitHub release with:
+  - Tag matching version (e.g., `v0.3.0`)
+  - Descriptive title
+  - Release notes listing changes
+  - Installer `.exe` attached as asset
 
 ---
 
@@ -3142,5 +3349,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2025-11-21
-**Version**: 2.0.0 (Advanced AI Integration - Multi-Report Generation System with AI Prompt Template Manager, 3-report parallel generation (Comprehensive Clinical, Abridged Notes, Veterinary Report), transcript file management for on-demand generation, and ReportSent event type)
+**Last Updated**: 2026-01-30
+**Version**: 2.1.0 (API Keys Settings - Production-ready API key configuration via Settings dialog, localStorage storage for Anthropic and Resend keys, eliminates .env dependency for installed builds)
