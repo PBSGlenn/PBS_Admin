@@ -54,7 +54,21 @@
       "Bash(curl:*)",
       "Bash(npm i:*)",
       "Bash(git fetch:*)",
-      "Bash(start cmd /k \"cd /d C:\\\\Dev\\\\PBS_Admin && npm run tauri dev\")"
+      "Bash(start cmd /k \"cd /d C:\\\\Dev\\\\PBS_Admin && npm run tauri dev\")",
+      "Bash(npx shadcn-ui@latest add:*)",
+      "Bash(echo:*)",
+      "Bash(npm help:*)",
+      "Bash(npx tauri build)",
+      "Bash(cargo update:*)",
+      "Bash(cargo clean:*)",
+      "Bash(npx tauri build:*)",
+      "Bash(tasklist:*)",
+      "Bash(npm --version:*)",
+      "Bash(node:*)",
+      "Bash(npx tauri:*)",
+      "Bash(cargo --version:*)",
+      "Bash(npx @tauri-apps/cli build:*)",
+      "Bash(cargo tauri build:*)"
     ],
     "deny": [],
     "ask": []

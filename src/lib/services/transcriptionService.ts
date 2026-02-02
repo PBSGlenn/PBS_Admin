@@ -13,6 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../utils/logger";
+import { getAnthropicApiKey } from "./apiKeysService";
 
 /**
  * Transcription result with both raw and speaker-labeled versions
@@ -142,8 +143,13 @@ async function addSpeakerLabels(
   rawTranscript: string,
   options: TranscriptionOptions
 ): Promise<{ transcript: string; tokensUsed: { input: number; output: number } }> {
+  const apiKey = getAnthropicApiKey();
+  if (!apiKey) {
+    throw new Error("Anthropic API key not configured. Please add your API key in Settings > API Keys.");
+  }
+
   const anthropic = new Anthropic({
-    apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
+    apiKey,
   });
 
   // Default speaker labels based on count

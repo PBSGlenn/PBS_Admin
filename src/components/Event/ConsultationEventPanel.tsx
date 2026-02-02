@@ -30,6 +30,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
 import { calculateAge } from "@/lib/utils/ageUtils";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { getAnthropicApiKey } from "@/lib/services/apiKeysService";
 
 // Supported file types for context
 type ContextFileType = "txt" | "pdf" | "docx" | "json";
@@ -743,11 +744,19 @@ export function ConsultationEventPanel({
       const clinicalNotes = event?.notes || "";
 
       // Call Claude API to extract tasks
+      const apiKey = getAnthropicApiKey();
+      if (!apiKey) {
+        toast.error("Anthropic API key not configured", {
+          description: "Please add your API key in Settings > API Keys"
+        });
+        return;
+      }
+
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
+          "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
           "anthropic-dangerous-direct-browser-access": "true"
         },
