@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   getAppVersion,
   checkForUpdates,
+  downloadAndInstallUpdate,
   type UpdateInfo,
 } from "@/lib/services/updateService";
 import {
@@ -21,7 +22,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Info,
+  Download,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface AboutDialogProps {
   isOpen: boolean;
@@ -31,6 +35,7 @@ interface AboutDialogProps {
 export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isChecking, setIsChecking] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleCheckForUpdates = async () => {
     setIsChecking(true);
@@ -45,6 +50,44 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
   const openReleaseUrl = () => {
     if (updateInfo?.releaseUrl) {
       window.open(updateInfo.releaseUrl, "_blank");
+    }
+  };
+
+  const handleDownloadAndInstall = async () => {
+    if (!updateInfo?.installerUrl || !updateInfo?.installerName) {
+      toast.error("Installer not found", {
+        description: "Please download manually from the release page",
+      });
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      toast.info("Downloading update...", {
+        description: `Downloading ${updateInfo.installerName}`,
+      });
+
+      const result = await downloadAndInstallUpdate(
+        updateInfo.installerUrl,
+        updateInfo.installerName
+      );
+
+      if (result.success) {
+        toast.success("Installer launched", {
+          description: "The installer is running. The app will close for upgrade.",
+          duration: 5000,
+        });
+        // Give time for toast to show, then close the app
+        setTimeout(() => {
+          window.close();
+        }, 2000);
+      } else {
+        toast.error("Download failed", {
+          description: result.error || "Please download manually",
+        });
+      }
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -116,15 +159,35 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
                         </p>
                       </div>
                     </div>
-                    {updateInfo.releaseUrl && (
+                    {updateInfo.installerUrl ? (
                       <Button
                         size="sm"
                         variant="default"
+                        onClick={handleDownloadAndInstall}
+                        disabled={isDownloading}
+                        className="h-8 text-xs w-full"
+                      >
+                        {isDownloading ? (
+                          <>
+                            <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                            Downloading...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-3 w-3 mr-1.5" />
+                            Download & Install Update
+                          </>
+                        )}
+                      </Button>
+                    ) : updateInfo.releaseUrl && (
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={openReleaseUrl}
                         className="h-7 text-xs w-full"
                       >
                         <ExternalLink className="h-3 w-3 mr-1.5" />
-                        Download Update
+                        View Release Page
                       </Button>
                     )}
                   </div>

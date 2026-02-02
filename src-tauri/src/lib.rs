@@ -271,6 +271,50 @@ fn download_file(url: String, file_path: String) -> Result<String, String> {
     }
 }
 
+/// Download update installer to temp directory and run it
+#[tauri::command]
+async fn download_and_run_update(url: String, filename: String) -> Result<String, String> {
+    // Get temp directory
+    let temp_dir = std::env::temp_dir().join("PBS_Admin_Updates");
+
+    // Create temp directory if needed
+    if !temp_dir.exists() {
+        fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    }
+
+    let file_path = temp_dir.join(&filename);
+
+    // Download file from URL using async reqwest
+    let client = reqwest::Client::new();
+    let response = client.get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download installer: {}", e))?;
+
+    // Check response status
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+
+    // Get response body as bytes
+    let bytes = response.bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    // Write to file
+    fs::write(&file_path, &bytes)
+        .map_err(|e| format!("Failed to write installer file: {}", e))?;
+
+    // Run the installer
+    // Use /S for silent install or run normally for user interaction
+    Command::new(&file_path)
+        .spawn()
+        .map_err(|e| format!("Failed to launch installer: {}", e))?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn list_files(directory: String, pattern: Option<String>) -> Result<Vec<String>, String> {
     // Validate directory is within allowed paths
@@ -1098,31 +1142,40 @@ struct AnthropicUsage {
 }
 
 /// Generate AI report using Anthropic Claude API
-/// API key is read from environment variable, never exposed to frontend
+/// API key can be passed directly or read from environment variable
 #[tauri::command]
 async fn generate_ai_report(
     system_prompt: String,
     user_prompt: String,
     max_tokens: u32,
+    api_key: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    // Get API key from environment variable (set in .env file at project root)
-    // Load .env file from project root
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+    // Use provided API key, or fall back to environment variable
+    let api_key = if let Some(key) = api_key {
+        if key.is_empty() {
+            return Err("API key cannot be empty".to_string());
+        }
+        key
+    } else {
+        // Fall back to environment variable (for development)
+        // Load .env file from project root
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
 
-    if let Some(dir) = exe_dir {
-        // Try loading from various locations
-        let _ = dotenvy::from_path(dir.join(".env"));
-        let _ = dotenvy::from_path(dir.join("../.env"));
-        let _ = dotenvy::from_path(dir.join("../../.env"));
-    }
-    // Also try current directory and standard locations
-    let _ = dotenvy::dotenv();
+        if let Some(dir) = exe_dir {
+            // Try loading from various locations
+            let _ = dotenvy::from_path(dir.join(".env"));
+            let _ = dotenvy::from_path(dir.join("../.env"));
+            let _ = dotenvy::from_path(dir.join("../../.env"));
+        }
+        // Also try current directory and standard locations
+        let _ = dotenvy::dotenv();
 
-    let api_key = std::env::var("VITE_ANTHROPIC_API_KEY")
-        .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
-        .map_err(|_| "Anthropic API key not configured. Set VITE_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY environment variable.".to_string())?;
+        std::env::var("VITE_ANTHROPIC_API_KEY")
+            .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+            .map_err(|_| "Anthropic API key not configured. Please add your API key in Settings > API Keys.".to_string())?
+    };
 
     let model = "claude-opus-4-5-20251101";
 
@@ -1309,7 +1362,8 @@ pub fn run() {
             list_database_backups,
             delete_backup_file,
             send_email,
-            generate_ai_report
+            generate_ai_report,
+            download_and_run_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

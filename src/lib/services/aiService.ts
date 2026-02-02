@@ -1,9 +1,10 @@
 // PBS Admin - AI Service
-// Secure AI API calls through Tauri backend (API key never exposed to frontend)
+// Secure AI API calls through Tauri backend
 // Includes rate limiting to prevent accidental API overuse
 
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../utils/logger";
+import { getAnthropicApiKey } from "./apiKeysService";
 
 export interface AIGenerationResult {
   success: boolean;
@@ -85,6 +86,9 @@ export async function generateAIReport(
   }
 
   try {
+    // Get API key from settings (falls back to env var in development)
+    const apiKey = getAnthropicApiKey();
+
     const result = await invoke<{
       success: boolean;
       content: string;
@@ -97,6 +101,7 @@ export async function generateAIReport(
       systemPrompt,
       userPrompt,
       maxTokens,
+      apiKey,
     });
 
     // Record successful request for rate limiting
@@ -122,23 +127,8 @@ export async function generateAIReport(
 /**
  * Check if AI service is available (API key configured)
  */
-export async function isAIServiceAvailable(): Promise<boolean> {
-  try {
-    // Try a minimal request to check if API key is configured
-    // This is a lightweight check - actual generation will validate fully
-    const result = await invoke<{ success: boolean }>("generate_ai_report", {
-      systemPrompt: "test",
-      userPrompt: "test",
-      maxTokens: 1,
-    });
-    return true;
-  } catch (error) {
-    const errorMessage = String(error);
-    // If the error is about API key, service is not available
-    if (errorMessage.includes("API key not configured")) {
-      return false;
-    }
-    // Other errors (like rate limiting) mean the service is available
-    return true;
-  }
+export function isAIServiceAvailable(): boolean {
+  // Simply check if an API key is configured
+  const apiKey = getAnthropicApiKey();
+  return apiKey !== null && apiKey.length > 0;
 }

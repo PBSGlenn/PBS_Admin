@@ -1,14 +1,15 @@
 // PBS Admin - Update Service
 // Checks GitHub releases for available updates
 
+import { invoke } from "@tauri-apps/api/core";
+
 // Import version from package.json at build time
 // Note: Vite handles this import specially
 const APP_VERSION = __APP_VERSION__;
 
 // GitHub repository for update checks
-// TODO: Update this when the repo is public
-const GITHUB_OWNER = "petbehaviourservices";
-const GITHUB_REPO = "pbs-admin";
+const GITHUB_OWNER = "PBSGlenn";
+const GITHUB_REPO = "PBS_Admin";
 
 export interface UpdateInfo {
   currentVersion: string;
@@ -16,6 +17,8 @@ export interface UpdateInfo {
   updateAvailable: boolean;
   releaseUrl: string | null;
   releaseNotes: string | null;
+  installerUrl: string | null;
+  installerName: string | null;
   error: string | null;
 }
 
@@ -51,6 +54,8 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
           updateAvailable: false,
           releaseUrl: null,
           releaseNotes: null,
+          installerUrl: null,
+          installerName: null,
           error: null,
         };
       }
@@ -63,12 +68,28 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
       ? compareVersions(latestVersion, currentVersion) > 0
       : false;
 
+    // Find the Windows installer asset (NSIS .exe)
+    let installerUrl: string | null = null;
+    let installerName: string | null = null;
+    if (release.assets && Array.isArray(release.assets)) {
+      const installerAsset = release.assets.find(
+        (asset: { name: string }) =>
+          asset.name.endsWith("-setup.exe") || asset.name.endsWith("_x64-setup.exe")
+      );
+      if (installerAsset) {
+        installerUrl = installerAsset.browser_download_url || null;
+        installerName = installerAsset.name || null;
+      }
+    }
+
     return {
       currentVersion,
       latestVersion,
       updateAvailable,
       releaseUrl: release.html_url || null,
       releaseNotes: release.body || null,
+      installerUrl,
+      installerName,
       error: null,
     };
   } catch (error) {
@@ -79,7 +100,31 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
       updateAvailable: false,
       releaseUrl: null,
       releaseNotes: null,
+      installerUrl: null,
+      installerName: null,
       error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Download and run the installer update
+ */
+export async function downloadAndInstallUpdate(
+  installerUrl: string,
+  installerName: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await invoke("download_and_run_update", {
+      url: installerUrl,
+      filename: installerName,
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to download/install update:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }

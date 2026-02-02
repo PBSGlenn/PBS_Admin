@@ -37,6 +37,7 @@ import { markConsultationComplete } from "@/lib/services/bookingSyncService";
 import { getEmailTemplate, processTemplate } from "@/lib/emailTemplates";
 import { EmailDraftDialog, EmailAttachment } from "@/components/ui/email-draft-dialog";
 import type { Event } from "@/lib/types";
+import { getVetClinics, type VetClinic } from "@/lib/services/vetClinicsService";
 
 type ReportType = "client" | "vet";
 
@@ -73,11 +74,14 @@ export function ReportSentEventPanel({
   const [reportType, setReportType] = useState<ReportType>("client");
   const [vetClinicName, setVetClinicName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
+  const [selectedVetClinicId, setSelectedVetClinicId] = useState<string | null>(null);
+  const [vetClinics, setVetClinics] = useState<VetClinic[]>([]);
 
   // File state
   const [clinicalNotesPath, setClinicalNotesPath] = useState<string | null>(null);
   const [transcriptPath, setTranscriptPath] = useState<string | null>(null);
   const [existingReports, setExistingReports] = useState<ExistingReport[]>([]);
+  const [fileRefreshKey, setFileRefreshKey] = useState(0); // Used to force file re-detection
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false);
@@ -267,19 +271,55 @@ export function ReportSentEventPanel({
     queryFn: () => getPetsByClientId(clientId)
   });
 
-  // Pre-fill vet clinic from client
+  // Load vet clinics from directory
+  useEffect(() => {
+    setVetClinics(getVetClinics());
+  }, []);
+
+  // Pre-fill vet clinic from client's primary care vet
   useEffect(() => {
     if (client?.primaryCareVet && !vetClinicName) {
       setVetClinicName(client.primaryCareVet);
+      // Try to find matching clinic in directory
+      const matchingClinic = vetClinics.find(vc =>
+        vc.name.toLowerCase().includes(client.primaryCareVet!.toLowerCase()) ||
+        client.primaryCareVet!.toLowerCase().includes(vc.name.toLowerCase())
+      );
+      if (matchingClinic) {
+        setSelectedVetClinicId(matchingClinic.id);
+        setRecipientEmail(matchingClinic.email);
+      }
     }
-  }, [client?.primaryCareVet]);
+  }, [client?.primaryCareVet, vetClinics]);
 
-  // Pre-fill client email
+  // Update email when report type changes
   useEffect(() => {
-    if (client?.email && reportType === "client" && !recipientEmail) {
-      setRecipientEmail(client.email);
+    if (reportType === "client") {
+      // Switch to client email
+      if (client?.email) {
+        setRecipientEmail(client.email);
+      }
+    } else if (reportType === "vet") {
+      // Switch to vet clinic email (if one is selected)
+      const selectedClinic = vetClinics.find(vc => vc.id === selectedVetClinicId);
+      if (selectedClinic) {
+        setRecipientEmail(selectedClinic.email);
+      } else {
+        // Clear email if no vet clinic selected - user needs to enter manually
+        setRecipientEmail("");
+      }
     }
-  }, [client?.email, reportType]);
+  }, [reportType, client?.email, selectedVetClinicId, vetClinics]);
+
+  // Handle vet clinic selection
+  const handleVetClinicSelect = (clinicId: string) => {
+    setSelectedVetClinicId(clinicId);
+    const clinic = vetClinics.find(vc => vc.id === clinicId);
+    if (clinic) {
+      setVetClinicName(clinic.name);
+      setRecipientEmail(clinic.email);
+    }
+  };
 
   // Detect files when consultation is selected
   useEffect(() => {
@@ -341,7 +381,7 @@ export function ReportSentEventPanel({
     };
 
     detectFiles();
-  }, [selectedConsultationId, clientFolderPath, consultations]);
+  }, [selectedConsultationId, clientFolderPath, consultations, fileRefreshKey]);
 
   // Generate report mutation
   const generateReportMutation = useMutation({
@@ -663,14 +703,55 @@ export function ReportSentEventPanel({
                   Vet Report
                 </Label>
                 {reportType === "vet" && (
-                  <div className="mt-1.5">
-                    <Label className="text-[9px] text-muted-foreground">Vet Clinic Name</Label>
-                    <Input
-                      value={vetClinicName}
-                      onChange={(e) => setVetClinicName(e.target.value)}
-                      placeholder="Enter vet clinic name..."
-                      className="h-7 text-[10px] mt-0.5"
-                    />
+                  <div className="mt-1.5 space-y-2">
+                    {/* Vet Clinic Dropdown */}
+                    {vetClinics.length > 0 && (
+                      <div>
+                        <Label className="text-[9px] text-muted-foreground">Select from Directory</Label>
+                        <Select
+                          value={selectedVetClinicId || ""}
+                          onValueChange={handleVetClinicSelect}
+                        >
+                          <SelectTrigger className="h-7 text-[10px] mt-0.5">
+                            <SelectValue placeholder="Choose vet clinic..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vetClinics.map((clinic) => (
+                              <SelectItem key={clinic.id} value={clinic.id}>
+                                {clinic.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {/* Vet Clinic Name - manual entry or auto-filled from selection */}
+                    <div>
+                      <Label className="text-[9px] text-muted-foreground">
+                        Vet Clinic Name {vetClinics.length > 0 && "(or type manually)"}
+                      </Label>
+                      <Input
+                        value={vetClinicName}
+                        onChange={(e) => {
+                          setVetClinicName(e.target.value);
+                          // Clear selection if user types manually
+                          if (selectedVetClinicId) {
+                            const clinic = vetClinics.find(vc => vc.id === selectedVetClinicId);
+                            if (clinic && e.target.value !== clinic.name) {
+                              setSelectedVetClinicId(null);
+                            }
+                          }
+                        }}
+                        placeholder="Enter vet clinic name..."
+                        className="h-7 text-[10px] mt-0.5"
+                      />
+                    </div>
+                    {/* Show directory hint if empty */}
+                    {vetClinics.length === 0 && (
+                      <p className="text-[9px] text-muted-foreground italic">
+                        Tip: Add vet clinics in Settings → Vet Clinics for quick lookup
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -694,6 +775,9 @@ export function ReportSentEventPanel({
                 {existingReportsForType.map((report, idx) => {
                   const logEntry = reportLog.find(entry => entry.fileName === report.name);
                   const isEmailed = logEntry?.emailed || false;
+                  const isDocx = report.name.endsWith(".docx");
+                  const pdfName = report.name.replace(".docx", ".pdf");
+                  const hasPdf = existingReportsForType.some(r => r.name === pdfName);
 
                   return (
                     <div key={idx} className="flex items-center justify-between gap-1">
@@ -715,6 +799,41 @@ export function ReportSentEventPanel({
                         >
                           <ExternalLink className="h-3 w-3" />
                         </Button>
+                        {/* Convert to PDF button for DOCX files without existing PDF */}
+                        {isDocx && !hasPdf && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async () => {
+                              setIsConvertingPdf(true);
+                              try {
+                                const pdfPath = report.path.replace(".docx", ".pdf");
+                                await invoke("convert_docx_to_pdf", {
+                                  docxPath: report.path,
+                                  pdfPath
+                                });
+                                toast.success("PDF created successfully");
+                                // Refresh the file list
+                                setFileRefreshKey(k => k + 1);
+                              } catch (error) {
+                                toast.error("Failed to convert to PDF", {
+                                  description: error instanceof Error ? error.message : "Make sure MS Word is installed"
+                                });
+                              } finally {
+                                setIsConvertingPdf(false);
+                              }
+                            }}
+                            disabled={isConvertingPdf}
+                            className="h-5 px-1.5 text-[9px] text-orange-600 hover:text-orange-700"
+                            title="Convert to PDF"
+                          >
+                            {isConvertingPdf ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <FileText className="h-3 w-3" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"

@@ -4,6 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { getResendApiKey as getResendKey } from "./apiKeysService";
 
 // Email signature HTML with logo
 const EMAIL_SIGNATURE = `
@@ -38,12 +39,12 @@ export interface EmailResult {
 }
 
 /**
- * Get the Resend API key from environment
+ * Get the Resend API key from settings (with env fallback)
  */
 function getResendApiKey(): string {
-  const apiKey = import.meta.env.VITE_RESEND_API_KEY;
+  const apiKey = getResendKey();
   if (!apiKey) {
-    throw new Error("VITE_RESEND_API_KEY not configured in environment");
+    throw new Error("Resend API key not configured. Please add your API key in Settings > API Keys.");
   }
   return apiKey;
 }

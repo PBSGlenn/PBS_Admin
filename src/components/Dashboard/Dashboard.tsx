@@ -18,11 +18,13 @@ import { MedicationUpdateChecker } from "../MedicationUpdateChecker/MedicationUp
 import { BackupManager } from "../BackupManager/BackupManager";
 import { AboutDialog } from "../About/AboutDialog";
 import { StartupSettingsDialog } from "../Settings/StartupSettingsDialog";
+import { ApiKeysSettingsDialog } from "../Settings/ApiKeysSettingsDialog";
+import { VetClinicsSettingsDialog } from "../Settings/VetClinicsSettingsDialog";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
 import { isMonthlyUpdateDue } from "@/lib/services/medicationUpdateService";
 import { startScheduledBackups, stopScheduledBackups } from "@/lib/services/backupService";
 import { toast } from "sonner";
-import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info, Power, User } from "lucide-react";
+import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info, Power, User, Key, Building2 } from "lucide-react";
 import { useWindow, createWindowId, WINDOW_CONFIGS } from "@/hooks/useWindow";
 import { Button } from "../ui/button";
 import {
@@ -44,6 +46,8 @@ export function Dashboard() {
   const [isBackupManagerOpen, setIsBackupManagerOpen] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const [isStartupSettingsOpen, setIsStartupSettingsOpen] = useState(false);
+  const [isApiKeysSettingsOpen, setIsApiKeysSettingsOpen] = useState(false);
+  const [isVetClinicsSettingsOpen, setIsVetClinicsSettingsOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
   const { openWindow, closeWindow } = useWindow();
 
@@ -286,6 +290,20 @@ export function Dashboard() {
                   <Power className="h-3.5 w-3.5 mr-2" />
                   Startup Settings
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setIsApiKeysSettingsOpen(true)}
+                >
+                  <Key className="h-3.5 w-3.5 mr-2" />
+                  API Keys
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs cursor-pointer"
+                  onClick={() => setIsVetClinicsSettingsOpen(true)}
+                >
+                  <Building2 className="h-3.5 w-3.5 mr-2" />
+                  Vet Clinics Directory
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-xs cursor-pointer"
@@ -386,6 +404,18 @@ export function Dashboard() {
       <StartupSettingsDialog
         isOpen={isStartupSettingsOpen}
         onClose={() => setIsStartupSettingsOpen(false)}
+      />
+
+      {/* API Keys Settings Dialog */}
+      <ApiKeysSettingsDialog
+        isOpen={isApiKeysSettingsOpen}
+        onClose={() => setIsApiKeysSettingsOpen(false)}
+      />
+
+      {/* Vet Clinics Settings Dialog */}
+      <VetClinicsSettingsDialog
+        isOpen={isVetClinicsSettingsOpen}
+        onClose={() => setIsVetClinicsSettingsOpen(false)}
       />
     </div>
   );
