@@ -15,11 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle, Bug } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle, Bug, EyeOff } from 'lucide-react';
 import { LoadingSpinner } from '../ui/loading-spinner';
+import { Checkbox } from '../ui/checkbox';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import {
   fetchUnsyncedBookings,
   syncAllWebsiteBookings,
+  markBookingAsSynced,
   type WebsiteBooking,
   type BookingSyncResult,
 } from '@/lib/services/bookingSyncService';
@@ -30,8 +33,11 @@ export function WebsiteBookingsSync() {
   const [bookings, setBookings] = useState<WebsiteBooking[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const [syncResults, setSyncResults] = useState<BookingSyncResult[]>([]);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDismissConfirmOpen, setIsDismissConfirmOpen] = useState(false);
 
   // Fetch unsynced bookings on mount
   useEffect(() => {
@@ -108,6 +114,46 @@ export function WebsiteBookingsSync() {
     console.log('Check the browser console for detailed results');
   };
 
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === bookings.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(bookings.map(b => b.id)));
+    }
+  };
+
+  const handleDismiss = () => {
+    setIsDismissConfirmOpen(true);
+  };
+
+  const confirmDismiss = async () => {
+    setDismissing(true);
+    setIsDismissConfirmOpen(false);
+    try {
+      for (const id of selectedIds) {
+        await markBookingAsSynced(id);
+      }
+      setBookings(prev => prev.filter(b => !selectedIds.has(b.id)));
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error('Failed to dismiss bookings:', error);
+    } finally {
+      setDismissing(false);
+    }
+  };
+
   return (
     <div className="space-y-2">
       {/* Header with actions */}
@@ -144,15 +190,30 @@ export function WebsiteBookingsSync() {
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
           </Button>
           {bookings.length > 0 && (
-            <Button
-              size="sm"
-              onClick={handleSync}
-              disabled={syncing}
-              className="h-7 text-xs"
-            >
-              <Download className={`h-3 w-3 mr-1 ${syncing ? 'animate-bounce' : ''}`} />
-              {syncing ? 'Syncing...' : `Import ${bookings.length}`}
-            </Button>
+            <>
+              {selectedIds.size > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDismiss}
+                  disabled={syncing || dismissing}
+                  className="h-7 text-xs text-muted-foreground"
+                  title="Dismiss selected - mark as already synced"
+                >
+                  <EyeOff className="h-3 w-3 mr-1" />
+                  {dismissing ? 'Dismissing...' : `Dismiss ${selectedIds.size}`}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={handleSync}
+                disabled={syncing || dismissing}
+                className="h-7 text-xs"
+              >
+                <Download className={`h-3 w-3 mr-1 ${syncing ? 'animate-bounce' : ''}`} />
+                {syncing ? 'Syncing...' : `Import ${bookings.length}`}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -200,6 +261,13 @@ export function WebsiteBookingsSync() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
+                <TableHead className="h-7 py-1 w-8">
+                  <Checkbox
+                    checked={bookings.length > 0 && selectedIds.size === bookings.length}
+                    onCheckedChange={toggleSelectAll}
+                    className="h-3.5 w-3.5"
+                  />
+                </TableHead>
                 <TableHead className="h-7 text-[11px] py-1">Client</TableHead>
                 <TableHead className="h-7 text-[11px] py-1">Pet</TableHead>
                 <TableHead className="h-7 text-[11px] py-1">Service</TableHead>
@@ -210,6 +278,13 @@ export function WebsiteBookingsSync() {
             <TableBody>
               {bookings.map((booking) => (
                 <TableRow key={booking.id} className="h-12">
+                  <TableCell className="py-1 w-8">
+                    <Checkbox
+                      checked={selectedIds.has(booking.id)}
+                      onCheckedChange={() => toggleSelection(booking.id)}
+                      className="h-3.5 w-3.5"
+                    />
+                  </TableCell>
                   <TableCell className="py-1">
                     <div className="text-[11px] leading-tight">
                       <div className="font-medium">{booking.customer_name}</div>
@@ -272,6 +347,17 @@ export function WebsiteBookingsSync() {
           </Table>
         </div>
       )}
+
+      {/* Dismiss Confirmation Dialog */}
+      <ConfirmDialog
+        open={isDismissConfirmOpen}
+        onOpenChange={setIsDismissConfirmOpen}
+        title="Dismiss Bookings"
+        description={`Dismiss ${selectedIds.size} booking(s)? They will be marked as synced in Supabase and won't appear in this list again.`}
+        confirmText="Dismiss Selected"
+        cancelText="Cancel"
+        onConfirm={confirmDismiss}
+      />
     </div>
   );
 }

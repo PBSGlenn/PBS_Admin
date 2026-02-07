@@ -139,7 +139,7 @@ function getProcessedSubmissionIds(): Set<string> {
 /**
  * Mark a submission as processed
  */
-function markSubmissionAsProcessed(submissionId: string): void {
+export function markSubmissionAsProcessed(submissionId: string): void {
   try {
     const processed = getProcessedSubmissionIds();
     processed.add(submissionId);

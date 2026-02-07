@@ -1,6 +1,6 @@
 [package]
 name = "pbs-admin"
-version = "0.2.1"
+version = "0.2.2"
 description = "PBS Admin - Pet Behaviour Services Administration System"
 authors = ["Pet Behaviour Services"]
 edition = "2021"

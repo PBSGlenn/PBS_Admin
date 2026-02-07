@@ -14,12 +14,13 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { Download, RefreshCw, CheckCircle2, XCircle, FileText, FileJson } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle2, XCircle, FileText, FileJson, EyeOff } from 'lucide-react';
 import { LoadingSpinner } from '../ui/loading-spinner';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import {
   fetchUnprocessedSubmissions,
   syncAllQuestionnaires,
+  markSubmissionAsProcessed,
   type JotformSubmission,
   type QuestionnaireSyncResult,
 } from '@/lib/services/jotformService';
@@ -31,6 +32,7 @@ export function QuestionnaireSync() {
   const [syncResults, setSyncResults] = useState<QuestionnaireSyncResult[]>([]);
   const [lastSync, setLastSync] = useState<Date | null>(null);
 const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+const [isDismissConfirmOpen, setIsDismissConfirmOpen] = useState(false);
 
   // Fetch unprocessed submissions on mount
   useEffect(() => {
@@ -67,6 +69,19 @@ const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   const handleClearTracking = () => {
     setIsClearConfirmOpen(true);
+  };
+
+  const handleDismissAll = () => {
+    setIsDismissConfirmOpen(true);
+  };
+
+  const confirmDismissAll = () => {
+    for (const submission of submissions) {
+      markSubmissionAsProcessed(submission.id);
+    }
+    setSubmissions([]);
+    setSyncResults([]);
+    setIsDismissConfirmOpen(false);
   };
 
   const confirmClearTracking = () => {
@@ -174,14 +189,26 @@ setIsClearConfirmOpen(false);
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
           </Button>
           {submissions.length > 0 && (
-            <Button
-              onClick={handleSync}
-              disabled={syncing}
-              className="h-7 text-xs"
-            >
-              <Download className={`h-3 w-3 mr-1 ${syncing ? 'animate-bounce' : ''}`} />
-              {syncing ? 'Processing...' : `Process ${submissions.length}`}
-            </Button>
+            <>
+              <Button
+                onClick={handleDismissAll}
+                disabled={syncing}
+                variant="outline"
+                className="h-7 text-xs text-muted-foreground"
+                title="Dismiss all - mark as already processed"
+              >
+                <EyeOff className="h-3 w-3 mr-1" />
+                Dismiss
+              </Button>
+              <Button
+                onClick={handleSync}
+                disabled={syncing}
+                className="h-7 text-xs"
+              >
+                <Download className={`h-3 w-3 mr-1 ${syncing ? 'animate-bounce' : ''}`} />
+                {syncing ? 'Processing...' : `Process ${submissions.length}`}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -276,6 +303,17 @@ setIsClearConfirmOpen(false);
           </Table>
         </div>
       )}
+
+      {/* Dismiss All Confirmation Dialog */}
+      <ConfirmDialog
+        open={isDismissConfirmOpen}
+        onOpenChange={setIsDismissConfirmOpen}
+        title="Dismiss Questionnaires"
+        description={`Dismiss ${submissions.length} questionnaire(s)? They will be marked as already processed and won't appear in this list again.`}
+        confirmText="Dismiss All"
+        cancelText="Cancel"
+        onConfirm={confirmDismissAll}
+      />
 
       {/* Clear Tracking Confirmation Dialog */}
       <ConfirmDialog
