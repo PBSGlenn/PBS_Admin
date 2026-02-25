@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
 import { logger } from "../utils/logger";
 import { getSettingJson, setSettingJson } from "./settingsService";
+import { BackupSettingsSchema, safeParse } from "../schemas";
 
 // ============================================================================
 // Types
@@ -67,7 +68,8 @@ const DEFAULT_SETTINGS: BackupSettings = {
  */
 export async function getBackupSettings(): Promise<BackupSettings> {
   try {
-    return await getSettingJson<BackupSettings>(BACKUP_SETTINGS_KEY, DEFAULT_SETTINGS);
+    const raw = await getSettingJson<BackupSettings>(BACKUP_SETTINGS_KEY, DEFAULT_SETTINGS);
+    return safeParse(BackupSettingsSchema, raw, DEFAULT_SETTINGS, "backup settings");
   } catch (error) {
     logger.error('Failed to load backup settings:', error);
     return DEFAULT_SETTINGS;

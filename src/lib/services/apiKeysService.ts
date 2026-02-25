@@ -3,6 +3,7 @@
 // Keys are stored locally on the user's machine, never sent to cloud
 
 import { getSettingJson, setSettingJson, deleteSetting } from "./settingsService";
+import { ApiKeysSchema, AIModelConfigSchema, safeParse } from "../schemas";
 
 const API_KEYS_STORAGE_KEY = 'pbs_admin_api_keys';
 
@@ -22,7 +23,8 @@ const DEFAULT_API_KEYS: ApiKeys = {
  * Get all stored API keys
  */
 export async function getApiKeys(): Promise<ApiKeys> {
-  return getSettingJson<ApiKeys>(API_KEYS_STORAGE_KEY, DEFAULT_API_KEYS);
+  const raw = await getSettingJson<ApiKeys>(API_KEYS_STORAGE_KEY, DEFAULT_API_KEYS);
+  return safeParse(ApiKeysSchema, raw, DEFAULT_API_KEYS, "API keys");
 }
 
 /**
@@ -139,7 +141,8 @@ const DEFAULT_AI_MODEL_CONFIG: AIModelConfig = {
 
 /** Get current AI model configuration */
 export async function getAIModelConfig(): Promise<AIModelConfig> {
-  return getSettingJson<AIModelConfig>(AI_MODEL_CONFIG_KEY, DEFAULT_AI_MODEL_CONFIG);
+  const raw = await getSettingJson<AIModelConfig>(AI_MODEL_CONFIG_KEY, DEFAULT_AI_MODEL_CONFIG);
+  return safeParse(AIModelConfigSchema, raw, DEFAULT_AI_MODEL_CONFIG, "AI model config");
 }
 
 /** Save AI model configuration */

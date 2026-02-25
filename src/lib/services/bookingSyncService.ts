@@ -22,6 +22,7 @@ import type { Client, Pet } from '../types';
 import { formatISO, format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { invoke } from '@tauri-apps/api/core';
+import { WebsiteBookingSchema, safeParseArray } from '../schemas';
 
 const TIMEZONE = 'Australia/Melbourne';
 
@@ -199,7 +200,8 @@ export async function findBookingByReference(
       return null;
     }
 
-    return data as WebsiteBooking;
+    const parsed = WebsiteBookingSchema.safeParse(data);
+    return parsed.success ? parsed.data as WebsiteBooking : null;
   } catch (error) {
     logger.error('Error finding booking by reference:', error);
     return null;
@@ -505,7 +507,7 @@ export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
         return [];
       }
 
-      return (dataWithoutSync || []) as WebsiteBooking[];
+      return safeParseArray(WebsiteBookingSchema, dataWithoutSync || [], "Supabase bookings") as WebsiteBooking[];
     }
 
     // If different error, log it and return empty
@@ -514,7 +516,7 @@ export async function fetchUnsyncedBookings(): Promise<WebsiteBooking[]> {
       return [];
     }
 
-    return (dataWithSync || []) as WebsiteBooking[];
+    return safeParseArray(WebsiteBookingSchema, dataWithSync || [], "Supabase bookings") as WebsiteBooking[];
   } catch (error) {
     logger.error('Failed to fetch bookings from Supabase:', error);
     return [];

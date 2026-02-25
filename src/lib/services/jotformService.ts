@@ -21,6 +21,7 @@ import { formatISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { parseAgeToDateOfBirth } from '../utils/ageUtils';
 import { getSettingJson, setSettingJson } from './settingsService';
+import { JotformSubmissionSchema, safeParseArray } from '../schemas';
 
 const TIMEZONE = 'Australia/Melbourne';
 
@@ -163,7 +164,8 @@ export async function fetchUnprocessedSubmissions(): Promise<JotformSubmission[]
 
       const data = await response.json();
       if (data.content && Array.isArray(data.content)) {
-        submissions.push(...data.content);
+        const validated = safeParseArray(JotformSubmissionSchema, data.content, `Jotform form ${formId}`);
+        submissions.push(...validated as JotformSubmission[]);
       }
     }
 

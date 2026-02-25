@@ -13,6 +13,7 @@
 
 import { logger } from "../utils/logger";
 import { getSettingJson, setSettingJson } from "./settingsService";
+import { TranscriptionStatsSchema, safeParse } from "../schemas";
 
 /**
  * Diarized segment from OpenAI API
@@ -324,7 +325,8 @@ const DEFAULT_STATS: TranscriptionStats = {
 };
 
 export async function getTranscriptionStats(): Promise<TranscriptionStats> {
-  return getSettingJson<TranscriptionStats>(STATS_KEY, DEFAULT_STATS);
+  const raw = await getSettingJson<TranscriptionStats>(STATS_KEY, DEFAULT_STATS);
+  return safeParse(TranscriptionStatsSchema, raw, DEFAULT_STATS, "transcription stats");
 }
 
 export async function updateTranscriptionStats(

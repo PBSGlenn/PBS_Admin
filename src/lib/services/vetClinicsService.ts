@@ -2,6 +2,7 @@
 // Directory of veterinary clinics for quick email and contact lookup
 
 import { getSettingJson, setSettingJson } from "./settingsService";
+import { VetClinicSchema, safeParseArray } from "../schemas";
 
 const VET_CLINICS_STORAGE_KEY = 'pbs_admin_vet_clinics';
 
@@ -18,7 +19,8 @@ export interface VetClinic {
  * Get all vet clinics from Settings table
  */
 export async function getVetClinics(): Promise<VetClinic[]> {
-  return getSettingJson<VetClinic[]>(VET_CLINICS_STORAGE_KEY, []);
+  const raw = await getSettingJson<VetClinic[]>(VET_CLINICS_STORAGE_KEY, []);
+  return safeParseArray(VetClinicSchema, raw, "vet clinics") as VetClinic[];
 }
 
 /**
