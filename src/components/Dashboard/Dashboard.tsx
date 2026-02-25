@@ -1,7 +1,7 @@
 // PBS Admin - Dashboard Screen
 // Two-pane layout: Clients list (left) + Overview (right)
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ClientsList } from "./ClientsList";
@@ -20,11 +20,12 @@ import { AboutDialog } from "../About/AboutDialog";
 import { StartupSettingsDialog } from "../Settings/StartupSettingsDialog";
 import { ApiKeysSettingsDialog } from "../Settings/ApiKeysSettingsDialog";
 import { VetClinicsSettingsDialog } from "../Settings/VetClinicsSettingsDialog";
+import { CommandPalette, CommandAction } from "../CommandPalette/CommandPalette";
 import { useTaskNotifications } from "../../hooks/useTaskNotifications";
 import { isMonthlyUpdateDue } from "@/lib/services/medicationUpdateService";
 import { startScheduledBackups, stopScheduledBackups } from "@/lib/services/backupService";
 import { toast } from "sonner";
-import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info, Power, User, Key, Building2 } from "lucide-react";
+import { Bell, Settings, Mail, FileText, FileAudio, Pill, Database, Info, Power, User, UserPlus, Key, Building2, Search } from "lucide-react";
 import { useWindow, createWindowId, WINDOW_CONFIGS } from "@/hooks/useWindow";
 import { Button } from "../ui/button";
 import {
@@ -48,8 +49,21 @@ export function Dashboard() {
   const [isStartupSettingsOpen, setIsStartupSettingsOpen] = useState(false);
   const [isApiKeysSettingsOpen, setIsApiKeysSettingsOpen] = useState(false);
   const [isVetClinicsSettingsOpen, setIsVetClinicsSettingsOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const { notificationCount } = useTaskNotifications();
   const { openWindow, closeWindow } = useWindow();
+
+  // Global Ctrl+K keyboard shortcut for command palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setIsCommandPaletteOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Start scheduled backups on mount
   useEffect(() => {
@@ -129,6 +143,91 @@ export function Dashboard() {
     setCurrentView("dashboard");
     setSelectedClient(null);
   }, []);
+
+  // Command palette actions
+  const commandActions: CommandAction[] = useMemo(() => [
+    // Navigation actions
+    {
+      id: "new-client",
+      label: "New Client",
+      category: "navigation" as const,
+      icon: <UserPlus className="h-3.5 w-3.5" />,
+      keywords: "create add client",
+      onSelect: () => handleNewClient(),
+    },
+    {
+      id: "email-templates",
+      label: "Email Templates",
+      category: "settings" as const,
+      icon: <Mail className="h-3.5 w-3.5" />,
+      keywords: "email template customize",
+      onSelect: () => setCurrentView("email-templates"),
+    },
+    {
+      id: "ai-prompts",
+      label: "AI Prompts",
+      category: "settings" as const,
+      icon: <FileText className="h-3.5 w-3.5" />,
+      keywords: "ai prompt template claude report",
+      onSelect: () => setCurrentView("ai-prompts"),
+    },
+    {
+      id: "medication-updates",
+      label: "Medication Updates",
+      category: "settings" as const,
+      icon: <Pill className="h-3.5 w-3.5" />,
+      keywords: "medication drug brand update pharmacy",
+      onSelect: () => setIsMedicationUpdateCheckerOpen(true),
+    },
+    {
+      id: "audio-transcription",
+      label: "Audio Transcription Tool",
+      category: "navigation" as const,
+      icon: <FileAudio className="h-3.5 w-3.5" />,
+      keywords: "transcribe audio recording whisper openai",
+      onSelect: () => setIsTranscriptionToolOpen(true),
+    },
+    {
+      id: "backup-restore",
+      label: "Backup & Restore",
+      category: "settings" as const,
+      icon: <Database className="h-3.5 w-3.5" />,
+      keywords: "backup restore database export",
+      onSelect: () => setIsBackupManagerOpen(true),
+    },
+    {
+      id: "startup-settings",
+      label: "Startup Settings",
+      category: "settings" as const,
+      icon: <Power className="h-3.5 w-3.5" />,
+      keywords: "startup autostart tray minimize launch",
+      onSelect: () => setIsStartupSettingsOpen(true),
+    },
+    {
+      id: "api-keys",
+      label: "API Keys",
+      category: "settings" as const,
+      icon: <Key className="h-3.5 w-3.5" />,
+      keywords: "api key anthropic openai resend configure",
+      onSelect: () => setIsApiKeysSettingsOpen(true),
+    },
+    {
+      id: "vet-clinics",
+      label: "Vet Clinics Directory",
+      category: "settings" as const,
+      icon: <Building2 className="h-3.5 w-3.5" />,
+      keywords: "vet clinic veterinary directory",
+      onSelect: () => setIsVetClinicsSettingsOpen(true),
+    },
+    {
+      id: "about",
+      label: "About PBS Admin",
+      category: "settings" as const,
+      icon: <Info className="h-3.5 w-3.5" />,
+      keywords: "about version update",
+      onSelect: () => setIsAboutDialogOpen(true),
+    },
+  ], [handleNewClient]);
 
   // Show new client form
   if (currentView === "new-client") {
@@ -218,6 +317,19 @@ export function Dashboard() {
             <p className="text-xs text-muted-foreground">Pet Behaviour Services</p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Command Palette Trigger */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-muted-foreground"
+              onClick={() => setIsCommandPaletteOpen(true)}
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
+                Ctrl K
+              </kbd>
+            </Button>
             {/* Notification Bell */}
             {notificationCount > 0 && (
               <Button
@@ -418,6 +530,14 @@ export function Dashboard() {
       <VetClinicsSettingsDialog
         isOpen={isVetClinicsSettingsOpen}
         onClose={() => setIsVetClinicsSettingsOpen(false)}
+      />
+
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        actions={commandActions}
+        onOpenClient={handleEditClient}
       />
     </div>
   );
