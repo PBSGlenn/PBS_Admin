@@ -64,11 +64,20 @@ git push origin --delete branch-name
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.5) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
+**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
 
-**Last Updated**: 2026-02-02
+**Last Updated**: 2026-02-25
 
-**Recent Changes** (2026-02-02):
+**Recent Changes** (2026-02-25):
+- **Security: RCE Fix for Auto-Update**: Update installer download now validates redirect domains (github.com/GitHub only), checks file size against GitHub API metadata, and verifies PE header before execution
+- **AI Model Upgrade**: Claude Opus 4.5 → Opus 4.6 (`claude-opus-4-6-20260205`) for report generation and task extraction. Claude Sonnet 4 → Sonnet 4.5 (`claude-sonnet-4-5-20250929`) for task extraction
+- **Transcription Overhaul**: Replaced two-step Whisper + Claude pipeline with single OpenAI `gpt-4o-transcribe-diarize` API call. Native speaker diarization eliminates separate Claude call, reducing cost and latency. Supports up to 4 speakers with custom labels
+- **OpenAI API Key Support**: Added OpenAI API key configuration to Settings > API Keys dialog (required for audio transcription)
+- **Audio Format Expansion**: Transcription now supports .ogg and .flac in addition to existing formats
+- **Cost Estimation Updates**: Report generation pricing updated to Claude Opus 4.6 rates ($15/$75 per 1M input/output tokens)
+- **localStorage to SQLite Migration**: All settings previously stored in localStorage now persist in SQLite Settings table (API keys, backup settings, vet clinics, email templates, prompt templates, prescription templates, transcription stats, etc.). One-time automatic migration on first run
+
+**Previous Changes** (2026-02-02):
 - **Version 0.2.0 Released**: First GitHub release with auto-update support
 - **Auto-Update System**: Check for updates and download/install directly from About dialog
 - **Vet Clinics Directory**: New settings dialog for storing vet clinic contacts (Settings > Vet Clinics Directory). Quick lookup when sending vet reports.
@@ -77,7 +86,7 @@ git push origin --delete branch-name
 - **Dialog Protection**: Email draft dialogs no longer close when clicking outside (prevents accidental data loss)
 
 **Previous Changes** (2026-01-30):
-- **API Keys Settings**: New settings dialog for configuring Anthropic and Resend API keys in production builds (Settings > API Keys). Keys stored in localStorage, eliminating need for .env file in installed app.
+- **API Keys Settings**: New settings dialog for configuring Anthropic and Resend API keys in production builds (Settings > API Keys). Keys stored in SQLite Settings table, eliminating need for .env file in installed app.
 
 **Previous Changes** (2026-01-29):
 - **About Dialog**: Version display with GitHub update check
@@ -94,7 +103,7 @@ git push origin --delete branch-name
 - **Production build ready**: CSP enabled, relative paths for Tauri webview, NSIS installer working
 
 **Remaining TODO**:
-- Audio transcription tool: Make functional for large audio clips (currently has size/duration limitations)
+- Audio transcription tool: Test with large audio files in production (transcription API updated to gpt-4o-transcribe-diarize)
 
 ---
 
@@ -113,11 +122,12 @@ git push origin --delete branch-name
 | **Date Handling** | date-fns + date-fns-tz | Timezone-aware date operations |
 | **Notifications** | Sonner | Toast notifications for in-app alerts |
 | **HTTP Client (Backend)** | reqwest 0.12 | Rust HTTP client for CORS-free downloads |
-| **Email Templates** | localStorage + Variable System | Customizable templates with dynamic content |
+| **Email Templates** | SQLite Settings + Variable System | Customizable templates with dynamic content |
 | **Email Sending** | Resend API | Direct email delivery with attachments |
 | **Email Receiving** | ImprovMX | Email forwarding to personal inbox |
-| **Prescription Templates** | localStorage + Pandoc | Template-based prescription generation |
-| **AI Services** | Anthropic Claude Opus 4.5 | Report generation, task extraction |
+| **Prescription Templates** | SQLite Settings + Pandoc | Template-based prescription generation |
+| **AI Services** | Anthropic Claude Opus 4.6 | Report generation, task extraction |
+| **Audio Transcription** | OpenAI gpt-4o-transcribe-diarize | Transcription with native speaker diarization |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
 | **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
 | **External Services** | Supabase, Jotform API, Resend | Booking sync, questionnaire downloads, email |
@@ -186,7 +196,9 @@ PBS_Admin/
 │   │   │   ├── autostartService.ts # ✅ Windows auto-start at login
 │   │   │   ├── backupService.ts   # ✅ Scheduled backup service
 │   │   │   ├── updateService.ts   # ✅ GitHub release version checking
-│   │   │   └── apiKeysService.ts  # ✅ API key storage and retrieval from localStorage
+│   │   │   ├── transcriptionService.ts # ✅ Audio transcription with OpenAI diarization
+│   │   │   ├── settingsService.ts # ✅ SQLite Settings table CRUD operations
+│   │   │   └── apiKeysService.ts  # ✅ API key storage and retrieval from SQLite
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
 │   │   │   ├── report-system-prompt.ts  # ✅ Report generation methodology (legacy)
 │   │   │   └── promptTemplates.ts  # ✅ Multi-prompt template management system
@@ -590,7 +602,7 @@ WINDOW_CONFIGS = {
 
 **Purpose**: Customizable email templates for client communications with variable substitution and draft preview.
 
-**Technology**: localStorage persistence + variable replacement system
+**Technology**: SQLite Settings persistence + variable replacement system
 
 **Features**:
 - 6 default templates (Dog/Cat questionnaire reminders, protocol send, follow-up, consultation report, general)
@@ -698,11 +710,11 @@ import { EmailDraftDialog, EmailAttachment } from "@/components/ui/email-draft-d
 5. Preview shows Subject and Body with variable highlighting
 6. Variables tab shows all available template variables
 
-**Storage**: Custom templates stored in localStorage key `pbs_admin_email_templates`
+**Storage**: Custom templates stored in SQLite Settings table key `pbs_admin_email_templates`
 
 **Template Merging Logic**:
 - Default templates defined in code (EMAIL_TEMPLATES array)
-- Custom templates stored in localStorage
+- Custom templates stored in SQLite Settings table
 - Custom templates with same ID as defaults override them
 - Reset function restores default version by deleting custom override
 
@@ -950,7 +962,7 @@ Number of repeats: 5
 Special instructions: Give with food
 ```
 
-**Storage**: Template stored in localStorage key `pbs_admin_prescription_template`
+**Storage**: Template stored in SQLite Settings table key `pbs_admin_prescription_template`
 
 **Implementation Files**:
 - [prescriptionTemplates.ts](src/lib/prescriptionTemplates.ts) - Template management
@@ -1291,7 +1303,7 @@ interface Action {
 7. **External AI Processing** (optional, outside PBS Admin):
    - User manually processes transcript + questionnaire through preferred AI:
      - ChatGPT 5.1
-     - Claude Opus 4.5
+     - Claude Opus 4.6
      - Gemini 3 Pro
      - (Chooses best-performing AI at the time)
    - Uses custom prompts for:
@@ -1428,7 +1440,7 @@ Standardized prompt for extracting practitioner tasks from consultation transcri
 
 **Future Enhancements**:
 1. Direct API integration with Claude/ChatGPT for one-click processing
-2. Automatic transcription with Whisper API for voice memos
+2. ~~Automatic transcription with Whisper API~~ ✅ Implemented (gpt-4o-transcribe-diarize with native diarization)
 3. Fathom API integration for automatic transcript fetching
 4. Template library for common consultation task sets
 5. Task templates based on consultation type (aggression, anxiety, etc.)
@@ -1437,7 +1449,7 @@ Standardized prompt for extracting practitioner tasks from consultation transcri
 
 ### AI Report Generation
 
-**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Sonnet 4.5 API.
+**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Opus 4.6 API.
 
 **Technology**: Anthropic SDK with prompt caching for cost efficiency
 
@@ -1512,13 +1524,16 @@ Creates "Note" event after successful save:
 - **Cache duration**: 5 minutes (Anthropic default)
 - **Cache benefit**: Subsequent reports within 5 minutes use cached prompt (90% cost reduction on input tokens)
 - **Token estimation**: Shows estimated cost before generation
-- **Model**: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
-- **Pricing**: ~$3/million input tokens, ~$15/million output tokens (as of March 2024)
+- **Model**: Claude Opus 4.6 (`claude-opus-4-6-20260205`)
+- **Pricing**: ~$15/million input tokens, ~$75/million output tokens (as of February 2026)
 
 **Configuration** (`.env`):
 ```bash
 # Anthropic API (for report generation)
 VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
+
+# OpenAI API (for audio transcription)
+VITE_OPENAI_API_KEY=your_openai_api_key
 ```
 
 **Implementation Files**:
@@ -1608,7 +1623,7 @@ get_templates_path() -> Result<String, String>
 - **MS Word**: Must be installed for COM automation (desktop Office, not web version)
 
 **Future Enhancements**:
-1. Direct transcription integration (Whisper API for voice memos)
+1. ~~Direct transcription integration~~ ✅ Implemented (gpt-4o-transcribe-diarize)
 2. Fathom.video API integration for automatic Zoom transcript retrieval
 3. Automatic email attachment (requires file dialog integration)
 4. Template customization UI for adjusting report structure
@@ -1621,7 +1636,7 @@ get_templates_path() -> Result<String, String>
 
 **Purpose**: Manage and customize AI prompts for multiple report types with easy editing workflow via Claude Chat.
 
-**Technology**: localStorage persistence + variable substitution system
+**Technology**: SQLite Settings persistence + variable substitution system
 
 **Workflow**:
 1. User opens Settings menu → "AI Prompts"
@@ -1693,7 +1708,7 @@ Templates support dynamic content replacement:
 - `{{vetClinicName}}` - Primary care vet clinic (optional)
 
 **Storage**:
-- Custom templates stored in localStorage: `pbs_admin_prompt_templates`
+- Custom templates stored in SQLite Settings table: `pbs_admin_prompt_templates`
 - Merging logic: Custom templates override defaults by ID
 - Reset functionality restores default version
 
@@ -1811,9 +1826,9 @@ interface ReportGenerationResult {
 **Cost Estimation**:
 - `estimateReportCost(transcriptLength, questionnaireLength, reportTypes)` function
 - Shows estimated tokens and USD cost before generation
-- Pricing (as of March 2024):
-  - Input: ~$3/million tokens
-  - Output: ~$15/million tokens
+- Pricing (as of February 2026, Claude Opus 4.6):
+  - Input: ~$15/million tokens
+  - Output: ~$75/million tokens
 
 **Error Handling**:
 - Per-report error tracking (one failure doesn't block others)
@@ -1830,7 +1845,7 @@ interface ReportGenerationResult {
 VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
-**Model**: `claude-sonnet-4-20250514` (Claude Sonnet 4.5)
+**Model**: `claude-opus-4-6-20260205` (Claude Opus 4.6)
 
 ---
 
@@ -2366,7 +2381,7 @@ PBS Admin integrates with Jotform to automatically download submitted questionna
    - Downloads PDF (formatted questionnaire)
    - Saves files to client folder with timestamped filenames
    - Creates "Questionnaire Received" event
-5. **Submissions tracked** locally to prevent re-downloading (✅ localStorage tracking)
+5. **Submissions tracked** locally to prevent re-downloading (✅ SQLite Settings tracking)
 
 ### Client Matching Logic
 
@@ -2421,20 +2436,20 @@ PDF downloads use a Rust backend command instead of browser fetch to bypass CORS
 
 ### Tracking Processed Submissions
 
-**Implementation**: localStorage-based tracking to prevent duplicate downloads
+**Implementation**: SQLite Settings-based tracking to prevent duplicate downloads
 
 **Storage Key**: `pbs_admin_processed_jotform_submissions`
 
 **How It Works**:
-1. After successful processing, submission ID saved to localStorage array
+1. After successful processing, submission ID saved to SQLite Settings table
 2. On refresh/poll, `fetchUnprocessedSubmissions()` filters out tracked IDs
 3. Only unprocessed submissions appear in dashboard list
 4. Failed downloads NOT tracked (allows retry)
-5. Tracking persists across app sessions
+5. Tracking persists across app sessions and database backups
 
 **Functions**:
-- `getProcessedSubmissionIds()` - Reads Set of submission IDs from localStorage
-- `markSubmissionAsProcessed(submissionId)` - Adds ID to localStorage after success
+- `getProcessedSubmissionIds()` - Reads Set of submission IDs from SQLite Settings
+- `markSubmissionAsProcessed(submissionId)` - Adds ID to Settings table after success
 - Automatic filtering in `fetchUnprocessedSubmissions()`
 
 ### Event Creation
@@ -2522,7 +2537,7 @@ VITE_JOTFORM_CAT_FORM_ID=241828180919868
 ### Future Enhancements
 
 **Potential Improvements**:
-1. ✅ **Track Processed Submissions**: Implemented with localStorage tracking (prevents duplicate downloads)
+1. ✅ **Track Processed Submissions**: Implemented with SQLite Settings tracking (prevents duplicate downloads)
 2. **Auto-Update Client/Pet Records**: Use questionnaire data to enrich client (address) and pet (breed, age, weight) records
 3. **Auto-Poll on Startup**: Automatically sync when app launches
 4. **Background Polling**: Check for new submissions every N minutes
@@ -2592,7 +2607,7 @@ PBS Admin provides automatic scheduled backups with configurable frequency and r
 - Checks every hour if backup is due
 - Creates backup if last backup exceeds frequency threshold
 - Applies retention policy after each backup
-- Settings stored in localStorage
+- Settings stored in SQLite Settings table
 
 ### Backup Settings
 
@@ -2629,9 +2644,9 @@ delete_backup_file(backup_path: String) -> Result<String, String>
 ### Backup Service Functions
 
 ```typescript
-// Settings management
-getBackupSettings(): BackupSettings
-saveBackupSettings(settings: Partial<BackupSettings>): void
+// Settings management (async - reads from SQLite)
+getBackupSettings(): Promise<BackupSettings>
+saveBackupSettings(settings: Partial<BackupSettings>): Promise<void>
 
 // Backup operations
 createBackupWithTracking(): Promise<BackupResult>
@@ -2725,9 +2740,9 @@ disableAutoStart(): Promise<{ success: boolean; error?: string }>
 // Toggle auto-start state
 toggleAutoStart(enable: boolean): Promise<{ success: boolean; error?: string }>
 
-// Minimize to tray preference (localStorage)
-getMinimizeToTray(): boolean
-setMinimizeToTray(enabled: boolean): void
+// Minimize to tray preference (SQLite Settings)
+getMinimizeToTray(): Promise<boolean>
+setMinimizeToTray(enabled: boolean): Promise<void>
 ```
 
 ### Tauri Backend Setup
@@ -2806,11 +2821,11 @@ Required permissions:
 
 ### Overview
 
-PBS Admin requires API keys for AI report generation (Anthropic Claude) and email sending (Resend). In development, these can be configured via `.env` file, but in production builds the `.env` file is not bundled. The API Keys Settings system allows users to configure these keys directly in the app.
+PBS Admin requires API keys for AI report generation (Anthropic Claude), audio transcription (OpenAI), and email sending (Resend). In development, these can be configured via `.env` file, but in production builds the `.env` file is not bundled. The API Keys Settings system allows users to configure these keys directly in the app.
 
 **Features**:
 - **Settings Dialog**: Accessible via Settings menu > API Keys
-- **Local Storage**: Keys stored securely in browser localStorage
+- **SQLite Storage**: Keys stored in local SQLite Settings table (migrated from localStorage)
 - **Fallback**: Still checks environment variables for development
 - **Validation**: Warns if key format doesn't match expected pattern
 
@@ -2819,6 +2834,7 @@ PBS Admin requires API keys for AI report generation (Anthropic Claude) and emai
 | Service | Key Prefix | Purpose |
 |---------|-----------|---------|
 | **Anthropic** | `sk-ant-` | AI report generation (Claude API) |
+| **OpenAI** | `sk-` | Audio transcription with speaker diarization |
 | **Resend** | `re_` | Email sending with attachments |
 
 ### Architecture
@@ -2829,8 +2845,8 @@ User enters API key in Settings
         ▼
 apiKeysService.ts
         │
-        │ saveApiKeys() → localStorage
-        │ getAnthropicApiKey() / getResendApiKey()
+        │ saveApiKeys() → SQLite Settings table
+        │ getAnthropicApiKey() / getOpenAIApiKey() / getResendApiKey()
         ▼
 Services (aiService.ts, emailService.ts)
         │
@@ -2846,20 +2862,23 @@ import {
   getApiKeys,
   saveApiKeys,
   getAnthropicApiKey,
+  getOpenAIApiKey,
   getResendApiKey,
   isAnthropicConfigured,
+  isOpenAIConfigured,
   isResendConfigured,
   clearApiKeys,
   maskApiKey,
 } from "@/lib/services/apiKeysService";
 
-// Check if configured
-if (isAnthropicConfigured()) {
-  const key = getAnthropicApiKey(); // Returns key or null
+// Check if configured (all async - reads from SQLite)
+if (await isAnthropicConfigured()) {
+  const key = await getAnthropicApiKey(); // Returns key or null
 }
 
 // Save a key
-saveApiKeys({ anthropicApiKey: "sk-ant-..." });
+await saveApiKeys({ anthropicApiKey: "sk-ant-..." });
+await saveApiKeys({ openaiApiKey: "sk-..." });
 
 // Mask for display
 maskApiKey("sk-ant-abc123xyz"); // "sk-ant-a••••xyz"
@@ -2867,7 +2886,7 @@ maskApiKey("sk-ant-abc123xyz"); // "sk-ant-a••••xyz"
 
 ### Key Priority
 
-1. **localStorage** (user-configured via Settings)
+1. **SQLite Settings table** (user-configured via Settings)
 2. **Environment variable** (development fallback)
 
 ### Access
@@ -2884,19 +2903,21 @@ Settings menu (gear icon) → API Keys
 
 ### Storage
 
-Keys stored in localStorage under key: `pbs_admin_api_keys`
+Keys stored in SQLite Settings table under key: `pbs_admin_api_keys`
 
 ```json
 {
   "anthropicApiKey": "sk-ant-...",
+  "openaiApiKey": "sk-...",
   "resendApiKey": "re_..."
 }
 ```
 
 ### Security Notes
 
-- Keys are stored locally on the user's machine
+- Keys are stored locally in SQLite database on the user's machine
 - Keys are never sent to any server except the respective API providers
+- Keys are included in database backups (encrypted backup recommended for sensitive environments)
 - For production builds, users must configure keys manually (no .env bundling)
 - Clear keys function available for complete removal
 
@@ -3167,7 +3188,7 @@ npm test -- --watch
     - Open in email app for desktop clients (Outlook, Mail)
     - Character count and edit tracking
   - Variable substitution system with {{variableName}} syntax
-  - localStorage persistence for custom templates
+  - SQLite Settings persistence for custom templates
   - Template merging: Custom templates override defaults by ID
   - Reset to default functionality for customized templates
 - **Automation Rules Engine** - Fully functional with 4 active workflows
@@ -3218,7 +3239,7 @@ npm test -- --watch
   - Create "Questionnaire Received" event with submission details
   - UI component in Dashboard with sync status and file indicators
   - Tauri file writing commands (write_text_file, write_binary_file)
-  - localStorage tracking to prevent duplicate downloads
+  - SQLite Settings tracking to prevent duplicate downloads
 
 📋 **TODO - Future Enhancements**:
 - ✅ Email integration for task reminders (Completed - Template system with draft preview)
@@ -3349,5 +3370,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2026-01-30
-**Version**: 2.1.0 (API Keys Settings - Production-ready API key configuration via Settings dialog, localStorage storage for Anthropic and Resend keys, eliminates .env dependency for installed builds)
+**Last Updated**: 2026-02-25
+**Version**: 2.2.0 (Security hardening, AI model upgrades to Claude Opus 4.6, transcription overhaul to gpt-4o-transcribe-diarize, localStorage to SQLite migration, OpenAI API key support)

@@ -271,12 +271,13 @@ fn download_file(url: String, file_path: String) -> Result<String, String> {
     }
 }
 
-/// Download update installer to temp directory and run it
+/// Download update installer to temp directory with hash verification, then run it
 #[tauri::command]
-async fn download_and_run_update(url: String, filename: String) -> Result<String, String> {
-    // Validate URL is from the official GitHub repository
-    if !url.starts_with("https://github.com/PBSGlenn/PBS_Admin/") {
-        return Err("Updates can only be downloaded from the official PBS Admin GitHub repository.".to_string());
+async fn download_and_run_update(url: String, filename: String, expected_size: Option<u64>) -> Result<String, String> {
+    // Validate URL is from the official GitHub repository releases
+    // Only allow the specific releases download pattern
+    if !url.starts_with("https://github.com/PBSGlenn/PBS_Admin/releases/download/") {
+        return Err("Updates can only be downloaded from official PBS Admin GitHub releases.".to_string());
     }
 
     // Validate filename has no path traversal and is an executable
@@ -298,12 +299,31 @@ async fn download_and_run_update(url: String, filename: String) -> Result<String
 
     let file_path = temp_dir.join(&filename);
 
-    // Download file from URL using async reqwest
-    let client = reqwest::Client::new();
+    // Download file from URL using async reqwest with redirect policy
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
     let response = client.get(&url)
         .send()
         .await
         .map_err(|e| format!("Failed to download installer: {}", e))?;
+
+    // Verify we ended up at a GitHub domain after redirects
+    let final_url = response.url().to_string();
+    let allowed_hosts = [
+        "github.com",
+        "objects.githubusercontent.com",
+        "github-releases.githubusercontent.com",
+    ];
+    let final_host = response.url().host_str().unwrap_or("");
+    if !allowed_hosts.iter().any(|h| final_host == *h || final_host.ends_with(&format!(".{}", h))) {
+        return Err(format!(
+            "Download redirected to untrusted host: {}. Aborting for security.",
+            final_host
+        ));
+    }
 
     // Check response status
     if !response.status().is_success() {
@@ -315,12 +335,34 @@ async fn download_and_run_update(url: String, filename: String) -> Result<String
         .await
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
+    // Verify file size if expected size was provided (from GitHub release API)
+    if let Some(expected) = expected_size {
+        if bytes.len() as u64 != expected {
+            return Err(format!(
+                "Downloaded file size ({} bytes) does not match expected size ({} bytes). Download may be corrupted or tampered with.",
+                bytes.len(), expected
+            ));
+        }
+    }
+
+    // Basic sanity check: installer should be a reasonable size (> 1MB, < 500MB)
+    if bytes.len() < 1_000_000 {
+        return Err("Downloaded file is too small to be a valid installer. Aborting.".to_string());
+    }
+    if bytes.len() > 500_000_000 {
+        return Err("Downloaded file is unexpectedly large. Aborting.".to_string());
+    }
+
+    // Verify it looks like a PE executable (MZ header)
+    if bytes.len() < 2 || bytes[0] != 0x4D || bytes[1] != 0x5A {
+        return Err("Downloaded file is not a valid Windows executable. Aborting.".to_string());
+    }
+
     // Write to file
     fs::write(&file_path, &bytes)
         .map_err(|e| format!("Failed to write installer file: {}", e))?;
 
     // Run the installer
-    // Use /S for silent install or run normally for user interaction
     Command::new(&file_path)
         .spawn()
         .map_err(|e| format!("Failed to launch installer: {}", e))?;
@@ -565,10 +607,19 @@ struct TranscriptionResponse {
     text: String,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct DiarizedSegment {
+    speaker: String,
+    text: String,
+    start: f64,
+    end: f64,
+}
+
 #[derive(Serialize)]
 struct TranscribeResult {
     text: String,
     duration: f64,
+    segments: Option<Vec<DiarizedSegment>>,
 }
 
 /// Save uploaded audio file to temp directory for processing
@@ -604,30 +655,41 @@ fn save_temp_audio_file(file_name: String, file_data: Vec<u8>) -> Result<String,
     }
 }
 
-/// Transcribe audio using OpenAI Whisper API
+/// Transcribe audio using OpenAI gpt-4o-transcribe-diarize API
+/// Uses native speaker diarization - no separate Claude call needed
 #[tauri::command]
-async fn transcribe_audio(file_path: String, language: String) -> Result<TranscribeResult, String> {
+async fn transcribe_audio(
+    file_path: String,
+    language: String,
+    api_key: Option<String>,
+    speaker_names: Option<Vec<String>>,
+) -> Result<TranscribeResult, String> {
     println!("Transcribing audio file: {}", file_path);
 
-    // Get OpenAI API key from environment
-    let api_key = std::env::var("OPENAI_API_KEY")
-        .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())?;
-
-    println!("API key found");
+    // Use provided API key or fall back to environment variable
+    let api_key = if let Some(key) = api_key {
+        if key.is_empty() {
+            return Err("OpenAI API key cannot be empty".to_string());
+        }
+        key
+    } else {
+        std::env::var("OPENAI_API_KEY")
+            .map_err(|_| "OpenAI API key not configured. Please add your API key in Settings > API Keys.".to_string())?
+    };
 
     // Read audio file
     let file_data = fs::read(&file_path)
         .map_err(|e| format!("Failed to read audio file: {}", e))?;
 
     let file_size = file_data.len();
-    println!("Audio file size: {} bytes", file_size);
+    println!("Audio file size: {} bytes ({:.1} MB)", file_size, file_size as f64 / 1_048_576.0);
 
-    // Check file size limit (OpenAI Whisper API has 25MB limit)
-    const MAX_FILE_SIZE: usize = 25 * 1024 * 1024; // 25MB in bytes
+    // Check file size limit (OpenAI API has 25MB limit)
+    const MAX_FILE_SIZE: usize = 25 * 1024 * 1024; // 25MB
     if file_size > MAX_FILE_SIZE {
-        let mb = file_size as f64 / 1_024_000.0;
+        let mb = file_size as f64 / 1_048_576.0;
         return Err(format!(
-            "Audio file is too large ({:.1} MB). OpenAI Whisper API has a 25MB limit. Please compress the audio file or split it into smaller segments.",
+            "Audio file is too large ({:.1} MB). OpenAI API has a 25MB limit. Please compress the audio file or split it into smaller segments.",
             mb
         ));
     }
@@ -646,25 +708,42 @@ async fn transcribe_audio(file_path: String, language: String) -> Result<Transcr
         "audio/mpeg"
     } else if file_name.ends_with(".wav") {
         "audio/wav"
+    } else if file_name.ends_with(".ogg") {
+        "audio/ogg"
+    } else if file_name.ends_with(".flac") {
+        "audio/flac"
     } else {
         "audio/mpeg" // default
     };
 
-    // Create multipart form
+    // Create multipart form with diarization model
     let part = reqwest::multipart::Part::bytes(file_data)
         .file_name(file_name)
         .mime_str(mime_type)
         .map_err(|e| format!("Failed to set MIME type: {}", e))?;
 
-    let form = reqwest::multipart::Form::new()
-        .text("model", "whisper-1")
+    let mut form = reqwest::multipart::Form::new()
+        .text("model", "gpt-4o-transcribe-diarize")
         .text("language", language)
+        .text("response_format", "diarized_json")
+        .text("chunking_strategy", "auto")
         .part("file", part);
 
-    println!("Sending request to OpenAI Whisper API...");
+    // Add speaker names if provided (up to 4)
+    if let Some(names) = speaker_names {
+        for name in names.into_iter().take(4) {
+            form = form.text("known_speaker_names[]", name);
+        }
+    }
+
+    println!("Sending request to OpenAI Transcription API (gpt-4o-transcribe-diarize)...");
 
     // Send request to OpenAI API
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout for long audio
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
     let response = client
         .post("https://api.openai.com/v1/audio/transcriptions")
         .header("Authorization", format!("Bearer {}", api_key))
@@ -680,7 +759,7 @@ async fn transcribe_audio(file_path: String, language: String) -> Result<Transcr
         return Err(format!("OpenAI API error: {}", error_text));
     }
 
-    // Parse response
+    // Parse diarized JSON response
     let response_json: serde_json::Value = response.json().await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
@@ -688,22 +767,38 @@ async fn transcribe_audio(file_path: String, language: String) -> Result<Transcr
 
     let text = response_json["text"]
         .as_str()
-        .ok_or("Missing 'text' field in response")?
+        .unwrap_or("")
         .to_string();
 
-    // Duration might not be in response with default format, estimate from file size
-    // Rough estimate: ~1 minute per 1MB for typical audio formats
-    let duration = response_json["duration"]
-        .as_f64()
-        .unwrap_or_else(|| {
-            // Fallback: estimate duration from file size (very rough)
-            let mb = file_size as f64 / 1_000_000.0;
-            mb * 60.0 // Assume ~1MB per minute
+    // Parse diarized segments
+    let segments: Option<Vec<DiarizedSegment>> = response_json["segments"]
+        .as_array()
+        .map(|arr| {
+            arr.iter().filter_map(|seg| {
+                Some(DiarizedSegment {
+                    speaker: seg["speaker"].as_str()?.to_string(),
+                    text: seg["text"].as_str()?.to_string(),
+                    start: seg["start"].as_f64()?,
+                    end: seg["end"].as_f64()?,
+                })
+            }).collect()
         });
 
-    println!("Transcription complete. Text length: {} chars, Duration: {}s", text.len(), duration);
+    // Calculate duration from last segment end time, or estimate from file size
+    let duration = segments.as_ref()
+        .and_then(|segs| segs.last())
+        .map(|last| last.end)
+        .or_else(|| response_json["duration"].as_f64())
+        .unwrap_or_else(|| {
+            let mb = file_size as f64 / 1_000_000.0;
+            mb * 60.0
+        });
 
-    Ok(TranscribeResult { text, duration })
+    let segment_count = segments.as_ref().map(|s| s.len()).unwrap_or(0);
+    println!("Transcription complete. Text: {} chars, Duration: {:.0}s, Segments: {}",
+        text.len(), duration, segment_count);
+
+    Ok(TranscribeResult { text, duration, segments })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1196,7 +1291,7 @@ async fn generate_ai_report(
             .map_err(|_| "Anthropic API key not configured. Please add your API key in Settings > API Keys.".to_string())?
     };
 
-    let model = "claude-opus-4-5-20251101";
+    let model = "claude-opus-4-6-20260205";
 
     println!("Generating AI report with model: {}", model);
     println!("System prompt length: {} chars", system_prompt.len());

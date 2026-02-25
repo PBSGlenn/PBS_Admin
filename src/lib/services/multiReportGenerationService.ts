@@ -284,10 +284,9 @@ export async function estimateReportCost(
     }
   }
 
-  // Pricing (as of 2024, approximate):
-  // Claude Sonnet 4: ~$3/million input tokens, ~$15/million output tokens
-  const inputCostPer1M = 3.0;
-  const outputCostPer1M = 15.0;
+  // Claude Opus 4.6 pricing (February 2026)
+  const inputCostPer1M = 15.0;
+  const outputCostPer1M = 75.0;
 
   const inputCostUSD = (totalInputTokens / 1_000_000) * inputCostPer1M;
   const outputCostUSD = (totalOutputTokens / 1_000_000) * outputCostPer1M;

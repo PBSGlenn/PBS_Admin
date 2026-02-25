@@ -19,6 +19,7 @@ export interface UpdateInfo {
   releaseNotes: string | null;
   installerUrl: string | null;
   installerName: string | null;
+  installerSize: number | null;
   error: string | null;
 }
 
@@ -56,6 +57,7 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
           releaseNotes: null,
           installerUrl: null,
           installerName: null,
+          installerSize: null,
           error: null,
         };
       }
@@ -71,6 +73,7 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
     // Find the Windows installer asset (NSIS .exe)
     let installerUrl: string | null = null;
     let installerName: string | null = null;
+    let installerSize: number | null = null;
     if (release.assets && Array.isArray(release.assets)) {
       const installerAsset = release.assets.find(
         (asset: { name: string }) =>
@@ -79,6 +82,7 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
       if (installerAsset) {
         installerUrl = installerAsset.browser_download_url || null;
         installerName = installerAsset.name || null;
+        installerSize = installerAsset.size || null;
       }
     }
 
@@ -90,6 +94,7 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
       releaseNotes: release.body || null,
       installerUrl,
       installerName,
+      installerSize,
       error: null,
     };
   } catch (error) {
@@ -102,6 +107,7 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
       releaseNotes: null,
       installerUrl: null,
       installerName: null,
+      installerSize: null,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -109,15 +115,18 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
 
 /**
  * Download and run the installer update
+ * Passes expected file size from GitHub API for integrity verification
  */
 export async function downloadAndInstallUpdate(
   installerUrl: string,
-  installerName: string
+  installerName: string,
+  expectedSize?: number | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await invoke("download_and_run_update", {
       url: installerUrl,
       filename: installerName,
+      expectedSize: expectedSize ?? null,
     });
     return { success: true };
   } catch (error) {

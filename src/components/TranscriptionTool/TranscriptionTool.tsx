@@ -91,12 +91,12 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
     if (!file) return;
 
     // Validate file type
-    const validTypes = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/x-m4a'];
-    const validExtensions = ['.mp3', '.m4a', '.wav', '.mp4'];
+    const validTypes = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/x-m4a', 'audio/ogg', 'audio/flac'];
+    const validExtensions = ['.mp3', '.m4a', '.wav', '.mp4', '.ogg', '.flac'];
     const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
 
     if (!validTypes.includes(file.type) && !hasValidExtension) {
-      toast.error("Please select a valid audio file (.mp3, .m4a, .wav)");
+      toast.error("Please select a valid audio file (.mp3, .m4a, .wav, .ogg, .flac)");
       return;
     }
 
@@ -343,7 +343,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".mp3,.m4a,.wav,.mp4,audio/*"
+                accept=".mp3,.m4a,.wav,.mp4,.ogg,.flac,audio/*"
                 onChange={handleFileSelect}
                 className="hidden"
               />
@@ -387,7 +387,6 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
                       2: "Vet, Client",
                       3: "Vet, Client, Partner",
                       4: "Vet, Client, Partner, Family Member",
-                      5: "Vet, Client, Partner, Family Member 1, Family Member 2"
                     };
                     setCustomLabels(defaultLabels[count] || "Vet, Client");
                   }}
@@ -400,7 +399,6 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
                     <SelectItem value="2">2 speakers</SelectItem>
                     <SelectItem value="3">3 speakers</SelectItem>
                     <SelectItem value="4">4 speakers</SelectItem>
-                    <SelectItem value="5">5 speakers</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -431,7 +429,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
                     Estimated Cost
                   </div>
                   <div className="text-[10px] text-blue-700 dark:text-blue-300">
-                    Whisper: ${estimatedCost.whisper.toFixed(4)} + Claude: ${estimatedCost.claude.toFixed(4)} = <strong>${estimatedCost.total.toFixed(4)} USD</strong>
+                    Transcription (with speaker diarization): <strong>${estimatedCost.total.toFixed(4)} USD</strong>
                   </div>
                 </div>
               </div>
@@ -547,7 +545,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
                       Actual Cost: ${transcriptionResult.cost.total.toFixed(4)} USD
                     </div>
                     <div className="text-[10px] text-green-700 dark:text-green-300 mt-1">
-                      Whisper: ${transcriptionResult.cost.whisper.toFixed(4)} | Claude: ${transcriptionResult.cost.claude.toFixed(4)}
+                      Transcription with speaker diarization (gpt-4o-transcribe-diarize)
                     </div>
                   </div>
                 )}

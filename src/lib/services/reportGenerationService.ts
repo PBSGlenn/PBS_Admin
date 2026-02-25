@@ -65,9 +65,9 @@ export function estimateTokenCost(transcriptLength: number): {
   const estimatedInputTokens = transcriptLength / 4 + 1000; // +1000 for system prompt
   const estimatedOutputTokens = 2000; // Average report length
 
-  // Claude Sonnet 4.5 pricing (as of March 2024)
-  const inputCostPer1M = 3.0; // $3 per million input tokens
-  const outputCostPer1M = 15.0; // $15 per million output tokens
+  // Claude Opus 4.6 pricing (February 2026)
+  const inputCostPer1M = 15.0; // $15 per million input tokens
+  const outputCostPer1M = 75.0; // $75 per million output tokens
 
   const inputCost = (estimatedInputTokens / 1_000_000) * inputCostPer1M;
   const outputCost = (estimatedOutputTokens / 1_000_000) * outputCostPer1M;

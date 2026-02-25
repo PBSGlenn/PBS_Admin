@@ -69,7 +69,8 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
 
       const result = await downloadAndInstallUpdate(
         updateInfo.installerUrl,
-        updateInfo.installerName
+        updateInfo.installerName,
+        updateInfo.installerSize
       );
 
       if (result.success) {

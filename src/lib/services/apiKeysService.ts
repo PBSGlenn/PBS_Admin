@@ -9,11 +9,13 @@ const API_KEYS_STORAGE_KEY = 'pbs_admin_api_keys';
 export interface ApiKeys {
   anthropicApiKey: string | null;
   resendApiKey: string | null;
+  openaiApiKey: string | null;
 }
 
 const DEFAULT_API_KEYS: ApiKeys = {
   anthropicApiKey: null,
   resendApiKey: null,
+  openaiApiKey: null,
 };
 
 /**
@@ -46,6 +48,29 @@ export async function getAnthropicApiKey(): Promise<string | null> {
     return envKey;
   }
   return null;
+}
+
+/**
+ * Get OpenAI API key
+ * Falls back to environment variable for development
+ */
+export async function getOpenAIApiKey(): Promise<string | null> {
+  const keys = await getApiKeys();
+  if (keys.openaiApiKey) {
+    return keys.openaiApiKey;
+  }
+  const envKey = import.meta.env.VITE_OPENAI_API_KEY;
+  if (envKey) {
+    return envKey;
+  }
+  return null;
+}
+
+/**
+ * Check if OpenAI API key is configured
+ */
+export async function isOpenAIConfigured(): Promise<boolean> {
+  return (await getOpenAIApiKey()) !== null;
 }
 
 /**

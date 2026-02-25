@@ -42,9 +42,9 @@ export interface PromptTemplateManagerProps {
 // Current AI model configuration
 const AI_MODEL = {
   provider: "Anthropic",
-  name: "Claude Opus 4.5",
-  modelId: "claude-opus-4-5-20251101",
-  releaseDate: "November 2025"
+  name: "Claude Opus 4.6",
+  modelId: "claude-opus-4-6-20260205",
+  releaseDate: "February 2026"
 };
 
 export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManagerProps) {
