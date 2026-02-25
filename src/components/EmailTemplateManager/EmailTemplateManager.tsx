@@ -50,8 +50,8 @@ export function EmailTemplateManager() {
     loadTemplates();
   }, []);
 
-  const loadTemplates = () => {
-    setTemplates(getAllTemplates());
+  const loadTemplates = async () => {
+    setTemplates(await getAllTemplates());
   };
 
   const handleNewTemplate = () => {
@@ -83,11 +83,11 @@ export function EmailTemplateManager() {
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     if (!editingTemplate) return;
 
-    saveCustomTemplate(editingTemplate);
-    loadTemplates();
+    await saveCustomTemplate(editingTemplate);
+    await loadTemplates();
     setIsEditDialogOpen(false);
     setEditingTemplate(null);
     toast.success(`Template "${editingTemplate.name}" saved successfully`);
@@ -97,10 +97,10 @@ export function EmailTemplateManager() {
     setDeleteConfirmId(templateId);
   };
 
-  const confirmDeleteTemplate = () => {
+  const confirmDeleteTemplate = async () => {
     if (deleteConfirmId) {
-      deleteCustomTemplate(deleteConfirmId);
-      loadTemplates();
+      await deleteCustomTemplate(deleteConfirmId);
+      await loadTemplates();
       toast.success("Template deleted successfully");
       setDeleteConfirmId(null);
     }
@@ -115,10 +115,10 @@ export function EmailTemplateManager() {
     setResetConfirmId(templateId);
   };
 
-  const confirmResetTemplate = () => {
+  const confirmResetTemplate = async () => {
     if (resetConfirmId) {
-      resetToDefaultTemplate(resetConfirmId);
-      loadTemplates();
+      await resetToDefaultTemplate(resetConfirmId);
+      await loadTemplates();
       toast.success("Template reset to default");
       setResetConfirmId(null);
     }

@@ -274,6 +274,19 @@ fn download_file(url: String, file_path: String) -> Result<String, String> {
 /// Download update installer to temp directory and run it
 #[tauri::command]
 async fn download_and_run_update(url: String, filename: String) -> Result<String, String> {
+    // Validate URL is from the official GitHub repository
+    if !url.starts_with("https://github.com/PBSGlenn/PBS_Admin/") {
+        return Err("Updates can only be downloaded from the official PBS Admin GitHub repository.".to_string());
+    }
+
+    // Validate filename has no path traversal and is an executable
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err("Invalid installer filename.".to_string());
+    }
+    if !filename.to_lowercase().ends_with(".exe") {
+        return Err("Installer must be an .exe file.".to_string());
+    }
+
     // Get temp directory
     let temp_dir = std::env::temp_dir().join("PBS_Admin_Updates");
 
@@ -487,6 +500,12 @@ fn convert_docx_to_pdf(docx_path: String, pdf_path: String) -> Result<String, St
     // Build PowerShell script for Word COM automation
     // IMPORTANT: The DOCX file MUST be closed in Word before conversion
     // If the file is open, Word COM will hang trying to access it
+    // Use single-quoted strings in PowerShell to prevent variable expansion injection.
+    // Single quotes treat content literally — no $variable or backtick interpretation.
+    // Escape any embedded single quotes by doubling them ('').
+    let safe_docx = docx_path.replace("'", "''");
+    let safe_pdf = pdf_path.replace("'", "''");
+
     let ps_script = format!(
         r#"
 $ErrorActionPreference = "Stop"
@@ -498,10 +517,10 @@ try {{
 
     # Open document: FileName, ConfirmConversions, ReadOnly
     # ReadOnly=$true helps avoid conflicts if file is somehow locked
-    $doc = $word.Documents.Open("{}", $false, $true)
+    $doc = $word.Documents.Open('{}', $false, $true)
 
     # Save as PDF (17 = wdFormatPDF)
-    $doc.SaveAs("{}", 17)
+    $doc.SaveAs('{}', 17)
     $doc.Close($false)
     Write-Output "Success"
 }} catch {{
@@ -516,8 +535,8 @@ try {{
     [System.GC]::WaitForPendingFinalizers()
 }}
 "#,
-        docx_path.replace("\\", "\\\\"),
-        pdf_path.replace("\\", "\\\\")
+        safe_docx,
+        safe_pdf
     );
 
     // Execute PowerShell script
@@ -594,7 +613,7 @@ async fn transcribe_audio(file_path: String, language: String) -> Result<Transcr
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())?;
 
-    println!("API key found: {}...", &api_key[..10]);
+    println!("API key found");
 
     // Read audio file
     let file_data = fs::read(&file_path)
@@ -665,7 +684,7 @@ async fn transcribe_audio(file_path: String, language: String) -> Result<Transcr
     let response_json: serde_json::Value = response.json().await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    println!("Response received: {}", response_json);
+    println!("Transcription response received successfully");
 
     let text = response_json["text"]
         .as_str()

@@ -4,6 +4,11 @@
 import { query, execute } from "../db";
 import type { Pet, PetInput } from "../types";
 
+/** Whitelist of columns allowed in dynamic UPDATE statements */
+const PET_VALID_FIELDS = new Set([
+  'name', 'species', 'breed', 'sex', 'dateOfBirth', 'notes',
+]);
+
 /**
  * Get all pets
  */
@@ -88,7 +93,7 @@ export async function updatePet(petId: number, input: Partial<PetInput>): Promis
   const values: any[] = [];
 
   Object.entries(input).forEach(([key, value]) => {
-    if (value !== undefined && key !== 'clientId') { // Don't allow changing clientId
+    if (value !== undefined && PET_VALID_FIELDS.has(key)) {
       updates.push(`${key} = ?`);
       values.push(value);
     }

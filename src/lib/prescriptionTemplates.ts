@@ -2,6 +2,7 @@
 // Similar to email templates and AI prompts - allows customizable prescription format
 
 import { logger } from './utils/logger';
+import { getSettingJson, setSettingJson, deleteSetting } from './services/settingsService';
 
 export interface PrescriptionTemplate {
   id: string;
@@ -68,25 +69,16 @@ const STORAGE_KEY = 'pbs_admin_prescription_template';
 /**
  * Get the current prescription template (custom or default)
  */
-export function getPrescriptionTemplate(): PrescriptionTemplate {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const customTemplate = JSON.parse(stored) as PrescriptionTemplate;
-      return customTemplate;
-    }
-  } catch (error) {
-    logger.error('Error loading custom prescription template:', error);
-  }
-  return DEFAULT_TEMPLATE;
+export async function getPrescriptionTemplate(): Promise<PrescriptionTemplate> {
+  return getSettingJson<PrescriptionTemplate>(STORAGE_KEY, DEFAULT_TEMPLATE);
 }
 
 /**
  * Save custom prescription template
  */
-export function savePrescriptionTemplate(template: PrescriptionTemplate): void {
+export async function savePrescriptionTemplate(template: PrescriptionTemplate): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(template));
+    await setSettingJson(STORAGE_KEY, template);
   } catch (error) {
     logger.error('Error saving prescription template:', error);
     throw new Error('Failed to save prescription template');
@@ -96,9 +88,9 @@ export function savePrescriptionTemplate(template: PrescriptionTemplate): void {
 /**
  * Reset to default prescription template
  */
-export function resetPrescriptionTemplate(): void {
+export async function resetPrescriptionTemplate(): Promise<void> {
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    await deleteSetting(STORAGE_KEY);
   } catch (error) {
     logger.error('Error resetting prescription template:', error);
     throw new Error('Failed to reset prescription template');

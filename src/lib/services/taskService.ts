@@ -5,6 +5,13 @@ import { query, execute } from "../db";
 import type { Task, TaskInput, TaskStatus } from "../types";
 import { dateToISO } from "../utils/dateUtils";
 
+/** Whitelist of columns allowed in dynamic UPDATE statements */
+const TASK_VALID_FIELDS = new Set([
+  'clientId', 'eventId', 'description', 'dueDate',
+  'status', 'priority', 'automatedAction', 'triggeredBy',
+  'completedOn', 'parentTaskId',
+]);
+
 /**
  * Get all tasks
  */
@@ -141,7 +148,7 @@ export async function updateTask(taskId: number, input: Partial<TaskInput>): Pro
   const values: any[] = [];
 
   Object.entries(input).forEach(([key, value]) => {
-    if (value !== undefined) {
+    if (value !== undefined && TASK_VALID_FIELDS.has(key)) {
       updates.push(`${key} = ?`);
       values.push(value);
     }

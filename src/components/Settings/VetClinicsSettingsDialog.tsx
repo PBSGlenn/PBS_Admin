@@ -26,6 +26,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   getVetClinics,
   addVetClinic,
@@ -43,6 +44,8 @@ export function VetClinicsSettingsDialog({ isOpen, onClose }: VetClinicsSettings
   const [clinics, setClinics] = useState<VetClinic[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [clinicToDelete, setClinicToDelete] = useState<string | null>(null);
 
   // Form state
   const [formName, setFormName] = useState("");
@@ -54,7 +57,7 @@ export function VetClinicsSettingsDialog({ isOpen, onClose }: VetClinicsSettings
   // Load clinics when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setClinics(getVetClinics());
+      getVetClinics().then(setClinics);
       resetForm();
     }
   }, [isOpen]);
@@ -84,7 +87,7 @@ export function VetClinicsSettingsDialog({ isOpen, onClose }: VetClinicsSettings
     setIsAdding(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formName.trim()) {
       toast.error("Clinic name is required");
       return;
@@ -103,26 +106,32 @@ export function VetClinicsSettingsDialog({ isOpen, onClose }: VetClinicsSettings
     };
 
     if (editingId) {
-      // Update existing
-      updateVetClinic(editingId, clinicData);
+      await updateVetClinic(editingId, clinicData);
       toast.success("Clinic updated");
     } else {
-      // Add new
-      addVetClinic(clinicData);
+      await addVetClinic(clinicData);
       toast.success("Clinic added");
     }
 
-    setClinics(getVetClinics());
+    setClinics(await getVetClinics());
     resetForm();
   };
 
   const handleDelete = (id: string) => {
-    deleteVetClinic(id);
-    setClinics(getVetClinics());
-    if (editingId === id) {
-      resetForm();
+    setClinicToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirmed = async () => {
+    if (clinicToDelete) {
+      await deleteVetClinic(clinicToDelete);
+      setClinics(await getVetClinics());
+      if (editingId === clinicToDelete) {
+        resetForm();
+      }
+      toast.success("Clinic deleted");
     }
-    toast.success("Clinic deleted");
+    setClinicToDelete(null);
   };
 
   const handleCancel = () => {
@@ -383,6 +392,17 @@ export function VetClinicsSettingsDialog({ isOpen, onClose }: VetClinicsSettings
           </div>
         </div>
       </DialogContent>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete vet clinic?"
+        description={`Are you sure you want to delete "${clinics.find(c => c.id === clinicToDelete)?.name || 'this clinic'}"? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={handleDeleteConfirmed}
+      />
     </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 // PBS Admin - Client View Component
 // Two-pane layout for editing client and managing related data
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -161,20 +161,24 @@ export function ClientView({ client, onClose }: ClientViewProps) {
   };
 
   // Handle field changes
-  const handleChange = (field: string, value: string) => {
+  const handleChange = useCallback((field: string, value: string) => {
     // Auto-format mobile phone number as user types
     if (field === "mobile") {
       value = formatAustralianMobile(value);
     }
 
     setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: "" }));
-    }
-  };
+    setErrors(prev => {
+      if (prev[field]) {
+        const { [field]: _, ...rest } = prev;
+        return rest;
+      }
+      return prev;
+    });
+  }, []);
 
   // Handle folder button click - either open existing folder or show creation dialog
-  const handleFolderButtonClick = async () => {
+  const handleFolderButtonClick = useCallback(async () => {
     if (currentFolderPath) {
       // If folder path exists, open it
       try {
@@ -189,10 +193,10 @@ export function ClientView({ client, onClose }: ClientViewProps) {
       // If no folder path, show creation dialog
       setShowFolderDialog(true);
     }
-  };
+  }, [currentFolderPath]);
 
   // Handle folder creation confirmation
-  const handleFolderConfirm = async (createFolder: boolean, folderPath?: string) => {
+  const handleFolderConfirm = useCallback(async (createFolder: boolean, folderPath?: string) => {
     setShowFolderDialog(false);
 
     if (createFolder && folderPath) {
@@ -218,17 +222,17 @@ export function ClientView({ client, onClose }: ClientViewProps) {
         });
       }
     }
-  };
+  }, [client.clientId, queryClient]);
 
   // Handle folder dialog cancel
-  const handleFolderCancel = () => {
+  const handleFolderCancel = useCallback(() => {
     setShowFolderDialog(false);
-  };
+  }, []);
 
   // Handle success dialog close
-  const handleSuccessClose = () => {
+  const handleSuccessClose = useCallback(() => {
     setShowSuccessDialog(false);
-  };
+  }, []);
 
 
   return (

@@ -1,7 +1,7 @@
 // PBS Admin - Tasks Table Component
 // Displays tasks for a client with add/edit/delete functionality
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
@@ -20,7 +20,7 @@ export interface TasksTableProps {
   clientId: number;
 }
 
-export function TasksTable({ clientId }: TasksTableProps) {
+export const TasksTable = React.memo(function TasksTable({ clientId }: TasksTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -280,4 +280,4 @@ export function TasksTable({ clientId }: TasksTableProps) {
       />
     </>
   );
-}
+});

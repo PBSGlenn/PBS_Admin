@@ -5,6 +5,15 @@ import { query, execute } from "../db";
 import type { Event, EventInput, EventType } from "../types";
 import { dateToISO, addDaysToDate } from "../utils/dateUtils";
 
+/** Whitelist of columns allowed in dynamic UPDATE statements */
+const EVENT_VALID_FIELDS = new Set([
+  'clientId', 'eventType', 'date', 'notes',
+  'calendlyEventUri', 'calendlyStatus',
+  'invoiceFilePath', 'hostedInvoiceUrl',
+  'transcriptFilePath', 'questionnaireFilePath',
+  'processingState', 'parentEventId',
+]);
+
 /**
  * Get all events
  */
@@ -126,7 +135,7 @@ export async function updateEvent(eventId: number, input: Partial<EventInput>): 
   const values: any[] = [];
 
   Object.entries(input).forEach(([key, value]) => {
-    if (value !== undefined) {
+    if (value !== undefined && EVENT_VALID_FIELDS.has(key)) {
       updates.push(`${key} = ?`);
       values.push(value);
     }

@@ -1,6 +1,8 @@
 // PBS Admin - Vet Clinics Service
 // Directory of veterinary clinics for quick email and contact lookup
 
+import { getSettingJson, setSettingJson } from "./settingsService";
+
 const VET_CLINICS_STORAGE_KEY = 'pbs_admin_vet_clinics';
 
 export interface VetClinic {
@@ -13,76 +15,63 @@ export interface VetClinic {
 }
 
 /**
- * Get all vet clinics from localStorage
+ * Get all vet clinics from Settings table
  */
-export function getVetClinics(): VetClinic[] {
-  try {
-    const stored = localStorage.getItem(VET_CLINICS_STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (error) {
-    console.error('Failed to load vet clinics from localStorage:', error);
-  }
-  return [];
+export async function getVetClinics(): Promise<VetClinic[]> {
+  return getSettingJson<VetClinic[]>(VET_CLINICS_STORAGE_KEY, []);
 }
 
 /**
- * Save all vet clinics to localStorage
+ * Save all vet clinics to Settings table
  */
-export function saveVetClinics(clinics: VetClinic[]): void {
-  try {
-    localStorage.setItem(VET_CLINICS_STORAGE_KEY, JSON.stringify(clinics));
-  } catch (error) {
-    console.error('Failed to save vet clinics to localStorage:', error);
-    throw new Error('Failed to save vet clinics');
-  }
+export async function saveVetClinics(clinics: VetClinic[]): Promise<void> {
+  await setSettingJson(VET_CLINICS_STORAGE_KEY, clinics);
 }
 
 /**
  * Add a new vet clinic
  */
-export function addVetClinic(clinic: Omit<VetClinic, 'id'>): VetClinic {
-  const clinics = getVetClinics();
+export async function addVetClinic(clinic: Omit<VetClinic, 'id'>): Promise<VetClinic> {
+  const clinics = await getVetClinics();
   const newClinic: VetClinic = {
     ...clinic,
     id: `vet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   };
   clinics.push(newClinic);
-  saveVetClinics(clinics);
+  await saveVetClinics(clinics);
   return newClinic;
 }
 
 /**
  * Update an existing vet clinic
  */
-export function updateVetClinic(id: string, updates: Partial<Omit<VetClinic, 'id'>>): VetClinic | null {
-  const clinics = getVetClinics();
+export async function updateVetClinic(id: string, updates: Partial<Omit<VetClinic, 'id'>>): Promise<VetClinic | null> {
+  const clinics = await getVetClinics();
   const index = clinics.findIndex(c => c.id === id);
   if (index === -1) return null;
 
   clinics[index] = { ...clinics[index], ...updates };
-  saveVetClinics(clinics);
+  await saveVetClinics(clinics);
   return clinics[index];
 }
 
 /**
  * Delete a vet clinic
  */
-export function deleteVetClinic(id: string): boolean {
-  const clinics = getVetClinics();
+export async function deleteVetClinic(id: string): Promise<boolean> {
+  const clinics = await getVetClinics();
   const filtered = clinics.filter(c => c.id !== id);
   if (filtered.length === clinics.length) return false;
 
-  saveVetClinics(filtered);
+  await saveVetClinics(filtered);
   return true;
 }
 
 /**
  * Find a vet clinic by name (case-insensitive partial match)
  */
-export function findVetClinicByName(name: string): VetClinic | undefined {
-  const clinics = getVetClinics();
+export async function findVetClinicByName(name: string): Promise<VetClinic | undefined> {
+  const clinics = await getVetClinics();
   const lowerName = name.toLowerCase();
   return clinics.find(c => c.name.toLowerCase().includes(lowerName));
 }
@@ -90,7 +79,7 @@ export function findVetClinicByName(name: string): VetClinic | undefined {
 /**
  * Get a vet clinic by ID
  */
-export function getVetClinicById(id: string): VetClinic | undefined {
-  const clinics = getVetClinics();
+export async function getVetClinicById(id: string): Promise<VetClinic | undefined> {
+  const clinics = await getVetClinics();
   return clinics.find(c => c.id === id);
 }

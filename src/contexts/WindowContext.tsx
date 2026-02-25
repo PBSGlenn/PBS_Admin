@@ -1,7 +1,7 @@
 // PBS Admin - Window Context
 // Manages multi-window state for the application
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from "react";
 
 // ============================================================================
 // Types
@@ -84,10 +84,15 @@ interface WindowProviderProps {
   children: ReactNode;
 }
 
+/** Reassign z-indexes sequentially based on current ordering to prevent unbounded growth */
+function normalizeZIndexes(windows: WindowState[]): WindowState[] {
+  const sorted = [...windows].sort((a, b) => a.zIndex - b.zIndex);
+  return sorted.map((w, i) => ({ ...w, zIndex: BASE_Z_INDEX + i }));
+}
+
 export function WindowProvider({ children }: WindowProviderProps) {
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
-  const [nextZIndex, setNextZIndex] = useState(BASE_Z_INDEX);
   const [windowCount, setWindowCount] = useState(0);
 
   // Calculate default position for new window (cascade effect)
@@ -106,19 +111,19 @@ export function WindowProvider({ children }: WindowProviderProps) {
       const existingIndex = prev.findIndex((w) => w.id === options.id);
 
       if (existingIndex !== -1) {
-        // Window exists - restore if minimized and focus
-        const updated = [...prev];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          isMinimized: false,
-          zIndex: nextZIndex,
-        };
-        setNextZIndex((z) => z + 1);
+        // Window exists - restore if minimized and bring to top
+        const maxZ = Math.max(...prev.map((w) => w.zIndex));
+        const updated = prev.map((w) =>
+          w.id === options.id
+            ? { ...w, isMinimized: false, zIndex: maxZ + 1 }
+            : w
+        );
         setActiveWindowId(options.id);
-        return updated;
+        return normalizeZIndexes(updated);
       }
 
       // Create new window
+      const maxZ = prev.length > 0 ? Math.max(...prev.map((w) => w.zIndex)) : BASE_Z_INDEX - 1;
       const newWindow: WindowState = {
         id: options.id,
         title: options.title,
@@ -130,17 +135,16 @@ export function WindowProvider({ children }: WindowProviderProps) {
         maxSize: options.maxSize,
         isMinimized: false,
         isMaximized: false,
-        zIndex: nextZIndex,
+        zIndex: maxZ + 1,
         data: options.data,
       };
 
-      setNextZIndex((z) => z + 1);
       setWindowCount((c) => c + 1);
       setActiveWindowId(options.id);
 
-      return [...prev, newWindow];
+      return normalizeZIndexes([...prev, newWindow]);
     });
-  }, [getDefaultPosition, nextZIndex]);
+  }, [getDefaultPosition]);
 
   // Close a window
   const closeWindow = useCallback((id: string) => {
@@ -180,16 +184,17 @@ export function WindowProvider({ children }: WindowProviderProps) {
 
   // Restore a minimized window
   const restoreWindow = useCallback((id: string) => {
-    setWindows((prev) =>
-      prev.map((w) =>
+    setWindows((prev) => {
+      const maxZ = Math.max(...prev.map((w) => w.zIndex));
+      const updated = prev.map((w) =>
         w.id === id
-          ? { ...w, isMinimized: false, zIndex: nextZIndex }
+          ? { ...w, isMinimized: false, zIndex: maxZ + 1 }
           : w
-      )
-    );
-    setNextZIndex((z) => z + 1);
+      );
+      return normalizeZIndexes(updated);
+    });
     setActiveWindowId(id);
-  }, [nextZIndex]);
+  }, []);
 
   // Maximize/restore a window
   const maximizeWindow = useCallback((id: string) => {
@@ -203,20 +208,21 @@ export function WindowProvider({ children }: WindowProviderProps) {
   // Focus a window (bring to front)
   const focusWindow = useCallback((id: string) => {
     setWindows((prev) => {
-      const window = prev.find((w) => w.id === id);
-      if (!window || window.zIndex === nextZIndex - 1) {
-        // Already focused
+      const maxZ = Math.max(...prev.map((w) => w.zIndex));
+      const target = prev.find((w) => w.id === id);
+      if (!target || target.zIndex === maxZ) {
+        // Already on top
         setActiveWindowId(id);
         return prev;
       }
 
-      return prev.map((w) =>
-        w.id === id ? { ...w, zIndex: nextZIndex } : w
+      const updated = prev.map((w) =>
+        w.id === id ? { ...w, zIndex: maxZ + 1 } : w
       );
+      return normalizeZIndexes(updated);
     });
-    setNextZIndex((z) => z + 1);
     setActiveWindowId(id);
-  }, [nextZIndex]);
+  }, []);
 
   // Update window position
   const updateWindowPosition = useCallback((id: string, position: WindowPosition) => {
@@ -253,7 +259,7 @@ export function WindowProvider({ children }: WindowProviderProps) {
     [windows]
   );
 
-  const value: WindowContextValue = {
+  const value = useMemo<WindowContextValue>(() => ({
     windows,
     activeWindowId,
     openWindow,
@@ -267,7 +273,12 @@ export function WindowProvider({ children }: WindowProviderProps) {
     updateWindowData,
     getWindow,
     isWindowOpen,
-  };
+  }), [
+    windows, activeWindowId,
+    openWindow, closeWindow, minimizeWindow, restoreWindow, maximizeWindow,
+    focusWindow, updateWindowPosition, updateWindowSize, updateWindowData,
+    getWindow, isWindowOpen,
+  ]);
 
   return (
     <WindowContext.Provider value={value}>{children}</WindowContext.Provider>

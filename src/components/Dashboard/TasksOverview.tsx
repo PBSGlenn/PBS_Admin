@@ -138,7 +138,7 @@ export function TasksOverview() {
       const petSpecies = hasCat ? 'cat' : 'dog';
 
       // Get email template
-      const template = getQuestionnaireReminderTemplate(petSpecies);
+      const template = await getQuestionnaireReminderTemplate(petSpecies);
       if (!template) {
         toast.error("Email template not found", {
           description: "The questionnaire reminder template is missing",

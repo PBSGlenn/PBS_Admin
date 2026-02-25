@@ -40,7 +40,7 @@ export function StartupSettingsDialog({ isOpen, onClose }: StartupSettingsDialog
       try {
         const enabled = await isAutoStartEnabled();
         setAutoStartEnabled(enabled);
-        setMinimizeToTrayState(getMinimizeToTray());
+        setMinimizeToTrayState(await getMinimizeToTray());
       } catch (error) {
         console.error("Failed to load startup settings:", error);
       } finally {
@@ -70,8 +70,8 @@ export function StartupSettingsDialog({ isOpen, onClose }: StartupSettingsDialog
     }
   };
 
-  const handleMinimizeToTrayToggle = (enabled: boolean) => {
-    setMinimizeToTray(enabled);
+  const handleMinimizeToTrayToggle = async (enabled: boolean) => {
+    await setMinimizeToTray(enabled);
     setMinimizeToTrayState(enabled);
     toast.success(enabled ? "Minimize to tray enabled" : "Minimize to tray disabled");
   };

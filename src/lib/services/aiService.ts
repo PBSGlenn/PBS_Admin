@@ -87,7 +87,7 @@ export async function generateAIReport(
 
   try {
     // Get API key from settings (falls back to env var in development)
-    const apiKey = getAnthropicApiKey();
+    const apiKey = await getAnthropicApiKey();
 
     const result = await invoke<{
       success: boolean;
@@ -127,8 +127,7 @@ export async function generateAIReport(
 /**
  * Check if AI service is available (API key configured)
  */
-export function isAIServiceAvailable(): boolean {
-  // Simply check if an API key is configured
-  const apiKey = getAnthropicApiKey();
+export async function isAIServiceAvailable(): Promise<boolean> {
+  const apiKey = await getAnthropicApiKey();
   return apiKey !== null && apiKey.length > 0;
 }

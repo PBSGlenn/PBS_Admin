@@ -121,7 +121,7 @@ export function PrescriptionEventPanel({
       }
 
       // Load prescription template
-      const template = getPrescriptionTemplate();
+      const template = await getPrescriptionTemplate();
 
       // Prepare template variables
       const frequencyLabel = FREQUENCY_OPTIONS.find(f => f.value === prescriptionData.frequency)?.label || prescriptionData.frequency;

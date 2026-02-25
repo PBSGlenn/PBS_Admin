@@ -70,6 +70,7 @@ export function EmailDraftDialog({
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [emailConfigured, setEmailConfigured] = useState(false);
 
   // Sync state when dialog opens with new values
   useEffect(() => {
@@ -80,10 +81,9 @@ export function EmailDraftDialog({
       setAttachments(initialAttachments);
       setIsEditing(false);
       setCopied(false);
+      isEmailServiceConfigured().then(setEmailConfigured);
     }
   }, [isOpen, initialTo, initialSubject, initialBody, JSON.stringify(initialAttachments)]);
-
-  const emailConfigured = isEmailServiceConfigured();
 
   const handleSendViaResend = async () => {
     if (!emailConfigured) {

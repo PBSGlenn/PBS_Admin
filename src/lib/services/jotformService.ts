@@ -20,6 +20,7 @@ import type { Client, Pet } from '../types';
 import { formatISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import { parseAgeToDateOfBirth } from '../utils/ageUtils';
+import { getSettingJson, setSettingJson } from './settingsService';
 
 const TIMEZONE = 'Australia/Melbourne';
 
@@ -122,30 +123,23 @@ export interface QuestionnaireSyncResult {
 }
 
 /**
- * Get list of already-processed submission IDs from localStorage
+ * Get list of already-processed submission IDs from SQLite
  */
-function getProcessedSubmissionIds(): Set<string> {
-  try {
-    const stored = localStorage.getItem(PROCESSED_SUBMISSIONS_KEY);
-    if (!stored) return new Set();
-    const ids = JSON.parse(stored);
-    return new Set(Array.isArray(ids) ? ids : []);
-  } catch (error) {
-    logger.error('Failed to read processed submissions from localStorage:', error);
-    return new Set();
-  }
+async function getProcessedSubmissionIds(): Promise<Set<string>> {
+  const ids = await getSettingJson<string[]>(PROCESSED_SUBMISSIONS_KEY, []);
+  return new Set(ids);
 }
 
 /**
  * Mark a submission as processed
  */
-export function markSubmissionAsProcessed(submissionId: string): void {
+export async function markSubmissionAsProcessed(submissionId: string): Promise<void> {
   try {
-    const processed = getProcessedSubmissionIds();
+    const processed = await getProcessedSubmissionIds();
     processed.add(submissionId);
-    localStorage.setItem(PROCESSED_SUBMISSIONS_KEY, JSON.stringify([...processed]));
+    await setSettingJson(PROCESSED_SUBMISSIONS_KEY, [...processed]);
   } catch (error) {
-    logger.error('Failed to save processed submission to localStorage:', error);
+    logger.error('Failed to save processed submission:', error);
   }
 }
 
@@ -183,7 +177,7 @@ export async function fetchUnprocessedSubmissions(): Promise<JotformSubmission[]
     });
 
     // Filter out already-processed submissions
-    const processedIds = getProcessedSubmissionIds();
+    const processedIds = await getProcessedSubmissionIds();
     const unprocessedSubmissions = recentSubmissions.filter(sub => !processedIds.has(sub.id));
 
     logger.debug(`Found ${recentSubmissions.length} recent submissions, ${unprocessedSubmissions.length} unprocessed`);
@@ -381,9 +375,14 @@ async function downloadSubmissionFiles(
 export async function processQuestionnaire(
   submission: JotformSubmission
 ): Promise<QuestionnaireSyncResult> {
+  // Declare outside try so catch block can access them
+  let parsed: ParsedQuestionnaire | null = null;
+  let client: Client | null = null;
+  let filesDownloaded: { json: boolean; pdf: boolean } = { json: false, pdf: false };
+
   try {
     // Parse submission
-    const parsed = parseSubmission(submission);
+    parsed = parseSubmission(submission);
     if (!parsed) {
       return {
         success: false,
@@ -396,7 +395,7 @@ export async function processQuestionnaire(
     }
 
     // Find existing client (read operation before transaction)
-    const client = await findExistingClient(parsed.email, parsed.phone);
+    client = await findExistingClient(parsed.email, parsed.phone);
 
     if (!client) {
       return {
@@ -422,33 +421,33 @@ export async function processQuestionnaire(
       };
     }
 
+    // At this point parsed and client are guaranteed non-null (early returns above)
+    const validParsed = parsed;
+    const validClient = client;
+
     // Download files to client folder (outside transaction - file operations)
-    const filesDownloaded = await downloadSubmissionFiles(
+    filesDownloaded = await downloadSubmissionFiles(
       submission,
-      parsed,
-      client.folderPath
+      validParsed,
+      validClient.folderPath!
     );
 
     // Find existing pet before transaction (read operation)
-    const existingPet = await findExistingPet(client.clientId, parsed.pet.name);
+    const existingPet = await findExistingPet(validClient.clientId, validParsed.pet.name);
 
     // Wrap all database write operations in a transaction
+    logger.debug(`[Questionnaire] Starting DB transaction for ${validParsed.firstName} ${validParsed.lastName}, pet: ${validParsed.pet.name}`);
     const result = await withTransaction(async () => {
       // Update client address if questionnaire has address data
-      if (parsed.address) {
-        const shouldUpdateAddress =
-          !client.streetAddress ||
-          !client.city ||
-          !client.state ||
-          !client.postcode;
+      if (validParsed.address) {
+        const addressUpdate: Record<string, string> = {};
+        if (validParsed.address.street && !validClient.streetAddress) addressUpdate.streetAddress = validParsed.address.street;
+        if (validParsed.address.city && !validClient.city) addressUpdate.city = validParsed.address.city;
+        if (validParsed.address.state && !validClient.state) addressUpdate.state = validParsed.address.state;
+        if (validParsed.address.postcode && !validClient.postcode) addressUpdate.postcode = validParsed.address.postcode;
 
-        if (shouldUpdateAddress) {
-          await updateClient(client.clientId, {
-            streetAddress: parsed.address.street || client.streetAddress || undefined,
-            city: parsed.address.city || client.city || undefined,
-            state: parsed.address.state || client.state || undefined,
-            postcode: parsed.address.postcode || client.postcode || undefined,
-          });
+        if (Object.keys(addressUpdate).length > 0) {
+          await updateClient(validClient.clientId, addressUpdate);
           logger.debug('Updated client address from questionnaire');
         }
       }
@@ -458,38 +457,39 @@ export async function processQuestionnaire(
       if (pet) {
         // Calculate DOB from age if pet doesn't already have one
         let calculatedDob: string | undefined;
-        if (!pet.dateOfBirth && parsed.pet.age) {
-          calculatedDob = parseAgeToDateOfBirth(parsed.pet.age) || undefined;
+        if (!pet.dateOfBirth && validParsed.pet.age) {
+          calculatedDob = parseAgeToDateOfBirth(validParsed.pet.age) || undefined;
           if (calculatedDob) {
-            logger.debug(`Calculated DOB from age "${parsed.pet.age}": ${calculatedDob}`);
+            logger.debug(`Calculated DOB from age "${validParsed.pet.age}": ${calculatedDob}`);
           }
         }
 
         // Update pet details with questionnaire data
         await updatePet(pet.petId, {
-          breed: parsed.pet.breed || pet.breed || undefined,
-          sex: parsed.pet.sex || pet.sex || undefined,
+          breed: validParsed.pet.breed || pet.breed || undefined,
+          sex: validParsed.pet.sex || pet.sex || undefined,
           dateOfBirth: calculatedDob || pet.dateOfBirth || undefined,
           notes: pet.notes
-            ? `${pet.notes}\n\nQuestionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`
-            : `Questionnaire data: Weight: ${parsed.pet.weight || 'N/A'}, Age reported: ${parsed.pet.age}`,
+            ? `${pet.notes}\n\nQuestionnaire data: Weight: ${validParsed.pet.weight || 'N/A'}, Age reported: ${validParsed.pet.age}`
+            : `Questionnaire data: Weight: ${validParsed.pet.weight || 'N/A'}, Age reported: ${validParsed.pet.age}`,
         });
         logger.debug('Updated pet details from questionnaire');
       }
 
       // Create "Questionnaire Received" event
+      logger.debug('[Questionnaire] Creating QuestionnaireReceived event...');
       const event = await createEvent({
-        clientId: client.clientId,
+        clientId: validClient.clientId,
         eventType: 'QuestionnaireReceived',
-        date: formatISO(toZonedTime(new Date(parsed.submittedAt), TIMEZONE)),
+        date: formatISO(toZonedTime(new Date(validParsed.submittedAt), TIMEZONE)),
         notes: `
-          <p><strong>Submission ID:</strong> ${parsed.submissionId}</p>
-          <p><strong>Form Type:</strong> ${parsed.formType === 'dog' ? 'Dog' : 'Cat'} Behaviour Questionnaire</p>
-          <p><strong>Pet:</strong> ${parsed.pet.name} (${parsed.pet.species})</p>
-          <p><strong>Breed:</strong> ${parsed.pet.breed}</p>
-          <p><strong>Age:</strong> ${parsed.pet.age}</p>
-          <p><strong>Sex:</strong> ${parsed.pet.sex}</p>
-          ${parsed.pet.weight ? `<p><strong>Weight:</strong> ${parsed.pet.weight}</p>` : ''}
+          <p><strong>Submission ID:</strong> ${validParsed.submissionId}</p>
+          <p><strong>Form Type:</strong> ${validParsed.formType === 'dog' ? 'Dog' : 'Cat'} Behaviour Questionnaire</p>
+          <p><strong>Pet:</strong> ${validParsed.pet.name} (${validParsed.pet.species})</p>
+          <p><strong>Breed:</strong> ${validParsed.pet.breed}</p>
+          <p><strong>Age:</strong> ${validParsed.pet.age}</p>
+          <p><strong>Sex:</strong> ${validParsed.pet.sex}</p>
+          ${validParsed.pet.weight ? `<p><strong>Weight:</strong> ${validParsed.pet.weight}</p>` : ''}
           <p><em>Files saved to client folder:</em></p>
           <ul>
             <li>${filesDownloaded.json ? '✓' : '✗'} JSON data</li>
@@ -509,23 +509,25 @@ export async function processQuestionnaire(
     return {
       success: true,
       submissionId: submission.id,
-      clientId: client.clientId,
-      clientName: `${client.firstName} ${client.lastName}`,
+      clientId: validClient.clientId,
+      clientName: `${validClient.firstName} ${validClient.lastName}`,
       petId: result.pet?.petId,
-      petName: parsed.pet.name,
+      petName: validParsed.pet.name,
       eventId: result.event.eventId,
       filesDownloaded,
     };
 
   } catch (error) {
-    logger.error('Failed to process questionnaire:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to process questionnaire:', errorMessage, error);
     return {
       success: false,
       submissionId: submission.id,
-      clientName: 'Unknown',
-      petName: 'Unknown',
-      filesDownloaded: { json: false, pdf: false },
-      error: error instanceof Error ? error.message : 'Unknown error',
+      clientName: parsed ? `${parsed.firstName} ${parsed.lastName}` : 'Unknown',
+      petName: parsed?.pet?.name || 'Unknown',
+      clientId: client?.clientId,
+      filesDownloaded: filesDownloaded || { json: false, pdf: false },
+      error: errorMessage,
     };
   }
 }
@@ -548,7 +550,7 @@ export async function syncAllQuestionnaires(): Promise<{
 
     // Mark as processed if successful to prevent re-downloading
     if (result.success) {
-      markSubmissionAsProcessed(submission.id);
+      await markSubmissionAsProcessed(submission.id);
     }
   }
 

@@ -93,6 +93,7 @@ export function ReportSentEventPanel({
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [emailingReportPath, setEmailingReportPath] = useState<string | null>(null); // Track which report is being emailed
+  const [emailContent, setEmailContent] = useState({ subject: "", body: "" });
 
   // Report log state - tracks all generated reports and their email status
   const [reportLog, setReportLog] = useState<Array<{
@@ -273,7 +274,7 @@ export function ReportSentEventPanel({
 
   // Load vet clinics from directory
   useEffect(() => {
-    setVetClinics(getVetClinics());
+    getVetClinics().then(setVetClinics);
   }, []);
 
   // Pre-fill vet clinic from client's primary care vet
@@ -529,9 +530,9 @@ export function ReportSentEventPanel({
   };
 
   // Get email content
-  const getEmailContent = () => {
+  const getEmailContent = async () => {
     const templateId = reportType === "client" ? "consultation-report" : "vet-report-cover";
-    const template = getEmailTemplate(templateId);
+    const template = await getEmailTemplate(templateId);
     const consultation = consultations.find(c => c.eventId === selectedConsultationId);
     const pet = pets[0];
 
@@ -837,8 +838,10 @@ export function ReportSentEventPanel({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
+                          onClick={async () => {
                             setEmailingReportPath(report.path);
+                            const content = await getEmailContent();
+                            setEmailContent(content);
                             setShowEmailDialog(true);
                           }}
                           className={`h-5 px-1.5 text-[9px] ${isEmailed ? 'text-green-600' : 'text-blue-600'}`}
@@ -981,7 +984,11 @@ export function ReportSentEventPanel({
               </div>
 
               <Button
-                onClick={() => setShowEmailDialog(true)}
+                onClick={async () => {
+                  const content = await getEmailContent();
+                  setEmailContent(content);
+                  setShowEmailDialog(true);
+                }}
                 disabled={!recipientEmail}
                 className="w-full h-8 text-xs bg-blue-600 hover:bg-blue-700"
               >
@@ -1043,8 +1050,8 @@ export function ReportSentEventPanel({
           setEmailingReportPath(null);
         }}
         initialTo={recipientEmail}
-        initialSubject={getEmailContent().subject}
-        initialBody={getEmailContent().body}
+        initialSubject={emailContent.subject}
+        initialBody={emailContent.body}
         clientName={clientName || ""}
         attachments={(() => {
           // Determine which file to attach

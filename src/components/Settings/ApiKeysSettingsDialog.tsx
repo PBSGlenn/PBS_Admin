@@ -40,18 +40,20 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
   // Load current settings
   useEffect(() => {
     if (isOpen) {
-      const keys = getApiKeys();
-      setHasAnthropicKey(isAnthropicConfigured());
-      setHasResendKey(isResendConfigured());
-      // Don't populate the actual keys - show masked version
-      setAnthropicKey("");
-      setResendKey("");
-      setShowAnthropicKey(false);
-      setShowResendKey(false);
+      (async () => {
+        await getApiKeys();
+        setHasAnthropicKey(await isAnthropicConfigured());
+        setHasResendKey(await isResendConfigured());
+        // Don't populate the actual keys - show masked version
+        setAnthropicKey("");
+        setResendKey("");
+        setShowAnthropicKey(false);
+        setShowResendKey(false);
+      })();
     }
   }, [isOpen]);
 
-  const handleSaveAnthropicKey = () => {
+  const handleSaveAnthropicKey = async () => {
     if (!anthropicKey.trim()) {
       toast.error("Please enter an API key");
       return;
@@ -65,7 +67,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
 
     setIsSaving(true);
     try {
-      saveApiKeys({ anthropicApiKey: anthropicKey.trim() });
+      await saveApiKeys({ anthropicApiKey: anthropicKey.trim() });
       setHasAnthropicKey(true);
       setAnthropicKey("");
       setShowAnthropicKey(false);
@@ -79,7 +81,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
     }
   };
 
-  const handleSaveResendKey = () => {
+  const handleSaveResendKey = async () => {
     if (!resendKey.trim()) {
       toast.error("Please enter an API key");
       return;
@@ -93,7 +95,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
 
     setIsSaving(true);
     try {
-      saveApiKeys({ resendApiKey: resendKey.trim() });
+      await saveApiKeys({ resendApiKey: resendKey.trim() });
       setHasResendKey(true);
       setResendKey("");
       setShowResendKey(false);
@@ -107,15 +109,15 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
     }
   };
 
-  const handleClearAnthropicKey = () => {
-    saveApiKeys({ anthropicApiKey: null });
+  const handleClearAnthropicKey = async () => {
+    await saveApiKeys({ anthropicApiKey: null });
     setHasAnthropicKey(false);
     setAnthropicKey("");
     toast.success("Anthropic API key removed");
   };
 
-  const handleClearResendKey = () => {
-    saveApiKeys({ resendApiKey: null });
+  const handleClearResendKey = async () => {
+    await saveApiKeys({ resendApiKey: null });
     setHasResendKey(false);
     setResendKey("");
     toast.success("Resend API key removed");
@@ -270,7 +272,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
           {/* Info Section */}
           <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1.5">
             <p>
-              <strong>Security:</strong> API keys are stored locally in your browser's storage.
+              <strong>Security:</strong> API keys are stored locally in your database.
               They are never sent to any server except the respective API providers.
             </p>
             <p>

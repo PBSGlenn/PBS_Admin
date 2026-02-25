@@ -66,9 +66,20 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
     }
   }, [isOpen]);
 
-  const loadTemplates = () => {
-    const allTemplates = getAllPromptTemplates();
+  const [customizedIds, setCustomizedIds] = useState<Set<string>>(new Set());
+
+  const loadTemplates = async () => {
+    const allTemplates = await getAllPromptTemplates();
     setTemplates(allTemplates);
+
+    // Check which templates are customized
+    const customized = new Set<string>();
+    for (const t of allTemplates) {
+      if (await isTemplateCustomized(t.id)) {
+        customized.add(t.id);
+      }
+    }
+    setCustomizedIds(customized);
 
     // Select first template if none selected
     if (!selectedTemplateId && allTemplates.length > 0) {
@@ -80,11 +91,13 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
   // Load selected template
   useEffect(() => {
     if (selectedTemplateId) {
-      const template = getPromptTemplate(selectedTemplateId);
-      if (template) {
-        setEditedTemplate({ ...template });
-        setHasChanges(false);
-      }
+      (async () => {
+        const template = await getPromptTemplate(selectedTemplateId);
+        if (template) {
+          setEditedTemplate({ ...template });
+          setHasChanges(false);
+        }
+      })();
     }
   }, [selectedTemplateId]);
 
@@ -96,7 +109,7 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
   );
 
   const selectedTemplate = editedTemplate;
-  const isCustomized = selectedTemplateId ? isTemplateCustomized(selectedTemplateId) : false;
+  const isCustomized = selectedTemplateId ? customizedIds.has(selectedTemplateId) : false;
 
   const handleCopyPrompt = async () => {
     if (!selectedTemplate) return;
@@ -113,13 +126,13 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
     }
   };
 
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     if (!editedTemplate) return;
 
     try {
-      saveCustomPromptTemplate(editedTemplate);
+      await saveCustomPromptTemplate(editedTemplate);
       toast.success(`Saved changes to "${editedTemplate.name}"`);
-      loadTemplates();
+      await loadTemplates();
       setHasChanges(false);
     } catch (error) {
       console.error("Failed to save template:", error);
@@ -139,14 +152,14 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
     setIsRestoreConfirmOpen(true);
   };
 
-  const confirmRestoreDefault = () => {
+  const confirmRestoreDefault = async () => {
     if (!selectedTemplateId) return;
 
     const defaultTemplate = getDefaultPromptTemplate(selectedTemplateId);
     if (defaultTemplate) {
-      resetToDefaultPromptTemplate(selectedTemplateId);
+      await resetToDefaultPromptTemplate(selectedTemplateId);
       toast.success(`Restored "${defaultTemplate.name}" to default`);
-      loadTemplates();
+      await loadTemplates();
 
       // Reload the template
       setEditedTemplate({ ...defaultTemplate });
@@ -285,7 +298,7 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
                   <div className="space-y-1">
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-sm font-semibold">{template.name}</h3>
-                      {isTemplateCustomized(template.id) && (
+                      {customizedIds.has(template.id) && (
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                           Custom
                         </Badge>

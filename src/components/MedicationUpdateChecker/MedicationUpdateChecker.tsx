@@ -45,8 +45,10 @@ export function MedicationUpdateChecker({ isOpen, onClose }: MedicationUpdateChe
   // Load update history and last check date on mount
   useEffect(() => {
     if (isOpen) {
-      setUpdateHistory(getUpdateHistory());
-      setLastCheckDate(getLastUpdateCheckDate());
+      (async () => {
+        setUpdateHistory(await getUpdateHistory());
+        setLastCheckDate(await getLastUpdateCheckDate());
+      })();
     }
   }, [isOpen]);
 
@@ -116,7 +118,7 @@ export function MedicationUpdateChecker({ isOpen, onClose }: MedicationUpdateChe
 
       if (result.success) {
         toast.success(`Successfully updated ${result.appliedCount} medication(s)`);
-        setUpdateHistory(getUpdateHistory()); // Refresh history
+        setUpdateHistory(await getUpdateHistory()); // Refresh history
         setCheckResult(null); // Clear check result
         setSelectedUpdates(new Set()); // Clear selections
       } else {

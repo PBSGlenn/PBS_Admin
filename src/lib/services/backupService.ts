@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
 import { logger } from "../utils/logger";
+import { getSettingJson, setSettingJson } from "./settingsService";
 
 // ============================================================================
 // Types
@@ -55,28 +56,25 @@ const DEFAULT_SETTINGS: BackupSettings = {
 // ============================================================================
 
 /**
- * Get backup settings from localStorage
+ * Get backup settings from SQLite Settings table
  */
-export function getBackupSettings(): BackupSettings {
+export async function getBackupSettings(): Promise<BackupSettings> {
   try {
-    const stored = localStorage.getItem(BACKUP_SETTINGS_KEY);
-    if (stored) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
-    }
+    return await getSettingJson<BackupSettings>(BACKUP_SETTINGS_KEY, DEFAULT_SETTINGS);
   } catch (error) {
     logger.error('Failed to load backup settings:', error);
+    return DEFAULT_SETTINGS;
   }
-  return DEFAULT_SETTINGS;
 }
 
 /**
- * Save backup settings to localStorage
+ * Save backup settings to SQLite Settings table
  */
-export function saveBackupSettings(settings: Partial<BackupSettings>): void {
+export async function saveBackupSettings(settings: Partial<BackupSettings>): Promise<void> {
   try {
-    const current = getBackupSettings();
+    const current = await getBackupSettings();
     const updated = { ...current, ...settings };
-    localStorage.setItem(BACKUP_SETTINGS_KEY, JSON.stringify(updated));
+    await setSettingJson(BACKUP_SETTINGS_KEY, updated);
     logger.info('Backup settings saved');
   } catch (error) {
     logger.error('Failed to save backup settings:', error);
@@ -190,7 +188,7 @@ export function parseBackupFileName(fileName: string): { date: Date | null } {
  * Apply retention policy - delete old backups exceeding the retention count
  */
 export async function applyRetentionPolicy(): Promise<number> {
-  const settings = getBackupSettings();
+  const settings = await getBackupSettings();
   const backups = await listBackups();
   let deletedCount = 0;
 
@@ -215,12 +213,13 @@ export async function applyRetentionPolicy(): Promise<number> {
 // ============================================================================
 
 let scheduledBackupInterval: ReturnType<typeof setInterval> | null = null;
+let scheduledBackupTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Check if a backup is due based on settings
  */
-export function isBackupDue(): boolean {
-  const settings = getBackupSettings();
+export async function isBackupDue(): Promise<boolean> {
+  const settings = await getBackupSettings();
 
   if (!settings.enabled || settings.frequency === 'manual') {
     return false;
@@ -252,7 +251,7 @@ export async function createBackupWithTracking(): Promise<BackupResult> {
 
   if (result.success) {
     // Update last backup date
-    saveBackupSettings({ lastBackupDate: new Date().toISOString() });
+    await saveBackupSettings({ lastBackupDate: new Date().toISOString() });
 
     // Apply retention policy
     await applyRetentionPolicy();
@@ -265,7 +264,7 @@ export async function createBackupWithTracking(): Promise<BackupResult> {
  * Run scheduled backup check
  */
 async function runScheduledBackupCheck(): Promise<void> {
-  if (isBackupDue()) {
+  if (await isBackupDue()) {
     logger.info('Scheduled backup is due, creating backup...');
     const result = await createBackupWithTracking();
     if (result.success) {
@@ -279,11 +278,11 @@ async function runScheduledBackupCheck(): Promise<void> {
 /**
  * Start the scheduled backup service
  */
-export function startScheduledBackups(): void {
+export async function startScheduledBackups(): Promise<void> {
   // Stop any existing interval
   stopScheduledBackups();
 
-  const settings = getBackupSettings();
+  const settings = await getBackupSettings();
 
   if (!settings.enabled || settings.frequency === 'manual') {
     logger.info('Scheduled backups disabled or set to manual');
@@ -291,8 +290,9 @@ export function startScheduledBackups(): void {
   }
 
   // Run initial check after a short delay (let app fully load)
-  setTimeout(() => {
+  scheduledBackupTimeout = setTimeout(() => {
     runScheduledBackupCheck();
+    scheduledBackupTimeout = null;
   }, 5000);
 
   // Set up periodic check
@@ -304,6 +304,10 @@ export function startScheduledBackups(): void {
  * Stop the scheduled backup service
  */
 export function stopScheduledBackups(): void {
+  if (scheduledBackupTimeout) {
+    clearTimeout(scheduledBackupTimeout);
+    scheduledBackupTimeout = null;
+  }
   if (scheduledBackupInterval) {
     clearInterval(scheduledBackupInterval);
     scheduledBackupInterval = null;
@@ -314,9 +318,9 @@ export function stopScheduledBackups(): void {
 /**
  * Restart scheduled backups (call after settings change)
  */
-export function restartScheduledBackups(): void {
+export async function restartScheduledBackups(): Promise<void> {
   stopScheduledBackups();
-  startScheduledBackups();
+  await startScheduledBackups();
 }
 
 // ============================================================================
@@ -345,7 +349,7 @@ export async function getBackupStatus(): Promise<{
   frequency: string;
   enabled: boolean;
 }> {
-  const settings = getBackupSettings();
+  const settings = await getBackupSettings();
   const backups = await listBackups();
   const totalSize = backups.reduce((sum, b) => sum + b.sizeBytes, 0);
 
@@ -353,7 +357,7 @@ export async function getBackupStatus(): Promise<{
     lastBackup: settings.lastBackupDate,
     backupCount: backups.length,
     totalSize,
-    nextBackupDue: isBackupDue(),
+    nextBackupDue: await isBackupDue(),
     frequency: settings.frequency,
     enabled: settings.enabled,
   };

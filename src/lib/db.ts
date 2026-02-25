@@ -4,6 +4,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "./utils/logger";
+import { initSettingsTable, migrateFromLocalStorage } from "./services/settingsService";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -36,6 +37,10 @@ export async function getDatabase(): Promise<Database> {
       db = await Database.load(connectionString);
       console.log("[DB] Database connected successfully");
       logger.info("Database connected successfully:", path);
+
+      // Ensure Settings table exists and migrate localStorage data
+      await initSettingsTable();
+      await migrateFromLocalStorage();
     } catch (error) {
       console.error("[DB] Failed to connect to database:", error);
       logger.error("Failed to connect to database:", error);

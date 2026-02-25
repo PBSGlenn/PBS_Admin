@@ -5,6 +5,13 @@ import { query, execute } from "../db";
 import type { Client, ClientInput, ClientWithRelations } from "../types";
 import { normalizeEmail, normalizeMobile } from "../utils/validation";
 
+/** Whitelist of columns allowed in dynamic UPDATE statements */
+const CLIENT_VALID_FIELDS = new Set([
+  'firstName', 'lastName', 'email', 'mobile',
+  'streetAddress', 'city', 'state', 'postcode',
+  'folderPath', 'stripeCustomerId', 'primaryCareVet', 'notes',
+]);
+
 /**
  * Get all clients
  */
@@ -19,33 +26,25 @@ export async function getAllClients(): Promise<Client[]> {
  * Get client by ID with related data
  */
 export async function getClientById(clientId: number): Promise<ClientWithRelations | null> {
-  const clients = await query<Client>(`
-    SELECT * FROM Client WHERE clientId = ?
+  const results = await query<Client & { petCount: number; eventCount: number; taskCount: number }>(`
+    SELECT c.*,
+      (SELECT COUNT(*) FROM Pet WHERE clientId = c.clientId) as petCount,
+      (SELECT COUNT(*) FROM Event WHERE clientId = c.clientId) as eventCount,
+      (SELECT COUNT(*) FROM Task WHERE clientId = c.clientId) as taskCount
+    FROM Client c
+    WHERE c.clientId = ?
   `, [clientId]);
 
-  if (clients.length === 0) return null;
+  if (results.length === 0) return null;
 
-  const client = clients[0];
-
-  // Get related counts
-  const petCount = await query<{ count: number }>(`
-    SELECT COUNT(*) as count FROM Pet WHERE clientId = ?
-  `, [clientId]);
-
-  const eventCount = await query<{ count: number }>(`
-    SELECT COUNT(*) as count FROM Event WHERE clientId = ?
-  `, [clientId]);
-
-  const taskCount = await query<{ count: number }>(`
-    SELECT COUNT(*) as count FROM Task WHERE clientId = ?
-  `, [clientId]);
+  const { petCount, eventCount, taskCount, ...client } = results[0];
 
   return {
     ...client,
     _count: {
-      pets: petCount[0]?.count || 0,
-      events: eventCount[0]?.count || 0,
-      tasks: taskCount[0]?.count || 0,
+      pets: petCount || 0,
+      events: eventCount || 0,
+      tasks: taskCount || 0,
     },
   };
 }
@@ -139,7 +138,7 @@ export async function updateClient(clientId: number, input: Partial<ClientInput>
   const values: any[] = [];
 
   Object.entries(normalizedInput).forEach(([key, value]) => {
-    if (value !== undefined) {
+    if (value !== undefined && CLIENT_VALID_FIELDS.has(key)) {
       updates.push(`${key} = ?`);
       values.push(value);
     }

@@ -2,6 +2,7 @@
 // Automated web search for current medication brand names
 
 import { BEHAVIOR_MEDICATIONS, Medication } from '../medications';
+import { getSetting, setSetting, getSettingJson, setSettingJson, deleteSetting } from './settingsService';
 
 export interface MedicationUpdate {
   medicationId: string;
@@ -32,30 +33,30 @@ export interface UpdateHistory {
   appliedBy: 'user' | 'auto';
 }
 
-// localStorage keys
+// Settings keys
 const LAST_CHECK_KEY = 'pbs_admin_medication_last_update_check';
 const UPDATE_HISTORY_KEY = 'pbs_admin_medication_update_history';
 
 /**
- * Get last update check date from localStorage
+ * Get last update check date from SQLite
  */
-export function getLastUpdateCheckDate(): Date | null {
-  const lastCheck = localStorage.getItem(LAST_CHECK_KEY);
+export async function getLastUpdateCheckDate(): Promise<Date | null> {
+  const lastCheck = await getSetting(LAST_CHECK_KEY);
   return lastCheck ? new Date(lastCheck) : null;
 }
 
 /**
- * Set last update check date in localStorage
+ * Set last update check date in SQLite
  */
-export function setLastUpdateCheckDate(date: Date = new Date()): void {
-  localStorage.setItem(LAST_CHECK_KEY, date.toISOString());
+export async function setLastUpdateCheckDate(date: Date = new Date()): Promise<void> {
+  await setSetting(LAST_CHECK_KEY, date.toISOString());
 }
 
 /**
  * Check if monthly update is due (30 days since last check)
  */
-export function isMonthlyUpdateDue(): boolean {
-  const lastCheck = getLastUpdateCheckDate();
+export async function isMonthlyUpdateDue(): Promise<boolean> {
+  const lastCheck = await getLastUpdateCheckDate();
   if (!lastCheck) return true; // Never checked before
 
   const daysSinceLastCheck = (Date.now() - lastCheck.getTime()) / (1000 * 60 * 60 * 24);
@@ -63,18 +64,17 @@ export function isMonthlyUpdateDue(): boolean {
 }
 
 /**
- * Get update history from localStorage
+ * Get update history from SQLite
  */
-export function getUpdateHistory(): UpdateHistory[] {
-  const history = localStorage.getItem(UPDATE_HISTORY_KEY);
-  return history ? JSON.parse(history) : [];
+export async function getUpdateHistory(): Promise<UpdateHistory[]> {
+  return getSettingJson<UpdateHistory[]>(UPDATE_HISTORY_KEY, []);
 }
 
 /**
  * Add entry to update history
  */
-export function addToUpdateHistory(entry: UpdateHistory): void {
-  const history = getUpdateHistory();
+export async function addToUpdateHistory(entry: UpdateHistory): Promise<void> {
+  const history = await getUpdateHistory();
   history.unshift(entry); // Add to beginning
 
   // Keep only last 100 entries
@@ -82,7 +82,7 @@ export function addToUpdateHistory(entry: UpdateHistory): void {
     history.splice(100);
   }
 
-  localStorage.setItem(UPDATE_HISTORY_KEY, JSON.stringify(history));
+  await setSettingJson(UPDATE_HISTORY_KEY, history);
 }
 
 /**
@@ -274,7 +274,7 @@ export async function checkForMedicationUpdates(
   const checkDuration = Date.now() - startTime;
 
   // Update last check date
-  setLastUpdateCheckDate();
+  await setLastUpdateCheckDate();
 
   return {
     updates,
@@ -298,12 +298,10 @@ export async function applyMedicationUpdates(
     // 3. Write the updated file back to disk
     // 4. Trigger a hot reload or app restart
 
-    // For now, we'll update localStorage with custom overrides
-    const customBrands: Record<string, string[]> = JSON.parse(
-      localStorage.getItem('pbs_admin_custom_medication_brands') || '{}'
-    );
+    // For now, we'll update SQLite with custom overrides
+    const customBrands = await getSettingJson<Record<string, string[]>>('pbs_admin_custom_medication_brands', {});
 
-    selectedUpdates.forEach(update => {
+    for (const update of selectedUpdates) {
       customBrands[update.medicationId] = update.newBrands;
 
       // Add to update history
@@ -311,8 +309,8 @@ export async function applyMedicationUpdates(
       if (medication) {
         const { additions, removals } = compareBrands(medication.brandNames, update.newBrands);
 
-        additions.forEach(brand => {
-          addToUpdateHistory({
+        for (const brand of additions) {
+          await addToUpdateHistory({
             date: new Date().toISOString(),
             medicationId: update.medicationId,
             genericName: medication.genericName,
@@ -320,10 +318,10 @@ export async function applyMedicationUpdates(
             brandName: brand,
             appliedBy: 'user',
           });
-        });
+        }
 
-        removals.forEach(brand => {
-          addToUpdateHistory({
+        for (const brand of removals) {
+          await addToUpdateHistory({
             date: new Date().toISOString(),
             medicationId: update.medicationId,
             genericName: medication.genericName,
@@ -331,11 +329,11 @@ export async function applyMedicationUpdates(
             brandName: brand,
             appliedBy: 'user',
           });
-        });
+        }
       }
-    });
+    }
 
-    localStorage.setItem('pbs_admin_custom_medication_brands', JSON.stringify(customBrands));
+    await setSettingJson('pbs_admin_custom_medication_brands', customBrands);
 
     return {
       success: true,
@@ -355,13 +353,11 @@ export async function applyMedicationUpdates(
 /**
  * Get medication with custom brand names applied (if any)
  */
-export function getMedicationWithCustomBrands(medicationId: string): Medication | undefined {
+export async function getMedicationWithCustomBrands(medicationId: string): Promise<Medication | undefined> {
   const medication = BEHAVIOR_MEDICATIONS.find(m => m.id === medicationId);
   if (!medication) return undefined;
 
-  const customBrands: Record<string, string[]> = JSON.parse(
-    localStorage.getItem('pbs_admin_custom_medication_brands') || '{}'
-  );
+  const customBrands = await getSettingJson<Record<string, string[]>>('pbs_admin_custom_medication_brands', {});
 
   if (customBrands[medicationId]) {
     return {
@@ -376,6 +372,6 @@ export function getMedicationWithCustomBrands(medicationId: string): Medication 
 /**
  * Clear all custom medication brand overrides
  */
-export function clearCustomMedicationBrands(): void {
-  localStorage.removeItem('pbs_admin_custom_medication_brands');
+export async function clearCustomMedicationBrands(): Promise<void> {
+  await deleteSetting('pbs_admin_custom_medication_brands');
 }

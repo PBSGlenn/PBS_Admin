@@ -41,8 +41,8 @@ export interface EmailResult {
 /**
  * Get the Resend API key from settings (with env fallback)
  */
-function getResendApiKey(): string {
-  const apiKey = getResendKey();
+async function getResendApiKey(): Promise<string> {
+  const apiKey = await getResendKey();
   if (!apiKey) {
     throw new Error("Resend API key not configured. Please add your API key in Settings > API Keys.");
   }
@@ -105,7 +105,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
   const { to, subject, body, attachments, includeSignature = true } = options;
 
   try {
-    const apiKey = getResendApiKey();
+    const apiKey = await getResendApiKey();
     const from = getFromEmail();
     const htmlBody = buildHtmlBody(body, includeSignature);
 
@@ -242,9 +242,9 @@ export function getEmailSignature(): string {
 /**
  * Check if email service is configured
  */
-export function isEmailServiceConfigured(): boolean {
+export async function isEmailServiceConfigured(): Promise<boolean> {
   try {
-    getResendApiKey();
+    await getResendApiKey();
     return true;
   } catch {
     return false;

@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../utils/logger";
 import { getAnthropicApiKey } from "./apiKeysService";
+import { getSettingJson, setSettingJson } from "./settingsService";
 
 /**
  * Transcription result with both raw and speaker-labeled versions
@@ -143,7 +144,7 @@ async function addSpeakerLabels(
   rawTranscript: string,
   options: TranscriptionOptions
 ): Promise<{ transcript: string; tokensUsed: { input: number; output: number } }> {
-  const apiKey = getAnthropicApiKey();
+  const apiKey = await getAnthropicApiKey();
   if (!apiKey) {
     throw new Error("Anthropic API key not configured. Please add your API key in Settings > API Keys.");
   }
@@ -335,7 +336,7 @@ export async function saveTranscript(
 }
 
 /**
- * Get transcription usage statistics from localStorage
+ * Get transcription usage statistics
  *
  * Tracks total transcriptions and costs for user reference
  */
@@ -348,32 +349,21 @@ export interface TranscriptionStats {
 
 const STATS_KEY = 'pbs_admin_transcription_stats';
 
-export function getTranscriptionStats(): TranscriptionStats {
-  const stored = localStorage.getItem(STATS_KEY);
-  if (!stored) {
-    return {
-      totalTranscriptions: 0,
-      totalDuration: 0,
-      totalCost: 0
-    };
-  }
+const DEFAULT_STATS: TranscriptionStats = {
+  totalTranscriptions: 0,
+  totalDuration: 0,
+  totalCost: 0
+};
 
-  try {
-    return JSON.parse(stored);
-  } catch {
-    return {
-      totalTranscriptions: 0,
-      totalDuration: 0,
-      totalCost: 0
-    };
-  }
+export async function getTranscriptionStats(): Promise<TranscriptionStats> {
+  return getSettingJson<TranscriptionStats>(STATS_KEY, DEFAULT_STATS);
 }
 
-export function updateTranscriptionStats(
+export async function updateTranscriptionStats(
   duration: number,
   cost: number
-): void {
-  const stats = getTranscriptionStats();
+): Promise<void> {
+  const stats = await getTranscriptionStats();
 
   const updated: TranscriptionStats = {
     totalTranscriptions: stats.totalTranscriptions + 1,
@@ -382,5 +372,5 @@ export function updateTranscriptionStats(
     lastTranscription: new Date().toISOString()
   };
 
-  localStorage.setItem(STATS_KEY, JSON.stringify(updated));
+  await setSettingJson(STATS_KEY, updated);
 }

@@ -70,19 +70,23 @@ export function ReportGeneratorDialog({
   const [pdfFilePath, setPdfFilePath] = useState<string | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [emailContent, setEmailContent] = useState({ subject: '', body: '' });
   const [reportSentCount, setReportSentCount] = useState(0);
   const [lastSentDate, setLastSentDate] = useState<string | null>(null);
+  const [costEstimate, setCostEstimate] = useState({ estimatedInputTokens: 0, estimatedOutputTokens: 0, estimatedCostUSD: 0 });
 
   // Format consultation date for display
   const formattedDate = format(new Date(eventDate), "dd/MM/yyyy");
   const dateForFilename = format(new Date(eventDate), "yyyyMMdd");
 
   // Estimate cost for all 3 reports (comprehensive, abridged, client)
-  const costEstimate = estimateReportCost(
-    transcript.length,
-    questionnaireData?.length || 0,
-    ["comprehensive", "abridged", "client"]
-  );
+  useEffect(() => {
+    estimateReportCost(
+      transcript.length,
+      questionnaireData?.length || 0,
+      ["comprehensive", "abridged", "client"]
+    ).then(setCostEstimate);
+  }, [transcript.length, questionnaireData?.length]);
 
   // Detect next version number
   const getNextVersionNumber = async (): Promise<number> => {
@@ -494,7 +498,9 @@ ${results.clientReport ? `<li>Client Report: ${results.clientReport.tokensUsed.t
   };
 
   // Open email dialog with pre-filled cover letter
-  const handleSendReport = () => {
+  const handleSendReport = async () => {
+    const content = await getEmailContent();
+    setEmailContent(content);
     setIsEmailDialogOpen(true);
   };
 
@@ -619,8 +625,8 @@ ${timeline}
   };
 
   // Get processed email template
-  const getEmailContent = () => {
-    const template = getEmailTemplate('consultation-report');
+  const getEmailContent = async () => {
+    const template = await getEmailTemplate('consultation-report');
     if (!template) {
       return {
         subject: `${petName} - Consultation Report`,
@@ -935,8 +941,8 @@ ${timeline}
         onSend={handleEmailSend}
         onMarkAsSent={handleMarkAsSent}
         initialTo={clientEmail}
-        initialSubject={getEmailContent().subject}
-        initialBody={getEmailContent().body}
+        initialSubject={emailContent.subject}
+        initialBody={emailContent.body}
         clientName={clientName}
         attachmentReminder={`${pdfFileName}\n\nLocation: ${clientFolderPath}`}
       />

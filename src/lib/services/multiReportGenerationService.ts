@@ -49,7 +49,7 @@ async function generateSingleReport(
   templateId: string,
   params: ReportGenerationParams
 ): Promise<ReportGenerationResult> {
-  const template = getPromptTemplate(templateId);
+  const template = await getPromptTemplate(templateId);
 
   if (!template) {
     throw new Error(`Prompt template not found: ${templateId}`);
@@ -60,7 +60,7 @@ async function generateSingleReport(
   }
 
   // Generate user prompt with parameters
-  const userPrompt = generateUserPrompt({
+  const userPrompt = await generateUserPrompt({
     templateId,
     clientName: params.clientName,
     petName: params.petName,
@@ -244,15 +244,15 @@ export async function generateConsultationReports(
  * Estimate token cost for report generation
  * Useful for showing cost estimate before generation
  */
-export function estimateReportCost(
+export async function estimateReportCost(
   transcriptLength: number,
   questionnaireLength: number = 0,
   reportTypes: ("comprehensive" | "abridged" | "client" | "vet")[] = ["comprehensive", "abridged", "client"]
-): {
+): Promise<{
   estimatedInputTokens: number;
   estimatedOutputTokens: number;
   estimatedCostUSD: number;
-} {
+}> {
   // Rough estimates:
   // - 1 token ≈ 4 characters
   // - System prompt: ~3000-4000 tokens per template
@@ -266,8 +266,8 @@ export function estimateReportCost(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
 
-  reportTypes.forEach(type => {
-    const template = getPromptTemplate(
+  for (const type of reportTypes) {
+    const template = await getPromptTemplate(
       type === "comprehensive" ? "comprehensive-clinical" :
       type === "abridged" ? "abridged-notes" :
       type === "client" ? "client-report" :
@@ -282,7 +282,7 @@ export function estimateReportCost(
       const estimatedOutput = Math.ceil(template.maxTokens * 0.6); // Assume 60% of max
       totalOutputTokens += estimatedOutput;
     }
-  });
+  }
 
   // Pricing (as of 2024, approximate):
   // Claude Sonnet 4: ~$3/million input tokens, ~$15/million output tokens

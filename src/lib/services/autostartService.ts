@@ -2,6 +2,7 @@
 // Manages Windows auto-start via Tauri plugin
 
 import { invoke } from "@tauri-apps/api/core";
+import { getSetting, setSetting } from "./settingsService";
 
 /**
  * Check if auto-start is currently enabled
@@ -58,8 +59,8 @@ const MINIMIZE_TO_TRAY_KEY = "pbs_admin_minimize_to_tray";
 /**
  * Get minimize to tray preference
  */
-export function getMinimizeToTray(): boolean {
-  const value = localStorage.getItem(MINIMIZE_TO_TRAY_KEY);
+export async function getMinimizeToTray(): Promise<boolean> {
+  const value = await getSetting(MINIMIZE_TO_TRAY_KEY);
   // Default to true (minimize to tray enabled by default)
   return value === null ? true : value === "true";
 }
@@ -67,6 +68,6 @@ export function getMinimizeToTray(): boolean {
 /**
  * Set minimize to tray preference
  */
-export function setMinimizeToTray(enabled: boolean): void {
-  localStorage.setItem(MINIMIZE_TO_TRAY_KEY, String(enabled));
+export async function setMinimizeToTray(enabled: boolean): Promise<void> {
+  await setSetting(MINIMIZE_TO_TRAY_KEY, String(enabled));
 }

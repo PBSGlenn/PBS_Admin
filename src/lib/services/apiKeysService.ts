@@ -1,6 +1,8 @@
 // PBS Admin - API Keys Service
-// Secure storage and retrieval of API keys from localStorage
+// Secure storage and retrieval of API keys from SQLite Settings table
 // Keys are stored locally on the user's machine, never sent to cloud
+
+import { getSettingJson, setSettingJson, deleteSetting } from "./settingsService";
 
 const API_KEYS_STORAGE_KEY = 'pbs_admin_api_keys';
 
@@ -17,44 +19,28 @@ const DEFAULT_API_KEYS: ApiKeys = {
 /**
  * Get all stored API keys
  */
-export function getApiKeys(): ApiKeys {
-  try {
-    const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return { ...DEFAULT_API_KEYS, ...parsed };
-    }
-  } catch (error) {
-    console.error('Failed to load API keys from localStorage:', error);
-  }
-  return DEFAULT_API_KEYS;
+export async function getApiKeys(): Promise<ApiKeys> {
+  return getSettingJson<ApiKeys>(API_KEYS_STORAGE_KEY, DEFAULT_API_KEYS);
 }
 
 /**
- * Save API keys to localStorage
+ * Save API keys
  */
-export function saveApiKeys(keys: Partial<ApiKeys>): void {
-  try {
-    const current = getApiKeys();
-    const updated = { ...current, ...keys };
-    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(updated));
-  } catch (error) {
-    console.error('Failed to save API keys to localStorage:', error);
-    throw new Error('Failed to save API keys');
-  }
+export async function saveApiKeys(keys: Partial<ApiKeys>): Promise<void> {
+  const current = await getApiKeys();
+  const updated = { ...current, ...keys };
+  await setSettingJson(API_KEYS_STORAGE_KEY, updated);
 }
 
 /**
  * Get Anthropic API key
  * Falls back to environment variable for development
  */
-export function getAnthropicApiKey(): string | null {
-  const keys = getApiKeys();
-  // First check localStorage (user-configured)
+export async function getAnthropicApiKey(): Promise<string | null> {
+  const keys = await getApiKeys();
   if (keys.anthropicApiKey) {
     return keys.anthropicApiKey;
   }
-  // Fall back to environment variable (development)
   const envKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   if (envKey) {
     return envKey;
@@ -66,13 +52,11 @@ export function getAnthropicApiKey(): string | null {
  * Get Resend API key
  * Falls back to environment variable for development
  */
-export function getResendApiKey(): string | null {
-  const keys = getApiKeys();
-  // First check localStorage (user-configured)
+export async function getResendApiKey(): Promise<string | null> {
+  const keys = await getApiKeys();
   if (keys.resendApiKey) {
     return keys.resendApiKey;
   }
-  // Fall back to environment variable (development)
   const envKey = import.meta.env.VITE_RESEND_API_KEY;
   if (envKey) {
     return envKey;
@@ -83,22 +67,22 @@ export function getResendApiKey(): string | null {
 /**
  * Check if Anthropic API key is configured
  */
-export function isAnthropicConfigured(): boolean {
-  return getAnthropicApiKey() !== null;
+export async function isAnthropicConfigured(): Promise<boolean> {
+  return (await getAnthropicApiKey()) !== null;
 }
 
 /**
  * Check if Resend API key is configured
  */
-export function isResendConfigured(): boolean {
-  return getResendApiKey() !== null;
+export async function isResendConfigured(): Promise<boolean> {
+  return (await getResendApiKey()) !== null;
 }
 
 /**
  * Clear all stored API keys
  */
-export function clearApiKeys(): void {
-  localStorage.removeItem(API_KEYS_STORAGE_KEY);
+export async function clearApiKeys(): Promise<void> {
+  await deleteSetting(API_KEYS_STORAGE_KEY);
 }
 
 /**

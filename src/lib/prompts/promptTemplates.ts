@@ -2,6 +2,7 @@
 // Manages system prompts for various report generation types
 
 import { logger } from '../utils/logger';
+import { getSettingJson, setSettingJson } from '../services/settingsService';
 
 export interface PromptTemplate {
   id: string;
@@ -422,10 +423,10 @@ This report is designed to be sent directly to the client as their consultation 
 ];
 
 /**
- * Get all prompt templates (default + custom from localStorage)
+ * Get all prompt templates (default + custom from SQLite)
  */
-export function getAllPromptTemplates(): PromptTemplate[] {
-  const customTemplates = loadCustomPromptTemplates();
+export async function getAllPromptTemplates(): Promise<PromptTemplate[]> {
+  const customTemplates = await loadCustomPromptTemplates();
   const customIds = new Set(customTemplates.map(t => t.id));
 
   // Filter out default templates that have been overridden by custom ones
@@ -437,17 +438,17 @@ export function getAllPromptTemplates(): PromptTemplate[] {
 /**
  * Get prompt template by ID
  */
-export function getPromptTemplate(templateId: string): PromptTemplate | undefined {
-  const allTemplates = getAllPromptTemplates();
+export async function getPromptTemplate(templateId: string): Promise<PromptTemplate | undefined> {
+  const allTemplates = await getAllPromptTemplates();
   return allTemplates.find(t => t.id === templateId);
 }
 
 /**
- * Save custom prompt template to localStorage
+ * Save custom prompt template to SQLite
  */
-export function saveCustomPromptTemplate(template: PromptTemplate): void {
+export async function saveCustomPromptTemplate(template: PromptTemplate): Promise<void> {
   try {
-    const customTemplates = loadCustomPromptTemplates();
+    const customTemplates = await loadCustomPromptTemplates();
     const index = customTemplates.findIndex(t => t.id === template.id);
 
     const updatedTemplate = {
@@ -464,7 +465,7 @@ export function saveCustomPromptTemplate(template: PromptTemplate): void {
       });
     }
 
-    localStorage.setItem('pbs_admin_prompt_templates', JSON.stringify(customTemplates));
+    await setSettingJson('pbs_admin_prompt_templates', customTemplates);
   } catch (error) {
     logger.error('Failed to save prompt template:', error);
     throw new Error('Failed to save prompt template');
@@ -472,30 +473,22 @@ export function saveCustomPromptTemplate(template: PromptTemplate): void {
 }
 
 /**
- * Load custom prompt templates from localStorage
+ * Load custom prompt templates from SQLite
  */
-export function loadCustomPromptTemplates(): PromptTemplate[] {
-  try {
-    const stored = localStorage.getItem('pbs_admin_prompt_templates');
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (error) {
-    logger.error('Failed to load custom prompt templates:', error);
-  }
-  return [];
+export async function loadCustomPromptTemplates(): Promise<PromptTemplate[]> {
+  return getSettingJson<PromptTemplate[]>('pbs_admin_prompt_templates', []);
 }
 
 /**
  * Delete a custom prompt template
  */
-export function deleteCustomPromptTemplate(templateId: string): boolean {
+export async function deleteCustomPromptTemplate(templateId: string): Promise<boolean> {
   try {
-    const customTemplates = loadCustomPromptTemplates();
+    const customTemplates = await loadCustomPromptTemplates();
     const filtered = customTemplates.filter(t => t.id !== templateId);
 
     if (filtered.length < customTemplates.length) {
-      localStorage.setItem('pbs_admin_prompt_templates', JSON.stringify(filtered));
+      await setSettingJson('pbs_admin_prompt_templates', filtered);
       return true;
     }
   } catch (error) {
@@ -507,15 +500,15 @@ export function deleteCustomPromptTemplate(templateId: string): boolean {
 /**
  * Reset a prompt template to default (removes custom override)
  */
-export function resetToDefaultPromptTemplate(templateId: string): boolean {
+export async function resetToDefaultPromptTemplate(templateId: string): Promise<boolean> {
   return deleteCustomPromptTemplate(templateId);
 }
 
 /**
  * Check if a template has been customized
  */
-export function isTemplateCustomized(templateId: string): boolean {
-  const customTemplates = loadCustomPromptTemplates();
+export async function isTemplateCustomized(templateId: string): Promise<boolean> {
+  const customTemplates = await loadCustomPromptTemplates();
   return customTemplates.some(t => t.id === templateId);
 }
 
@@ -543,7 +536,7 @@ export function processPromptVariables(template: string, variables: Record<strin
 /**
  * Generate user prompt for report generation
  */
-export function generateUserPrompt(params: {
+export async function generateUserPrompt(params: {
   templateId: string;
   clientName: string;
   petName: string;
@@ -552,8 +545,8 @@ export function generateUserPrompt(params: {
   transcript: string;
   questionnaire?: string;
   vetClinicName?: string;
-}): string {
-  const template = getPromptTemplate(params.templateId);
+}): Promise<string> {
+  const template = await getPromptTemplate(params.templateId);
 
   if (!template) {
     throw new Error(`Prompt template not found: ${params.templateId}`);

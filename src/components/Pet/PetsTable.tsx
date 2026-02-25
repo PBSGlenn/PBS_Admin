@@ -1,7 +1,7 @@
 // PBS Admin - Pets Table Component
 // Displays pets for a client with add/edit/delete functionality
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
@@ -19,7 +19,7 @@ export interface PetsTableProps {
   clientId: number;
 }
 
-export function PetsTable({ clientId }: PetsTableProps) {
+export const PetsTable = React.memo(function PetsTable({ clientId }: PetsTableProps) {
   const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
@@ -206,4 +206,4 @@ export function PetsTable({ clientId }: PetsTableProps) {
       />
     </>
   );
-}
+});

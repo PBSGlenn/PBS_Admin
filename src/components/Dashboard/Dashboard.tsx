@@ -1,7 +1,7 @@
 // PBS Admin - Dashboard Screen
 // Two-pane layout: Clients list (left) + Overview (right)
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ClientsList } from "./ClientsList";
@@ -61,28 +61,30 @@ export function Dashboard() {
   useEffect(() => {
     // Only check when on dashboard view
     if (currentView === "dashboard") {
-      const isUpdateDue = isMonthlyUpdateDue();
+      (async () => {
+        const isUpdateDue = await isMonthlyUpdateDue();
 
-      if (isUpdateDue) {
-        // Show notification with action button
-        toast.info('Medication database update check is due', {
-          description: 'Check for brand name updates from Australian pharmaceutical databases',
-          duration: 10000, // 10 seconds
-          action: {
-            label: 'Check Now',
-            onClick: () => setIsMedicationUpdateCheckerOpen(true),
-          },
-        });
-      }
+        if (isUpdateDue) {
+          // Show notification with action button
+          toast.info('Medication database update check is due', {
+            description: 'Check for brand name updates from Australian pharmaceutical databases',
+            duration: 10000, // 10 seconds
+            action: {
+              label: 'Check Now',
+              onClick: () => setIsMedicationUpdateCheckerOpen(true),
+            },
+          });
+        }
+      })();
     }
   }, [currentView]);
 
-  const handleNewClient = () => {
+  const handleNewClient = useCallback(() => {
     setSelectedClient(null);
     setCurrentView("new-client");
-  };
+  }, []);
 
-  const handleEditClient = (client: any) => {
+  const handleEditClient = useCallback((client: any) => {
     const windowId = createWindowId("client", client.clientId);
     openWindow({
       id: windowId,
@@ -98,9 +100,9 @@ export function Dashboard() {
       minSize: WINDOW_CONFIGS.client.minSize,
       data: { clientId: client.clientId },
     });
-  };
+  }, [openWindow, closeWindow]);
 
-  const handleClientCreated = (client: any) => {
+  const handleClientCreated = useCallback((client: any) => {
     // After creating a client, close the form and open in a window
     setCurrentView("dashboard");
     setSelectedClient(null);
@@ -121,12 +123,12 @@ export function Dashboard() {
       minSize: WINDOW_CONFIGS.client.minSize,
       data: { clientId: client.clientId },
     });
-  };
+  }, [openWindow, closeWindow]);
 
-  const handleCloseForm = () => {
+  const handleCloseForm = useCallback(() => {
     setCurrentView("dashboard");
     setSelectedClient(null);
-  };
+  }, []);
 
   // Show new client form
   if (currentView === "new-client") {

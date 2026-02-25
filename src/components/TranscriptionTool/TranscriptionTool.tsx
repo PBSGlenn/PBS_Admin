@@ -14,7 +14,7 @@
  * 6. Save to client folder or custom location
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,7 @@ import {
   getTranscriptionStats,
   updateTranscriptionStats,
   type TranscriptionResult,
+  type TranscriptionStats,
   type TranscriptionOptions
 } from "@/lib/services/transcriptionService";
 import { toast } from "sonner";
@@ -67,6 +68,14 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
   // Save options
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [customSavePath, setCustomSavePath] = useState<string>("");
+
+  // Usage stats
+  const [stats, setStats] = useState<TranscriptionStats>({ totalTranscriptions: 0, totalDuration: 0, totalCost: 0 });
+
+  // Load transcription stats
+  useEffect(() => {
+    getTranscriptionStats().then(setStats);
+  }, []);
 
   // Fetch clients for folder selection
   const { data: clients = [] } = useQuery({
@@ -171,7 +180,8 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
       // Update usage stats
       if (result.duration && result.cost) {
-        updateTranscriptionStats(result.duration, result.cost.total);
+        await updateTranscriptionStats(result.duration, result.cost.total);
+        getTranscriptionStats().then(setStats);
       }
 
       toast.success(
@@ -300,11 +310,6 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  /**
-   * Get usage stats
-   */
-  const stats = getTranscriptionStats();
-
   // Clients with folders
   const clientsWithFolders = clients.filter(c => c.folderPath);
 
@@ -333,7 +338,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
           {/* File Upload */}
           <div className="space-y-2">
-            <Label className="text-[10px] uppercase text-muted-foreground">Audio File</Label>
+            <Label className="text-[10px] uppercase text-muted-foreground">Audio File (max 25 MB)</Label>
             <div className="flex gap-2">
               <input
                 ref={fileInputRef}

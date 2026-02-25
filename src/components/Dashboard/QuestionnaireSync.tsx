@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { deleteSetting } from '@/lib/services/settingsService';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
@@ -75,17 +76,17 @@ const [isDismissConfirmOpen, setIsDismissConfirmOpen] = useState(false);
     setIsDismissConfirmOpen(true);
   };
 
-  const confirmDismissAll = () => {
+  const confirmDismissAll = async () => {
     for (const submission of submissions) {
-      markSubmissionAsProcessed(submission.id);
+      await markSubmissionAsProcessed(submission.id);
     }
     setSubmissions([]);
     setSyncResults([]);
     setIsDismissConfirmOpen(false);
   };
 
-  const confirmClearTracking = () => {
-    localStorage.removeItem('pbs_admin_processed_jotform_submissions');
+  const confirmClearTracking = async () => {
+    await deleteSetting('pbs_admin_processed_jotform_submissions');
     setSyncResults([]);
     loadSubmissions();
 setIsClearConfirmOpen(false);

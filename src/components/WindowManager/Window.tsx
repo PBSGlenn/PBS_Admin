@@ -1,7 +1,7 @@
 // PBS Admin - Window Component
 // Draggable and resizable window shell using react-rnd
 
-import { ReactNode, useRef, useEffect } from "react";
+import React, { ReactNode, useRef, useEffect } from "react";
 import { Rnd } from "react-rnd";
 import { X, Minus, Square, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ interface WindowProps {
   window: WindowState;
 }
 
-export function Window({ window: windowState }: WindowProps) {
+export const Window = React.memo(function Window({ window: windowState }: WindowProps) {
   const {
     closeWindow,
     minimizeWindow,
@@ -191,4 +191,4 @@ export function Window({ window: windowState }: WindowProps) {
       </div>
     </Rnd>
   );
-}
+});

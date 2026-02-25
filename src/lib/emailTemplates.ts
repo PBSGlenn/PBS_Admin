@@ -2,6 +2,7 @@
 // Editable email templates for client communications
 
 import { logger } from './utils/logger';
+import { getSettingJson, setSettingJson } from './services/settingsService';
 
 export interface EmailTemplate {
   id: string;
@@ -194,8 +195,8 @@ grubbface@hotmail.com
 /**
  * Get email template by ID (checks custom templates first, then defaults)
  */
-export function getEmailTemplate(templateId: string): EmailTemplate | undefined {
-  const allTemplates = getAllTemplates();
+export async function getEmailTemplate(templateId: string): Promise<EmailTemplate | undefined> {
+  const allTemplates = await getAllTemplates();
   return allTemplates.find(t => t.id === templateId);
 }
 
@@ -216,7 +217,7 @@ export function processTemplate(template: string, variables: Record<string, stri
 /**
  * Get template for questionnaire reminder based on pet species
  */
-export function getQuestionnaireReminderTemplate(species: string): EmailTemplate | undefined {
+export async function getQuestionnaireReminderTemplate(species: string): Promise<EmailTemplate | undefined> {
   const templateId = species.toLowerCase() === 'cat'
     ? 'questionnaire-reminder-cat'
     : 'questionnaire-reminder-dog';
@@ -226,8 +227,8 @@ export function getQuestionnaireReminderTemplate(species: string): EmailTemplate
 /**
  * Get all templates (default + custom)
  */
-export function getAllTemplates(): EmailTemplate[] {
-  const customTemplates = loadCustomTemplates();
+export async function getAllTemplates(): Promise<EmailTemplate[]> {
+  const customTemplates = await loadCustomTemplates();
   const customIds = new Set(customTemplates.map(t => t.id));
 
   // Filter out default templates that have been overridden by custom ones
@@ -237,11 +238,11 @@ export function getAllTemplates(): EmailTemplate[] {
 }
 
 /**
- * Save custom template to localStorage
+ * Save custom template to Settings table
  */
-export function saveCustomTemplate(template: EmailTemplate): void {
+export async function saveCustomTemplate(template: EmailTemplate): Promise<void> {
   try {
-    const customTemplates = loadCustomTemplates();
+    const customTemplates = await loadCustomTemplates();
     const index = customTemplates.findIndex(t => t.id === template.id);
 
     if (index >= 0) {
@@ -250,37 +251,34 @@ export function saveCustomTemplate(template: EmailTemplate): void {
       customTemplates.push(template);
     }
 
-    localStorage.setItem('pbs_admin_email_templates', JSON.stringify(customTemplates));
+    await setSettingJson('pbs_admin_email_templates', customTemplates);
   } catch (error) {
     logger.error('Failed to save template:', error);
   }
 }
 
 /**
- * Load custom templates from localStorage
+ * Load custom templates from Settings table
  */
-export function loadCustomTemplates(): EmailTemplate[] {
+export async function loadCustomTemplates(): Promise<EmailTemplate[]> {
   try {
-    const stored = localStorage.getItem('pbs_admin_email_templates');
-    if (stored) {
-      return JSON.parse(stored);
-    }
+    return await getSettingJson<EmailTemplate[]>('pbs_admin_email_templates', []);
   } catch (error) {
     logger.error('Failed to load custom templates:', error);
+    return [];
   }
-  return [];
 }
 
 /**
  * Delete a custom template
  */
-export function deleteCustomTemplate(templateId: string): boolean {
+export async function deleteCustomTemplate(templateId: string): Promise<boolean> {
   try {
-    const customTemplates = loadCustomTemplates();
+    const customTemplates = await loadCustomTemplates();
     const filtered = customTemplates.filter(t => t.id !== templateId);
 
     if (filtered.length < customTemplates.length) {
-      localStorage.setItem('pbs_admin_email_templates', JSON.stringify(filtered));
+      await setSettingJson('pbs_admin_email_templates', filtered);
       return true;
     }
   } catch (error) {
@@ -292,6 +290,6 @@ export function deleteCustomTemplate(templateId: string): boolean {
 /**
  * Reset a template to default (removes custom override)
  */
-export function resetToDefaultTemplate(templateId: string): boolean {
+export async function resetToDefaultTemplate(templateId: string): Promise<boolean> {
   return deleteCustomTemplate(templateId);
 }

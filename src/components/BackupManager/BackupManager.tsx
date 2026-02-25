@@ -80,14 +80,19 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
   const [deleteTarget, setDeleteTarget] = useState<BackupInfo | null>(null);
 
   // Scheduled backup settings state
-  const [settings, setSettings] = useState<BackupSettings>(getBackupSettings());
+  const [settings, setSettings] = useState<BackupSettings>({
+    enabled: true,
+    frequency: 'daily',
+    retentionCount: 7,
+    lastBackupDate: null,
+  });
   const [hasSettingsChanges, setHasSettingsChanges] = useState(false);
 
   // Fetch backups path and settings on mount
   useEffect(() => {
     if (isOpen) {
       getBackupsPath().then(setBackupsPath);
-      setSettings(getBackupSettings());
+      getBackupSettings().then((s) => setSettings(s));
       setHasSettingsChanges(false);
     }
   }, [isOpen]);
@@ -102,9 +107,9 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
   };
 
   // Save settings
-  const handleSaveSettings = () => {
-    saveBackupSettings(settings);
-    restartScheduledBackups();
+  const handleSaveSettings = async () => {
+    await saveBackupSettings(settings);
+    await restartScheduledBackups();
     setHasSettingsChanges(false);
     toast.success("Backup settings saved");
   };
@@ -130,7 +135,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
         });
         refetchBackups();
         // Refresh settings to show new last backup date
-        setSettings(getBackupSettings());
+        getBackupSettings().then((s) => setSettings(s));
       } else {
         toast.error("Backup failed", {
           description: result.error,

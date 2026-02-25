@@ -46,6 +46,19 @@ export function EmailInput({
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [selectedAttachments, setSelectedAttachments] = useState<EmailAttachment[]>([]);
   const [folderFiles, setFolderFiles] = useState<FolderFile[]>([]);
+  const [processedSubject, setProcessedSubject] = useState("Pet Behaviour Services");
+  const [processedBody, setProcessedBody] = useState(`Dear ${clientFirstName},\n\n[Type your message here]\n\nKind regards,`);
+
+  // Load email template
+  useEffect(() => {
+    (async () => {
+      const template = await getEmailTemplate("general");
+      if (template) {
+        setProcessedSubject(processTemplate(template.subject, { clientFirstName, clientLastName }));
+        setProcessedBody(processTemplate(template.body, { clientFirstName, content: "[Type your message here]" }));
+      }
+    })();
+  }, [clientFirstName, clientLastName]);
 
   // Load files from client folder when it changes
   useEffect(() => {
@@ -137,25 +150,7 @@ export function EmailInput({
     }
   };
 
-  // Get general email template
-  const template = getEmailTemplate("general");
-  const processedSubject = template
-    ? processTemplate(template.subject, {
-        clientFirstName,
-        clientLastName,
-      })
-    : "Pet Behaviour Services";
-
-  const processedBody = template
-    ? processTemplate(template.body, {
-        clientFirstName,
-        content: "[Type your message here]",
-      })
-    : `Dear ${clientFirstName},
-
-[Type your message here]
-
-Kind regards,`;
+  // processedSubject and processedBody are loaded via useEffect above
 
   // Get recent reports for quick access
   const recentReports = folderFiles.filter((f) => f.isReport).slice(0, 5);
