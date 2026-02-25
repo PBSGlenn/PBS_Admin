@@ -64,12 +64,15 @@ git push origin --delete branch-name
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
+**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage. **Command Palette** (Ctrl+K) for global search and navigation. **Zod runtime validation** at all external API boundaries. **Perplexity Sonar** integration for live medication brand name updates.
 
 **Last Updated**: 2026-02-26
 
 **Recent Changes** (2026-02-26):
 - **SQLite FTS5 Client Search**: Client search now uses SQLite FTS5 full-text search instead of in-memory JavaScript filtering. Supports prefix matching, relevance ranking, and pet name search. Server-side search with 200ms debounce. LIKE fallback if FTS5 unavailable.
+- **Command Palette**: Global Ctrl+K command palette with FTS5 client search, keyboard navigation (arrow keys, Enter, Esc), and grouped results (Clients, Actions, Settings). Component at `src/components/CommandPalette/CommandPalette.tsx`, integrated in Dashboard.
+- **Zod Runtime Validation**: Centralized Zod v4 schemas in `src/lib/schemas.ts` with `safeParse`/`safeParseArray` helpers. Validation at system boundaries in 6 services: bookingSyncService (Supabase data), jotformService (Jotform API), apiKeysService, backupService, vetClinicsService, transcriptionService.
+- **Perplexity Sonar Medication Checker**: Replaced web-scraping stubs in medicationUpdateService.ts with Perplexity Sonar API. Batches medications in groups of 10. Perplexity API key (`pplx-` prefix) added to apiKeysService, ApiKeysSettingsDialog, and Zod schemas.
 
 **Previous Changes** (2026-02-25):
 - **Security: RCE Fix for Auto-Update**: Update installer download now validates redirect domains (github.com/GitHub only), checks file size against GitHub API metadata, and verifies PE header before execution
@@ -133,6 +136,8 @@ git push origin --delete branch-name
 | **Audio Transcription** | OpenAI gpt-4o-transcribe-diarize | Transcription with native speaker diarization |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
 | **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
+| **Runtime Validation** | Zod v4 | Schema validation at external API boundaries |
+| **Medication Updates** | Perplexity Sonar API | Live medication brand name lookups (Australian market) |
 | **External Services** | Supabase, Jotform API, Resend | Booking sync, questionnaire downloads, email |
 
 ---
@@ -160,6 +165,8 @@ PBS_Admin/
 │   │   ├── Task/           # ✅ TaskForm, TasksTable (priority/status tracking), BulkTaskImporter
 │   │   ├── EmailTemplateManager/  # ✅ Full email template management UI
 │   │   │   └── EmailTemplateManager.tsx  # ✅ Create/edit/duplicate/delete templates
+│   │   ├── CommandPalette/  # ✅ Global Ctrl+K command palette
+│   │   │   └── CommandPalette.tsx  # ✅ FTS5 client search, keyboard navigation, grouped results
 │   │   ├── PromptTemplateManager/  # ✅ AI prompt template management UI
 │   │   │   └── PromptTemplateManager.tsx  # ✅ Create/edit/reset prompt templates
 │   │   ├── WindowManager/  # ✅ Multi-window system
@@ -201,10 +208,11 @@ PBS_Admin/
 │   │   │   ├── updateService.ts   # ✅ GitHub release version checking
 │   │   │   ├── transcriptionService.ts # ✅ Audio transcription with OpenAI diarization
 │   │   │   ├── settingsService.ts # ✅ SQLite Settings table CRUD operations
-│   │   │   └── apiKeysService.ts  # ✅ API key storage and retrieval from SQLite
+│   │   │   └── apiKeysService.ts  # ✅ API key storage and retrieval from SQLite (Anthropic, OpenAI, Resend, Perplexity)
 │   │   ├── prompts/        # ✅ AI prompts and methodologies
 │   │   │   ├── report-system-prompt.ts  # ✅ Report generation methodology (legacy)
 │   │   │   └── promptTemplates.ts  # ✅ Multi-prompt template management system
+│   │   ├── schemas.ts      # ✅ Centralized Zod v4 schemas for external API validation
 │   │   ├── types.ts        # ✅ TypeScript types for all entities
 │   │   ├── taskTemplates.ts # ✅ Predefined task templates with preset values
 │   │   ├── emailTemplates.ts # ✅ Email template definitions and management functions
@@ -962,10 +970,7 @@ Located in [medications.ts](src/lib/medications.ts):
   - Species-specific dosing
 
 **Medication Update Service**:
-Automated monthly check for updated brand names using web search:
-1. Chemist Warehouse (primary source for Australian market availability)
-2. PBS.gov.au (government pharmaceutical benefits scheme)
-3. healthdirect.gov.au (government health information)
+Automated monthly check for updated brand names using **Perplexity Sonar API** (requires `pplx-` API key in Settings > API Keys). Batches medications in groups of 10 for efficient API usage. Queries Australian market sources (Chemist Warehouse, PBS.gov.au, healthdirect.gov.au) via Sonar's live web search. Requires Perplexity API key configured in Settings.
 
 **Workflow**:
 1. Select pet and medication from dropdown
@@ -1025,6 +1030,58 @@ Special instructions: Give with food
 **Known Issues** (TODO):
 - Event notes not updating after prescription generation (query invalidation issue)
 - Letterhead not appearing in generated DOCX (template header configuration)
+
+---
+
+### Command Palette
+
+**Purpose**: Global search and navigation shortcut for quick access to clients, actions, and settings.
+
+**Trigger**: `Ctrl+K` from anywhere in the Dashboard
+
+**Features**:
+- **Client search**: Uses FTS5 full-text search (same engine as ClientsList), shows client name + pet names
+- **Keyboard navigation**: Arrow keys to move, Enter to open, Esc to close
+- **Grouped results**: Clients section, Actions section (e.g., Add New Client), Settings section
+- **Auto-focus**: Search input focused on open; results update as user types
+
+**Implementation Files**:
+- [CommandPalette.tsx](src/components/CommandPalette/CommandPalette.tsx) - Main component
+- [Dashboard.tsx](src/components/Dashboard/Dashboard.tsx) - Integration (Ctrl+K handler, render)
+
+---
+
+### Runtime Validation (Zod)
+
+**Purpose**: Validate data from external APIs at system boundaries to catch malformed responses early.
+
+**Technology**: Zod v4 with centralized schemas
+
+**Schema File**: `src/lib/schemas.ts`
+
+**Helpers**:
+```typescript
+import { safeParse, safeParseArray } from "@/lib/schemas";
+
+// Parse a single object
+const result = safeParse(BookingSchema, rawData);
+if (result.success) { /* result.data is typed */ }
+
+// Parse an array
+const items = safeParseArray(SubmissionSchema, rawArray);
+// Returns only valid items, logs warnings for invalid ones
+```
+
+**Validated Boundaries** (6 services):
+- `bookingSyncService.ts` - Supabase booking records
+- `jotformService.ts` - Jotform API submission responses
+- `apiKeysService.ts` - Stored API key objects
+- `backupService.ts` - Backup settings from SQLite
+- `vetClinicsService.ts` - Vet clinic records from SQLite
+- `transcriptionService.ts` - OpenAI transcription API responses
+
+**Implementation Files**:
+- [schemas.ts](src/lib/schemas.ts) - All Zod schemas and helper functions
 
 ---
 
@@ -2868,7 +2925,7 @@ Required permissions:
 
 ### Overview
 
-PBS Admin requires API keys for AI report generation (Anthropic Claude), audio transcription (OpenAI), and email sending (Resend). In development, these can be configured via `.env` file, but in production builds the `.env` file is not bundled. The API Keys Settings system allows users to configure these keys directly in the app.
+PBS Admin requires API keys for AI report generation (Anthropic Claude), audio transcription (OpenAI), email sending (Resend), and medication updates (Perplexity). In development, these can be configured via `.env` file, but in production builds the `.env` file is not bundled. The API Keys Settings system allows users to configure these keys directly in the app.
 
 **Features**:
 - **Settings Dialog**: Accessible via Settings menu > API Keys
@@ -2883,6 +2940,7 @@ PBS Admin requires API keys for AI report generation (Anthropic Claude), audio t
 | **Anthropic** | `sk-ant-` | AI report generation (Claude API) |
 | **OpenAI** | `sk-` | Audio transcription with speaker diarization |
 | **Resend** | `re_` | Email sending with attachments |
+| **Perplexity** | `pplx-` | Medication brand name updates via Sonar API |
 
 ### Architecture
 
@@ -2956,7 +3014,8 @@ Keys stored in SQLite Settings table under key: `pbs_admin_api_keys`
 {
   "anthropicApiKey": "sk-ant-...",
   "openaiApiKey": "sk-...",
-  "resendApiKey": "re_..."
+  "resendApiKey": "re_...",
+  "perplexityApiKey": "pplx-..."
 }
 ```
 
@@ -3419,4 +3478,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2026-02-26
-**Version**: 2.3.0 (FTS5 full-text client search with prefix matching, relevance ranking, and pet name search; security hardening, AI model upgrades to Claude Opus 4.6, transcription overhaul to gpt-4o-transcribe-diarize, localStorage to SQLite migration, OpenAI API key support)
+**Version**: 2.4.0 (Command Palette with Ctrl+K global search; Zod v4 runtime validation at external API boundaries; Perplexity Sonar integration for medication brand name updates; FTS5 client search; security hardening; Claude Opus 4.6; gpt-4o-transcribe-diarize transcription; localStorage to SQLite migration)
