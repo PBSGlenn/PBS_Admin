@@ -11,12 +11,14 @@ export interface ApiKeys {
   anthropicApiKey: string | null;
   resendApiKey: string | null;
   openaiApiKey: string | null;
+  perplexityApiKey: string | null;
 }
 
 const DEFAULT_API_KEYS: ApiKeys = {
   anthropicApiKey: null,
   resendApiKey: null,
   openaiApiKey: null,
+  perplexityApiKey: null,
 };
 
 /**
@@ -103,6 +105,29 @@ export async function isAnthropicConfigured(): Promise<boolean> {
  */
 export async function isResendConfigured(): Promise<boolean> {
   return (await getResendApiKey()) !== null;
+}
+
+/**
+ * Get Perplexity API key
+ * Falls back to environment variable for development
+ */
+export async function getPerplexityApiKey(): Promise<string | null> {
+  const keys = await getApiKeys();
+  if (keys.perplexityApiKey) {
+    return keys.perplexityApiKey;
+  }
+  const envKey = import.meta.env.VITE_PERPLEXITY_API_KEY;
+  if (envKey) {
+    return envKey;
+  }
+  return null;
+}
+
+/**
+ * Check if Perplexity API key is configured
+ */
+export async function isPerplexityConfigured(): Promise<boolean> {
+  return (await getPerplexityApiKey()) !== null;
 }
 
 /**

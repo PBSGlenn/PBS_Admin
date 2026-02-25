@@ -84,6 +84,7 @@ export const ApiKeysSchema = z.object({
   anthropicApiKey: z.string().nullable(),
   resendApiKey: z.string().nullable(),
   openaiApiKey: z.string().nullable(),
+  perplexityApiKey: z.string().nullable().default(null),
 });
 
 export const AIModelConfigSchema = z.object({

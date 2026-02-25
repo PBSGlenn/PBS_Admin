@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Key, Brain, Mail, Mic, Eye, EyeOff, Check, AlertCircle, Loader2 } from "lucide-react";
+import { Key, Brain, Mail, Mic, Search, Eye, EyeOff, Check, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getApiKeys,
@@ -22,6 +22,7 @@ import {
   isAnthropicConfigured,
   isResendConfigured,
   isOpenAIConfigured,
+  isPerplexityConfigured,
 } from "@/lib/services/apiKeysService";
 
 /** Test an Anthropic API key by calling the /v1/messages count endpoint */
@@ -58,6 +59,30 @@ async function testOpenAIKey(key: string): Promise<{ valid: boolean; error?: str
   }
 }
 
+/** Test a Perplexity API key by calling the chat completions endpoint */
+async function testPerplexityKey(key: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "sonar",
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 1,
+      }),
+    });
+    if (response.ok) return { valid: true };
+    if (response.status === 401 || response.status === 403) return { valid: false, error: "Invalid API key" };
+    // 422 or other errors with a valid auth header means the key itself is fine
+    return { valid: true };
+  } catch {
+    return { valid: true };
+  }
+}
+
 /** Test a Resend API key by calling the /api-keys endpoint */
 async function testResendKey(key: string): Promise<{ valid: boolean; error?: string }> {
   try {
@@ -82,12 +107,15 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
   const [anthropicKey, setAnthropicKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
   const [resendKey, setResendKey] = useState("");
+  const [perplexityKey, setPerplexityKey] = useState("");
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showResendKey, setShowResendKey] = useState(false);
+  const [showPerplexityKey, setShowPerplexityKey] = useState(false);
   const [hasAnthropicKey, setHasAnthropicKey] = useState(false);
   const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
   const [hasResendKey, setHasResendKey] = useState(false);
+  const [hasPerplexityKey, setHasPerplexityKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Load current settings
@@ -98,13 +126,16 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
         setHasAnthropicKey(await isAnthropicConfigured());
         setHasOpenaiKey(await isOpenAIConfigured());
         setHasResendKey(await isResendConfigured());
+        setHasPerplexityKey(await isPerplexityConfigured());
         // Don't populate the actual keys - show masked version
         setAnthropicKey("");
         setOpenaiKey("");
         setResendKey("");
+        setPerplexityKey("");
         setShowAnthropicKey(false);
         setShowOpenaiKey(false);
         setShowResendKey(false);
+        setShowPerplexityKey(false);
       })();
     }
   }, [isOpen]);
@@ -240,6 +271,50 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
     setHasResendKey(false);
     setResendKey("");
     toast.success("Resend API key removed");
+  };
+
+  const handleSavePerplexityKey = async () => {
+    if (!perplexityKey.trim()) {
+      toast.error("Please enter an API key");
+      return;
+    }
+
+    if (!perplexityKey.startsWith("pplx-")) {
+      toast.warning("Perplexity API keys usually start with 'pplx-'", {
+        description: "Please verify your key is correct",
+      });
+    }
+
+    setIsSaving(true);
+    try {
+      const trimmedKey = perplexityKey.trim();
+      const test = await testPerplexityKey(trimmedKey);
+      if (!test.valid) {
+        toast.error("Perplexity API key is invalid", {
+          description: test.error || "Please check your key and try again",
+        });
+        setIsSaving(false);
+        return;
+      }
+      await saveApiKeys({ perplexityApiKey: trimmedKey });
+      setHasPerplexityKey(true);
+      setPerplexityKey("");
+      setShowPerplexityKey(false);
+      toast.success("Perplexity API key verified and saved", {
+        description: "Medication brand name updates are now available",
+      });
+    } catch (error) {
+      toast.error("Failed to save API key");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClearPerplexityKey = async () => {
+    await saveApiKeys({ perplexityApiKey: null });
+    setHasPerplexityKey(false);
+    setPerplexityKey("");
+    toast.success("Perplexity API key removed");
   };
 
   return (
@@ -445,6 +520,72 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
                   size="sm"
                   variant="outline"
                   onClick={handleClearResendKey}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Perplexity API Key */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-orange-500" />
+              <Label className="text-sm font-medium">Perplexity API Key</Label>
+              {hasPerplexityKey ? (
+                <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                  <Check className="h-3 w-3" />
+                  Configured
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                  <AlertCircle className="h-3 w-3" />
+                  Not configured
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Required for medication brand name updates (Sonar search). Get your key from{" "}
+              <a
+                href="https://www.perplexity.ai/settings/api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:underline"
+              >
+                perplexity.ai/settings/api
+              </a>
+            </p>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showPerplexityKey ? "text" : "password"}
+                  placeholder={hasPerplexityKey ? "Enter new key to replace..." : "pplx-..."}
+                  value={perplexityKey}
+                  onChange={(e) => setPerplexityKey(e.target.value)}
+                  className="pr-10 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPerplexityKey(!showPerplexityKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPerplexityKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSavePerplexityKey}
+                disabled={!perplexityKey.trim() || isSaving}
+              >
+                Save
+              </Button>
+              {hasPerplexityKey && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleClearPerplexityKey}
                 >
                   Clear
                 </Button>

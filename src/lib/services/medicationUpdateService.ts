@@ -1,8 +1,10 @@
 // Medication Update Service
-// Automated web search for current medication brand names
+// Uses Perplexity Sonar API to search for current Australian medication brand names
 
 import { BEHAVIOR_MEDICATIONS, Medication } from '../medications';
 import { getSetting, setSetting, getSettingJson, setSettingJson, deleteSetting } from './settingsService';
+import { getPerplexityApiKey } from './apiKeysService';
+import { logger } from '../utils/logger';
 
 export interface MedicationUpdate {
   medicationId: string;
@@ -86,88 +88,100 @@ export async function addToUpdateHistory(entry: UpdateHistory): Promise<void> {
 }
 
 /**
- * Search for current brand names for a specific medication
- * Uses web search to find authoritative Australian sources
+ * Query Perplexity Sonar API for current Australian brand names of a batch of medications.
  *
- * Search Strategy:
- * 1. Chemist Warehouse - Primary source for current Australian market availability
- * 2. PBS.gov.au - Government pharmaceutical benefits scheme
- * 3. healthdirect.gov.au - Government health information
+ * Uses a single API call with a structured prompt to get brand names for multiple
+ * medications at once, reducing cost and latency vs. individual queries.
  */
-export async function searchMedicationBrands(
-  genericName: string,
-  category: string
-): Promise<{ brands: string[], sources: string[] }> {
-  // Note: This is a placeholder for web search integration
-  // In production, this would use the WebSearch tool or API
+async function queryPerplexityForBrands(
+  medications: { genericName: string; category: string }[]
+): Promise<{ results: Record<string, string[]>; sources: string[] }> {
+  const apiKey = await getPerplexityApiKey();
+  if (!apiKey) {
+    throw new Error("Perplexity API key not configured. Set it in Settings > API Keys.");
+  }
 
-  const sources = [
-    'https://www.chemistwarehouse.com.au',
-    'https://www.pbs.gov.au',
-    'https://www.healthdirect.gov.au'
-  ];
+  const medList = medications
+    .map((m, i) => `${i + 1}. ${m.genericName} (${m.category})`)
+    .join("\n");
 
-  // Search queries for each source
-  const searchQueries = {
-    chemistWarehouse: `site:chemistwarehouse.com.au ${genericName}`,
-    pbs: `site:pbs.gov.au ${genericName} brand names`,
-    healthdirect: `site:healthdirect.gov.au ${genericName} brands`
-  };
+  const response = await fetch("https://api.perplexity.ai/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "sonar",
+      messages: [
+        {
+          role: "system",
+          content: "You are a pharmaceutical research assistant. Return ONLY valid JSON with no markdown formatting, no code fences, and no explanation text. The JSON must be parseable by JSON.parse().",
+        },
+        {
+          role: "user",
+          content: `List the current brand names available in Australia for each of these medications. Include only brands currently sold in Australian pharmacies (e.g., Chemist Warehouse, Priceline Pharmacy, PBS-listed brands). Do not include discontinued brands.
 
-  // TODO: Integrate with WebSearch tool
-  // 1. Search Chemist Warehouse for product listings
-  // 2. Search PBS for official brand registrations
-  // 3. Search healthdirect for additional brands
-  // 4. Parse and combine results
-  // 5. Deduplicate and validate brand names
+Medications:
+${medList}
 
-  // For now, return current brands (no changes detected)
-  const currentMed = BEHAVIOR_MEDICATIONS.find(m => m.genericName === genericName);
+Return a JSON object where each key is the generic drug name (exactly as listed above) and the value is an array of Australian brand name strings. Example format:
+{"Fluoxetine": ["Lovan", "Prozac", "Auscap"], "Sertraline": ["Zoloft", "Sertra"]}
 
-  return {
-    brands: currentMed?.brandNames || [],
-    sources
-  };
-}
-
-/**
- * Parse search results and extract brand names
- * This function would parse HTML/text from:
- * - Chemist Warehouse (product listings)
- * - PBS.gov.au (official registrations)
- * - healthdirect.gov.au (health information)
- */
-export function parseBrandNamesFromSearchResults(searchResults: string): string[] {
-  // TODO: Implement HTML parsing logic
-  // Look for common patterns:
-  // - "Available as: [brand1], [brand2], [brand3]"
-  // - Brand names in <li> tags
-  // - Table rows with brand names
-
-  const brands: string[] = [];
-
-  // Example regex patterns (would need refinement)
-  const patterns = [
-    /brand names?:?\s*([^.]+)/gi,
-    /available as:?\s*([^.]+)/gi,
-    /marketed as:?\s*([^.]+)/gi,
-  ];
-
-  patterns.forEach(pattern => {
-    const matches = searchResults.matchAll(pattern);
-    for (const match of matches) {
-      const brandList = match[1];
-      const extractedBrands = brandList
-        .split(/,|and|\||;/)
-        .map(b => b.trim())
-        .filter(b => b.length > 0 && b.length < 50); // Reasonable brand name length
-      brands.push(...extractedBrands);
-    }
+If a medication is only available as a generic/compounded formulation with no specific brand names in Australia, use an empty array [].`,
+        },
+      ],
+      max_tokens: 2000,
+      temperature: 0.1,
+    }),
   });
 
-  // Remove duplicates and common false positives
-  return Array.from(new Set(brands))
-    .filter(b => !['the', 'or', 'available', 'brand'].includes(b.toLowerCase()));
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Perplexity API key is invalid or expired. Check Settings > API Keys.");
+    }
+    throw new Error(`Perplexity API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content: string = data.choices?.[0]?.message?.content || "";
+
+  // Extract citations/sources if available
+  const sources: string[] = data.citations || [];
+
+  // Parse JSON from the response (handle potential markdown code fences)
+  let parsed: Record<string, string[]>;
+  try {
+    // Try direct parse first
+    parsed = JSON.parse(content);
+  } catch {
+    // Try extracting JSON from code fences
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      parsed = JSON.parse(jsonMatch[1].trim());
+    } else {
+      // Try finding first { to last }
+      const start = content.indexOf("{");
+      const end = content.lastIndexOf("}");
+      if (start !== -1 && end > start) {
+        parsed = JSON.parse(content.substring(start, end + 1));
+      } else {
+        logger.error("Failed to parse Perplexity response:", content);
+        throw new Error("Could not parse medication brands from API response");
+      }
+    }
+  }
+
+  // Validate structure: each value should be a string array
+  const results: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+      results[key] = value;
+    }
+  }
+
+  return { results, sources };
 }
 
 /**
@@ -188,8 +202,10 @@ export function compareBrands(
 }
 
 /**
- * Check for updates to all medications
- * This is the main function that runs monthly
+ * Check for updates to all medications using Perplexity Sonar API.
+ *
+ * Batches medications into groups to minimize API calls while staying
+ * within response size limits.
  */
 export async function checkForMedicationUpdates(
   onProgress?: (current: number, total: number, medicationName: string) => void
@@ -197,76 +213,125 @@ export async function checkForMedicationUpdates(
   const startTime = Date.now();
   const updates: MedicationUpdate[] = [];
 
-  for (let i = 0; i < BEHAVIOR_MEDICATIONS.length; i++) {
-    const medication = BEHAVIOR_MEDICATIONS[i];
-
-    // Report progress
-    if (onProgress) {
-      onProgress(i + 1, BEHAVIOR_MEDICATIONS.length, medication.genericName);
-    }
-
-    // Skip compounded-only medications (no brand names to update)
-    if (medication.brandNames.includes('Compounded formulation')) {
+  // Separate medications into searchable and compounded-only
+  const searchable: typeof BEHAVIOR_MEDICATIONS = [];
+  for (const med of BEHAVIOR_MEDICATIONS) {
+    if (med.brandNames.includes('Compounded formulation')) {
       updates.push({
-        medicationId: medication.id,
-        genericName: medication.genericName,
-        category: medication.category,
-        currentBrands: medication.brandNames,
-        proposedBrands: medication.brandNames,
+        medicationId: med.id,
+        genericName: med.genericName,
+        category: med.category,
+        currentBrands: med.brandNames,
+        proposedBrands: med.brandNames,
         additions: [],
         removals: [],
-        unchanged: medication.brandNames,
+        unchanged: med.brandNames,
         sources: [],
         hasChanges: false,
       });
-      continue;
+    } else {
+      searchable.push(med);
+    }
+  }
+
+  // Batch searchable medications into groups of 10
+  const BATCH_SIZE = 10;
+  const batches: typeof searchable[] = [];
+  for (let i = 0; i < searchable.length; i += BATCH_SIZE) {
+    batches.push(searchable.slice(i, i + BATCH_SIZE));
+  }
+
+  let processedCount = BEHAVIOR_MEDICATIONS.length - searchable.length; // compounded ones already done
+
+  for (const batch of batches) {
+    // Report progress for first medication in batch
+    if (onProgress) {
+      onProgress(processedCount + 1, BEHAVIOR_MEDICATIONS.length, batch[0].genericName);
     }
 
     try {
-      // Search for current brand names
-      const { brands: proposedBrands, sources } = await searchMedicationBrands(
-        medication.genericName,
-        medication.category
+      const { results, sources } = await queryPerplexityForBrands(
+        batch.map((m) => ({ genericName: m.genericName, category: m.category }))
       );
 
-      // Compare current vs. proposed
-      const { additions, removals, unchanged } = compareBrands(
-        medication.brandNames,
-        proposedBrands
-      );
+      for (const medication of batch) {
+        processedCount++;
+        if (onProgress) {
+          onProgress(processedCount, BEHAVIOR_MEDICATIONS.length, medication.genericName);
+        }
 
-      updates.push({
-        medicationId: medication.id,
-        genericName: medication.genericName,
-        category: medication.category,
-        currentBrands: medication.brandNames,
-        proposedBrands: proposedBrands,
-        additions,
-        removals,
-        unchanged,
-        sources,
-        hasChanges: additions.length > 0 || removals.length > 0,
-      });
+        // Find matching result (case-insensitive key match)
+        const proposedBrands =
+          results[medication.genericName] ||
+          results[medication.genericName.toLowerCase()] ||
+          Object.entries(results).find(
+            ([key]) => key.toLowerCase() === medication.genericName.toLowerCase()
+          )?.[1] ||
+          [];
 
-      // Small delay to avoid rate limiting (if using real web search)
-      await new Promise(resolve => setTimeout(resolve, 500));
+        // If Perplexity returned empty, keep current brands (avoid false removals)
+        if (proposedBrands.length === 0) {
+          updates.push({
+            medicationId: medication.id,
+            genericName: medication.genericName,
+            category: medication.category,
+            currentBrands: medication.brandNames,
+            proposedBrands: medication.brandNames,
+            additions: [],
+            removals: [],
+            unchanged: medication.brandNames,
+            sources,
+            hasChanges: false,
+          });
+          continue;
+        }
 
+        const { additions, removals, unchanged } = compareBrands(
+          medication.brandNames,
+          proposedBrands
+        );
+
+        updates.push({
+          medicationId: medication.id,
+          genericName: medication.genericName,
+          category: medication.category,
+          currentBrands: medication.brandNames,
+          proposedBrands,
+          additions,
+          removals,
+          unchanged,
+          sources,
+          hasChanges: additions.length > 0 || removals.length > 0,
+        });
+      }
     } catch (error) {
-      console.error(`Failed to check updates for ${medication.genericName}:`, error);
+      logger.error("Perplexity batch query failed:", error);
 
-      // Add entry with error state
-      updates.push({
-        medicationId: medication.id,
-        genericName: medication.genericName,
-        category: medication.category,
-        currentBrands: medication.brandNames,
-        proposedBrands: medication.brandNames,
-        additions: [],
-        removals: [],
-        unchanged: medication.brandNames,
-        sources: [],
-        hasChanges: false,
-      });
+      // Add all medications in the failed batch with no changes
+      for (const medication of batch) {
+        processedCount++;
+        if (onProgress) {
+          onProgress(processedCount, BEHAVIOR_MEDICATIONS.length, medication.genericName);
+        }
+
+        updates.push({
+          medicationId: medication.id,
+          genericName: medication.genericName,
+          category: medication.category,
+          currentBrands: medication.brandNames,
+          proposedBrands: medication.brandNames,
+          additions: [],
+          removals: [],
+          unchanged: medication.brandNames,
+          sources: [],
+          hasChanges: false,
+        });
+      }
+
+      // If it's an auth error, throw immediately (don't continue with more batches)
+      if (error instanceof Error && error.message.includes("API key")) {
+        throw error;
+      }
     }
   }
 
@@ -285,20 +350,12 @@ export async function checkForMedicationUpdates(
 }
 
 /**
- * Apply selected medication updates
- * This would modify the medications.ts file (in production, would regenerate the file)
+ * Apply selected medication updates to SQLite custom overrides
  */
 export async function applyMedicationUpdates(
   selectedUpdates: { medicationId: string, newBrands: string[] }[]
 ): Promise<{ success: boolean, appliedCount: number, error?: string }> {
   try {
-    // In a production app, this would:
-    // 1. Read the medications.ts file
-    // 2. Parse and update the BEHAVIOR_MEDICATIONS array
-    // 3. Write the updated file back to disk
-    // 4. Trigger a hot reload or app restart
-
-    // For now, we'll update SQLite with custom overrides
     const customBrands = await getSettingJson<Record<string, string[]>>('pbs_admin_custom_medication_brands', {});
 
     for (const update of selectedUpdates) {
@@ -341,7 +398,7 @@ export async function applyMedicationUpdates(
     };
 
   } catch (error) {
-    console.error('Failed to apply medication updates:', error);
+    logger.error('Failed to apply medication updates:', error);
     return {
       success: false,
       appliedCount: 0,
