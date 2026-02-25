@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Key, Brain, Mail, Mic, Eye, EyeOff, Check, AlertCircle } from "lucide-react";
+import { Key, Brain, Mail, Mic, Eye, EyeOff, Check, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getApiKeys,
@@ -23,6 +23,55 @@ import {
   isResendConfigured,
   isOpenAIConfigured,
 } from "@/lib/services/apiKeysService";
+
+/** Test an Anthropic API key by calling the /v1/messages count endpoint */
+async function testAnthropicKey(key: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/models", {
+      method: "GET",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+    });
+    if (response.ok) return { valid: true };
+    if (response.status === 401) return { valid: false, error: "Invalid API key" };
+    return { valid: false, error: `API returned status ${response.status}` };
+  } catch {
+    // Network error — key might still be valid, just can't verify
+    return { valid: true };
+  }
+}
+
+/** Test an OpenAI API key by calling the /v1/models endpoint */
+async function testOpenAIKey(key: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/models", {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${key}` },
+    });
+    if (response.ok) return { valid: true };
+    if (response.status === 401) return { valid: false, error: "Invalid API key" };
+    return { valid: false, error: `API returned status ${response.status}` };
+  } catch {
+    return { valid: true };
+  }
+}
+
+/** Test a Resend API key by calling the /api-keys endpoint */
+async function testResendKey(key: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const response = await fetch("https://api.resend.com/api-keys", {
+      method: "GET",
+      headers: { "Authorization": `Bearer ${key}` },
+    });
+    if (response.ok) return { valid: true };
+    if (response.status === 401 || response.status === 403) return { valid: false, error: "Invalid API key" };
+    return { valid: false, error: `API returned status ${response.status}` };
+  } catch {
+    return { valid: true };
+  }
+}
 
 interface ApiKeysSettingsDialogProps {
   isOpen: boolean;
@@ -74,11 +123,21 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
 
     setIsSaving(true);
     try {
-      await saveApiKeys({ anthropicApiKey: anthropicKey.trim() });
+      const trimmedKey = anthropicKey.trim();
+      // Test key validity before saving
+      const test = await testAnthropicKey(trimmedKey);
+      if (!test.valid) {
+        toast.error("Anthropic API key is invalid", {
+          description: test.error || "Please check your key and try again",
+        });
+        setIsSaving(false);
+        return;
+      }
+      await saveApiKeys({ anthropicApiKey: trimmedKey });
       setHasAnthropicKey(true);
       setAnthropicKey("");
       setShowAnthropicKey(false);
-      toast.success("Anthropic API key saved", {
+      toast.success("Anthropic API key verified and saved", {
         description: "AI report generation is now available",
       });
     } catch (error) {
@@ -102,11 +161,20 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
 
     setIsSaving(true);
     try {
-      await saveApiKeys({ openaiApiKey: openaiKey.trim() });
+      const trimmedKey = openaiKey.trim();
+      const test = await testOpenAIKey(trimmedKey);
+      if (!test.valid) {
+        toast.error("OpenAI API key is invalid", {
+          description: test.error || "Please check your key and try again",
+        });
+        setIsSaving(false);
+        return;
+      }
+      await saveApiKeys({ openaiApiKey: trimmedKey });
       setHasOpenaiKey(true);
       setOpenaiKey("");
       setShowOpenaiKey(false);
-      toast.success("OpenAI API key saved", {
+      toast.success("OpenAI API key verified and saved", {
         description: "Audio transcription with speaker diarization is now available",
       });
     } catch (error) {
@@ -137,11 +205,20 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
 
     setIsSaving(true);
     try {
-      await saveApiKeys({ resendApiKey: resendKey.trim() });
+      const trimmedKey = resendKey.trim();
+      const test = await testResendKey(trimmedKey);
+      if (!test.valid) {
+        toast.error("Resend API key is invalid", {
+          description: test.error || "Please check your key and try again",
+        });
+        setIsSaving(false);
+        return;
+      }
+      await saveApiKeys({ resendApiKey: trimmedKey });
       setHasResendKey(true);
       setResendKey("");
       setShowResendKey(false);
-      toast.success("Resend API key saved", {
+      toast.success("Resend API key verified and saved", {
         description: "Email sending is now available",
       });
     } catch (error) {

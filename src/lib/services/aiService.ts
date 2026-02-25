@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "../utils/logger";
-import { getAnthropicApiKey } from "./apiKeysService";
+import { getAnthropicApiKey, getAIModelConfig } from "./apiKeysService";
 
 export interface AIGenerationResult {
   success: boolean;
@@ -89,6 +89,9 @@ export async function generateAIReport(
     // Get API key from settings (falls back to env var in development)
     const apiKey = await getAnthropicApiKey();
 
+    // Get configured model from settings
+    const modelConfig = await getAIModelConfig();
+
     const result = await invoke<{
       success: boolean;
       content: string;
@@ -102,6 +105,7 @@ export async function generateAIReport(
       userPrompt,
       maxTokens,
       apiKey,
+      model: modelConfig.reportModel,
     });
 
     // Record successful request for rate limiting

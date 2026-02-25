@@ -41,6 +41,9 @@ export async function getDatabase(): Promise<Database> {
       // Ensure Settings table exists and migrate localStorage data
       await initSettingsTable();
       await migrateFromLocalStorage();
+
+      // Initialize FTS5 full-text search for clients
+      await initClientFTS(db);
     } catch (error) {
       console.error("[DB] Failed to connect to database:", error);
       logger.error("Failed to connect to database:", error);
@@ -159,6 +162,177 @@ export async function executeBatch(
       logger.error("Failed to rollback batch transaction:", rollbackError);
     }
     throw error;
+  }
+}
+
+/**
+ * Initialize FTS5 virtual table for client search.
+ * Creates the table, sync triggers, and populates from existing data.
+ * Idempotent — safe to call on every startup.
+ */
+async function initClientFTS(database: Database): Promise<void> {
+  try {
+    // Create FTS5 virtual table (IF NOT EXISTS not supported for FTS5, so check first)
+    const tables = await database.select<{ name: string }[]>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='ClientFTS'"
+    );
+
+    if (tables.length === 0) {
+      logger.info("[FTS] Creating ClientFTS virtual table...");
+
+      // FTS5 virtual table indexing searchable client fields + pet names
+      await database.execute(`
+        CREATE VIRTUAL TABLE ClientFTS USING fts5(
+          clientId UNINDEXED,
+          firstName,
+          lastName,
+          email,
+          mobile,
+          city,
+          petNames,
+          content='',
+          tokenize='unicode61 remove_diacritics 2'
+        )
+      `);
+
+      // Populate from existing data (join pet names as comma-separated)
+      await database.execute(`
+        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        SELECT
+          c.clientId,
+          COALESCE(c.firstName, ''),
+          COALESCE(c.lastName, ''),
+          COALESCE(c.email, ''),
+          COALESCE(c.mobile, ''),
+          COALESCE(c.city, ''),
+          COALESCE(GROUP_CONCAT(p.name, ', '), '')
+        FROM Client c
+        LEFT JOIN Pet p ON c.clientId = p.clientId
+        GROUP BY c.clientId
+      `);
+
+      logger.info("[FTS] ClientFTS populated with existing data");
+    }
+
+    // Create triggers (DROP IF EXISTS + CREATE for idempotency)
+    // Trigger: After INSERT on Client
+    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_insert`);
+    await database.execute(`
+      CREATE TRIGGER ClientFTS_insert AFTER INSERT ON Client
+      BEGIN
+        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        VALUES (
+          NEW.clientId,
+          COALESCE(NEW.firstName, ''),
+          COALESCE(NEW.lastName, ''),
+          COALESCE(NEW.email, ''),
+          COALESCE(NEW.mobile, ''),
+          COALESCE(NEW.city, ''),
+          ''
+        );
+      END
+    `);
+
+    // Trigger: After UPDATE on Client — delete old row, insert new
+    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_update`);
+    await database.execute(`
+      CREATE TRIGGER ClientFTS_update AFTER UPDATE ON Client
+      BEGIN
+        DELETE FROM ClientFTS WHERE clientId = OLD.clientId;
+        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        SELECT
+          NEW.clientId,
+          COALESCE(NEW.firstName, ''),
+          COALESCE(NEW.lastName, ''),
+          COALESCE(NEW.email, ''),
+          COALESCE(NEW.mobile, ''),
+          COALESCE(NEW.city, ''),
+          COALESCE(GROUP_CONCAT(p.name, ', '), '')
+        FROM (SELECT 1) dummy
+        LEFT JOIN Pet p ON p.clientId = NEW.clientId;
+      END
+    `);
+
+    // Trigger: After DELETE on Client
+    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_delete`);
+    await database.execute(`
+      CREATE TRIGGER ClientFTS_delete AFTER DELETE ON Client
+      BEGIN
+        DELETE FROM ClientFTS WHERE clientId = OLD.clientId;
+      END
+    `);
+
+    // Trigger: After INSERT on Pet — update parent client's petNames
+    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_pet_insert`);
+    await database.execute(`
+      CREATE TRIGGER ClientFTS_pet_insert AFTER INSERT ON Pet
+      BEGIN
+        DELETE FROM ClientFTS WHERE clientId = NEW.clientId;
+        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        SELECT
+          c.clientId,
+          COALESCE(c.firstName, ''),
+          COALESCE(c.lastName, ''),
+          COALESCE(c.email, ''),
+          COALESCE(c.mobile, ''),
+          COALESCE(c.city, ''),
+          COALESCE(GROUP_CONCAT(p.name, ', '), '')
+        FROM Client c
+        LEFT JOIN Pet p ON c.clientId = p.clientId
+        WHERE c.clientId = NEW.clientId
+        GROUP BY c.clientId;
+      END
+    `);
+
+    // Trigger: After UPDATE on Pet
+    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_pet_update`);
+    await database.execute(`
+      CREATE TRIGGER ClientFTS_pet_update AFTER UPDATE ON Pet
+      BEGIN
+        DELETE FROM ClientFTS WHERE clientId = NEW.clientId;
+        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        SELECT
+          c.clientId,
+          COALESCE(c.firstName, ''),
+          COALESCE(c.lastName, ''),
+          COALESCE(c.email, ''),
+          COALESCE(c.mobile, ''),
+          COALESCE(c.city, ''),
+          COALESCE(GROUP_CONCAT(p.name, ', '), '')
+        FROM Client c
+        LEFT JOIN Pet p ON c.clientId = p.clientId
+        WHERE c.clientId = NEW.clientId
+        GROUP BY c.clientId;
+      END
+    `);
+
+    // Trigger: After DELETE on Pet
+    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_pet_delete`);
+    await database.execute(`
+      CREATE TRIGGER ClientFTS_pet_delete AFTER DELETE ON Pet
+      BEGIN
+        DELETE FROM ClientFTS WHERE clientId = OLD.clientId;
+        INSERT OR IGNORE INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        SELECT
+          c.clientId,
+          COALESCE(c.firstName, ''),
+          COALESCE(c.lastName, ''),
+          COALESCE(c.email, ''),
+          COALESCE(c.mobile, ''),
+          COALESCE(c.city, ''),
+          COALESCE(GROUP_CONCAT(p.name, ', '), '')
+        FROM Client c
+        LEFT JOIN Pet p ON c.clientId = p.clientId
+        WHERE c.clientId = OLD.clientId
+        GROUP BY c.clientId;
+      END
+    `);
+
+    logger.info("[FTS] Client FTS5 triggers initialized");
+  } catch (error) {
+    // FTS5 not available — log and continue without full-text search
+    logger.error("[FTS] Failed to initialize FTS5 (search will fall back to LIKE):", error);
+    console.warn("[FTS] FTS5 initialization failed:", error);
   }
 }
 

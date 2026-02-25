@@ -37,6 +37,13 @@ export interface BackupSettings {
   lastBackupDate: string | null;
 }
 
+export interface BackupIntegrityResult {
+  valid: boolean;
+  size?: number;
+  hash?: string;
+  error?: string;
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -326,6 +333,24 @@ export async function restartScheduledBackups(): Promise<void> {
 // ============================================================================
 // Utility Functions
 // ============================================================================
+
+/**
+ * Verify backup file integrity (SHA-256 hash + SQLite header check)
+ */
+export async function verifyBackupIntegrity(backupPath: string): Promise<BackupIntegrityResult> {
+  try {
+    const result = await invoke<BackupIntegrityResult>("verify_backup_integrity", {
+      backupPath,
+    });
+    return result;
+  } catch (error) {
+    logger.error("Backup integrity check failed:", error);
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
 
 /**
  * Format bytes to human-readable string

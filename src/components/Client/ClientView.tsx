@@ -1,7 +1,7 @@
 // PBS Admin - Client View Component
 // Two-pane layout for editing client and managing related data
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -64,12 +64,12 @@ export function ClientView({ client, onClose }: ClientViewProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
-  // Check if form has changes
-  const hasChanges = () => {
+  // Check if form has changes (memoized to avoid recomputing on every render)
+  const hasChanges = useMemo(() => {
     return Object.keys(formData).some(
       (key) => formData[key as keyof typeof formData] !== originalData[key as keyof typeof originalData]
     );
-  };
+  }, [formData, originalData]);
 
   // Track unsaved changes
   const {
@@ -78,7 +78,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
     confirmDiscard,
     cancelDiscard,
   } = useUnsavedChanges({
-    checkDirty: hasChanges,
+    checkDirty: () => hasChanges,
   });
 
   // Folder management state
@@ -462,7 +462,7 @@ export function ClientView({ client, onClose }: ClientViewProps) {
               </Button>
               <Button
                 type="submit"
-                disabled={!hasChanges() || saveMutation.isPending || showSaveSuccess}
+                disabled={!hasChanges || saveMutation.isPending || showSaveSuccess}
                 size="sm"
                 className="h-7 text-[11px]"
               >

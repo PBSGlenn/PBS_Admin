@@ -16,7 +16,7 @@ import { getPetsByClientId } from "@/lib/services/petService";
 import { generateAbridgedClinicalNotes, generateComprehensiveClinicalReport } from "@/lib/services/multiReportGenerationService";
 import { convertReportToDocxDirectly } from "@/lib/services/docxConversionService";
 import { createTask } from "@/lib/services/taskService";
-import { getAnthropicApiKey } from "@/lib/services/apiKeysService";
+import { getAnthropicApiKey, getAIModelConfig } from "@/lib/services/apiKeysService";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import {
   TranscriptSection,
@@ -597,6 +597,8 @@ export function ConsultationEventPanel({
         return;
       }
 
+      const modelConfig = await getAIModelConfig();
+
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -606,7 +608,7 @@ export function ConsultationEventPanel({
           "anthropic-dangerous-direct-browser-access": "true"
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5-20250929",
+          model: modelConfig.taskExtractionModel,
           max_tokens: 2000,
           messages: [{
             role: "user",

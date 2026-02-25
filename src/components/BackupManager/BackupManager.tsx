@@ -50,6 +50,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Clock,
+  ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
@@ -63,6 +65,7 @@ import {
   saveBackupSettings,
   restartScheduledBackups,
   formatFileSize,
+  verifyBackupIntegrity,
   type BackupInfo,
   type BackupSettings,
 } from "@/lib/services/backupService";
@@ -78,6 +81,8 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
   const [backupsPath, setBackupsPath] = useState<string>("");
   const [restoreTarget, setRestoreTarget] = useState<BackupInfo | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupInfo | null>(null);
+  const [restoringFileName, setRestoringFileName] = useState<string | null>(null);
+  const [verifyStatus, setVerifyStatus] = useState<Record<string, "checking" | "valid" | "invalid">>({});
 
   // Scheduled backup settings state
   const [settings, setSettings] = useState<BackupSettings>({
@@ -125,17 +130,52 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
     enabled: isOpen,
   });
 
+  // Verify a backup file
+  const handleVerify = async (backup: BackupInfo) => {
+    setVerifyStatus((prev) => ({ ...prev, [backup.filePath]: "checking" }));
+    const result = await verifyBackupIntegrity(backup.filePath);
+    setVerifyStatus((prev) => ({
+      ...prev,
+      [backup.filePath]: result.valid ? "valid" : "invalid",
+    }));
+    if (result.valid) {
+      toast.success("Backup verified", {
+        description: `SHA-256: ${result.hash?.slice(0, 16)}...`,
+      });
+    } else {
+      toast.error("Backup integrity check failed", {
+        description: result.error || "File may be corrupted",
+      });
+    }
+  };
+
   // Create backup mutation
   const createBackupMutation = useMutation({
     mutationFn: createBackupWithTracking,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.success) {
-        toast.success("Backup created successfully", {
-          description: result.fileName,
-        });
         refetchBackups();
-        // Refresh settings to show new last backup date
         getBackupSettings().then((s) => setSettings(s));
+        // Auto-verify the new backup
+        if (result.filePath) {
+          const integrity = await verifyBackupIntegrity(result.filePath);
+          if (integrity.valid) {
+            setVerifyStatus((prev) => ({ ...prev, [result.filePath!]: "valid" }));
+            toast.success("Backup created and verified", {
+              description: result.fileName,
+              icon: <ShieldCheck className="h-4 w-4 text-green-500" />,
+            });
+          } else {
+            setVerifyStatus((prev) => ({ ...prev, [result.filePath!]: "invalid" }));
+            toast.warning("Backup created but verification failed", {
+              description: integrity.error,
+            });
+          }
+        } else {
+          toast.success("Backup created successfully", {
+            description: result.fileName,
+          });
+        }
       } else {
         toast.error("Backup failed", {
           description: result.error,
@@ -153,6 +193,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
   const restoreBackupMutation = useMutation({
     mutationFn: (backupPath: string) => restoreBackup(backupPath),
     onSuccess: (result) => {
+      setRestoringFileName(null);
       if (result.success) {
         toast.success("Database restored", {
           description: "Please restart the application for changes to take effect.",
@@ -165,15 +206,24 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
           description: result.error,
         });
       }
-      setRestoreTarget(null);
     },
     onError: (error) => {
+      setRestoringFileName(null);
       toast.error("Restore failed", {
         description: error instanceof Error ? error.message : String(error),
       });
-      setRestoreTarget(null);
     },
   });
+
+  const isRestoring = restoreBackupMutation.isPending;
+
+  const handleConfirmRestore = () => {
+    if (restoreTarget) {
+      setRestoringFileName(restoreTarget.fileName);
+      restoreBackupMutation.mutate(restoreTarget.filePath);
+      setRestoreTarget(null); // Close confirm dialog immediately
+    }
+  };
 
   // Delete backup mutation
   const deleteBackupMutation = useMutation({
@@ -209,7 +259,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && !isRestoring && onClose()}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -336,7 +386,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                 </div>
                 <Button
                   onClick={() => createBackupMutation.mutate()}
-                  disabled={createBackupMutation.isPending}
+                  disabled={createBackupMutation.isPending || isRestoring}
                   className="h-9"
                 >
                   {createBackupMutation.isPending ? (
@@ -381,7 +431,17 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-auto border rounded-md">
+              <div className="flex-1 overflow-auto border rounded-md relative">
+                {isRestoring && (
+                  <div className="absolute inset-0 bg-background/80 z-10 flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+                    <p className="text-sm font-medium">Restoring database...</p>
+                    {restoringFileName && (
+                      <p className="text-xs text-muted-foreground font-mono">{restoringFileName}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Do not close the application</p>
+                  </div>
+                )}
                 {isLoadingBackups ? (
                   <div className="flex items-center justify-center h-32">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -406,7 +466,18 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                       {backups.map((backup) => (
                         <TableRow key={backup.filePath}>
                           <TableCell className="text-xs font-mono">
-                            {backup.fileName}
+                            <div className="flex items-center gap-1.5">
+                              {backup.fileName}
+                              {verifyStatus[backup.filePath] === "valid" && (
+                                <ShieldCheck className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                              )}
+                              {verifyStatus[backup.filePath] === "invalid" && (
+                                <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                              )}
+                              {verifyStatus[backup.filePath] === "checking" && (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-xs">
                             {backup.createdAt}
@@ -417,9 +488,20 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
                               <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleVerify(backup)}
+                                disabled={isRestoring || verifyStatus[backup.filePath] === "checking"}
+                                className="h-6 text-[10px] px-2"
+                                title="Verify integrity"
+                              >
+                                <ShieldCheck className="h-3 w-3" />
+                              </Button>
+                              <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setRestoreTarget(backup)}
+                                disabled={isRestoring}
                                 className="h-6 text-[10px] px-2"
                               >
                                 <Upload className="h-3 w-3 mr-1" />
@@ -429,6 +511,7 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setDeleteTarget(backup)}
+                                disabled={isRestoring}
                                 className="h-6 text-[10px] px-2 text-destructive hover:text-destructive"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -482,25 +565,13 @@ export function BackupManager({ isOpen, onClose }: BackupManagerProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={restoreBackupMutation.isPending}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => restoreTarget && restoreBackupMutation.mutate(restoreTarget.filePath)}
-              disabled={restoreBackupMutation.isPending}
+              onClick={handleConfirmRestore}
               className="bg-amber-600 hover:bg-amber-700"
             >
-              {restoreBackupMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Restoring...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Restore Database
-                </>
-              )}
+              <Upload className="mr-2 h-4 w-4" />
+              Restore Database
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

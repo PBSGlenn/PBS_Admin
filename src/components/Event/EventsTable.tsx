@@ -1,7 +1,7 @@
 // PBS Admin - Events Table Component
 // Displays events for a client with add/edit/delete functionality
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -77,12 +77,12 @@ export const EventsTable = React.memo(function EventsTable({ clientId }: EventsT
   };
 
   // Check if event is a questionnaire event
-  const isQuestionnaireEvent = (event: Event): boolean => {
+  const isQuestionnaireEvent = useCallback((event: Event): boolean => {
     return event.eventType === "QuestionnaireReceived";
-  };
+  }, []);
 
   // Check if event is in progress (has processing state)
-  const isEventInProgress = (event: Event): boolean => {
+  const isEventInProgress = useCallback((event: Event): boolean => {
     if (!event.processingState) return false;
     try {
       const state = JSON.parse(event.processingState) as EventProcessingState;
@@ -90,13 +90,13 @@ export const EventsTable = React.memo(function EventsTable({ clientId }: EventsT
     } catch {
       return false;
     }
-  };
+  }, []);
 
   // Extract submission ID from questionnaire event notes
-  const extractSubmissionId = (notes: string): string | null => {
+  const extractSubmissionId = useCallback((notes: string): string | null => {
     const match = notes.match(/Submission ID:<\/strong>\s*([^<\s]+)/);
     return match ? match[1] : null;
-  };
+  }, []);
 
   // Handle opening questionnaire reconciliation
   const handleReviewQuestionnaire = async (event: Event) => {

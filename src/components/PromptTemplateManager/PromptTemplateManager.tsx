@@ -33,19 +33,17 @@ import {
   getDefaultPromptTemplate,
   type PromptTemplate
 } from "@/lib/prompts/promptTemplates";
+import {
+  getAIModelConfig,
+  saveAIModelConfig,
+  getDefaultAIModelConfig,
+  type AIModelConfig,
+} from "@/lib/services/apiKeysService";
 
 export interface PromptTemplateManagerProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-// Current AI model configuration
-const AI_MODEL = {
-  provider: "Anthropic",
-  name: "Claude Opus 4.6",
-  modelId: "claude-opus-4-6-20260205",
-  releaseDate: "February 2026"
-};
 
 export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManagerProps) {
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
@@ -58,13 +56,48 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  const [modelConfig, setModelConfig] = useState<AIModelConfig>(getDefaultAIModelConfig());
+  const [isEditingModel, setIsEditingModel] = useState(false);
+  const [editReportModel, setEditReportModel] = useState("");
+  const [editTaskModel, setEditTaskModel] = useState("");
 
-  // Load templates on mount and when dialog opens
+  // Load templates and model config on mount and when dialog opens
   useEffect(() => {
     if (isOpen) {
       loadTemplates();
+      loadModelConfig();
     }
   }, [isOpen]);
+
+  const loadModelConfig = async () => {
+    const config = await getAIModelConfig();
+    setModelConfig(config);
+  };
+
+  const handleSaveModelConfig = async () => {
+    try {
+      await saveAIModelConfig({
+        reportModel: editReportModel.trim(),
+        taskExtractionModel: editTaskModel.trim(),
+      });
+      setModelConfig({
+        reportModel: editReportModel.trim(),
+        taskExtractionModel: editTaskModel.trim(),
+      });
+      setIsEditingModel(false);
+      toast.success("AI model configuration saved");
+    } catch {
+      toast.error("Failed to save model configuration");
+    }
+  };
+
+  const handleResetModelConfig = async () => {
+    const defaults = getDefaultAIModelConfig();
+    await saveAIModelConfig(defaults);
+    setModelConfig(defaults);
+    setIsEditingModel(false);
+    toast.success("Model configuration reset to defaults");
+  };
 
   const [customizedIds, setCustomizedIds] = useState<Set<string>>(new Set());
 
@@ -230,28 +263,70 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
             {/* AI Model Info Card */}
             <Card className="p-3 bg-muted/50">
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Cpu className="h-4 w-4 text-primary" />
-                  <span className="text-xs font-semibold">AI Model</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-primary" />
+                    <span className="text-xs font-semibold">AI Models</span>
+                  </div>
+                  {!isEditingModel && (
+                    <button
+                      onClick={() => {
+                        setEditReportModel(modelConfig.reportModel);
+                        setEditTaskModel(modelConfig.taskExtractionModel);
+                        setIsEditingModel(true);
+                      }}
+                      className="text-[10px] text-muted-foreground hover:text-foreground"
+                    >
+                      Edit
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Provider:</span>
-                    <span className="font-medium">{AI_MODEL.provider}</span>
+                {isEditingModel ? (
+                  <div className="space-y-2">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Report Generation</Label>
+                      <Input
+                        value={editReportModel}
+                        onChange={(e) => setEditReportModel(e.target.value)}
+                        className="h-6 text-[10px] font-mono"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Task Extraction</Label>
+                      <Input
+                        value={editTaskModel}
+                        onChange={(e) => setEditTaskModel(e.target.value)}
+                        className="h-6 text-[10px] font-mono"
+                      />
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Button size="sm" onClick={handleSaveModelConfig} className="h-6 text-[10px] flex-1">
+                        <Save className="h-3 w-3 mr-1" />Save
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleResetModelConfig} className="h-6 text-[10px]">
+                        <RotateCcw className="h-3 w-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setIsEditingModel(false)} className="h-6 text-[10px]">
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Model:</span>
-                    <span className="font-medium">{AI_MODEL.name}</span>
+                ) : (
+                  <div className="space-y-1 text-xs">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Report Generation:</span>
+                      <code className="block text-[10px] bg-background px-1 py-0.5 rounded mt-0.5 truncate" title={modelConfig.reportModel}>
+                        {modelConfig.reportModel}
+                      </code>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Task Extraction:</span>
+                      <code className="block text-[10px] bg-background px-1 py-0.5 rounded mt-0.5 truncate" title={modelConfig.taskExtractionModel}>
+                        {modelConfig.taskExtractionModel}
+                      </code>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ID:</span>
-                    <code className="text-[10px] bg-background px-1 py-0.5 rounded">{AI_MODEL.modelId}</code>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Release:</span>
-                    <span className="font-medium">{AI_MODEL.releaseDate}</span>
-                  </div>
-                </div>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -267,7 +342,7 @@ export function PromptTemplateManager({ isOpen, onClose }: PromptTemplateManager
                   ) : (
                     <>
                       <ExternalLink className="h-3 w-3 mr-1.5" />
-                      Check for Updates
+                      View Anthropic Models
                     </>
                   )}
                 </Button>

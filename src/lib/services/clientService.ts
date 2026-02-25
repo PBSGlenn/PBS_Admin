@@ -172,20 +172,85 @@ export async function deleteClient(clientId: number): Promise<void> {
 }
 
 /**
- * Search clients by query string
+ * Search clients using FTS5 full-text search with LIKE fallback.
+ * Supports prefix matching (e.g., "dun" matches "Duncan").
+ * Also searches pet names (e.g., "Max" finds the client who owns Max).
  */
 export async function searchClients(searchQuery: string): Promise<Client[]> {
-  const searchPattern = `%${searchQuery}%`;
-  return query<Client>(`
-    SELECT * FROM Client
-    WHERE
-      firstName LIKE ? OR
-      lastName LIKE ? OR
-      email LIKE ? OR
-      mobile LIKE ? OR
-      city LIKE ?
-    ORDER BY lastName, firstName
-  `, [searchPattern, searchPattern, searchPattern, searchPattern, searchPattern]);
+  const trimmed = searchQuery.trim();
+  if (!trimmed) return getAllClients();
+
+  try {
+    // FTS5 query: escape double quotes, add prefix wildcard for partial matching
+    const ftsQuery = trimmed.replace(/"/g, '""') + '*';
+    return await query<Client>(`
+      SELECT c.* FROM Client c
+      INNER JOIN ClientFTS fts ON c.clientId = fts.clientId
+      WHERE ClientFTS MATCH ?
+      ORDER BY rank
+    `, [ftsQuery]);
+  } catch {
+    // Fallback to LIKE if FTS5 is not available
+    const searchPattern = `%${trimmed}%`;
+    return query<Client>(`
+      SELECT * FROM Client
+      WHERE
+        firstName LIKE ? OR
+        lastName LIKE ? OR
+        email LIKE ? OR
+        mobile LIKE ? OR
+        city LIKE ?
+      ORDER BY lastName, firstName
+    `, [searchPattern, searchPattern, searchPattern, searchPattern, searchPattern]);
+  }
+}
+
+/**
+ * Search clients for dashboard view using FTS5, returning dashboard fields.
+ * Returns the same shape as getClientsForDashboard() but filtered by search query.
+ */
+export async function searchClientsForDashboard(searchQuery: string) {
+  const trimmed = searchQuery.trim();
+  if (!trimmed) return getClientsForDashboard();
+
+  try {
+    const ftsQuery = trimmed.replace(/"/g, '""') + '*';
+    return await query<any>(`
+      SELECT
+        c.*,
+        COUNT(DISTINCT p.petId) as petCount,
+        MAX(e.date) as lastEventDate,
+        CASE WHEN c.notes IS NOT NULL AND c.notes != '' THEN 1 ELSE 0 END as hasNotes
+      FROM Client c
+      INNER JOIN ClientFTS fts ON c.clientId = fts.clientId
+      LEFT JOIN Pet p ON c.clientId = p.clientId
+      LEFT JOIN Event e ON c.clientId = e.clientId
+      WHERE ClientFTS MATCH ?
+      GROUP BY c.clientId
+      ORDER BY rank
+    `, [ftsQuery]);
+  } catch {
+    // Fallback to LIKE if FTS5 is not available
+    const searchPattern = `%${trimmed}%`;
+    return query<any>(`
+      SELECT
+        c.*,
+        COUNT(DISTINCT p.petId) as petCount,
+        MAX(e.date) as lastEventDate,
+        CASE WHEN c.notes IS NOT NULL AND c.notes != '' THEN 1 ELSE 0 END as hasNotes
+      FROM Client c
+      LEFT JOIN Pet p ON c.clientId = p.clientId
+      LEFT JOIN Event e ON c.clientId = e.clientId
+      WHERE
+        c.firstName LIKE ? OR
+        c.lastName LIKE ? OR
+        c.email LIKE ? OR
+        c.mobile LIKE ? OR
+        c.city LIKE ?
+      GROUP BY c.clientId
+      ORDER BY c.lastName, c.firstName
+    `, [searchPattern, searchPattern, searchPattern, searchPattern, searchPattern]);
+  }
 }
 
 /**

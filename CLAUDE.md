@@ -66,9 +66,12 @@ git push origin --delete branch-name
 
 **Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage.
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-26
 
-**Recent Changes** (2026-02-25):
+**Recent Changes** (2026-02-26):
+- **SQLite FTS5 Client Search**: Client search now uses SQLite FTS5 full-text search instead of in-memory JavaScript filtering. Supports prefix matching, relevance ranking, and pet name search. Server-side search with 200ms debounce. LIKE fallback if FTS5 unavailable.
+
+**Previous Changes** (2026-02-25):
 - **Security: RCE Fix for Auto-Update**: Update installer download now validates redirect domains (github.com/GitHub only), checks file size against GitHub API metadata, and verifies PE header before execution
 - **AI Model Upgrade**: Claude Opus 4.5 → Opus 4.6 (`claude-opus-4-6-20260205`) for report generation and task extraction. Claude Sonnet 4 → Sonnet 4.5 (`claude-sonnet-4-5-20250929`) for task extraction
 - **Transcription Overhaul**: Replaced two-step Whisper + Claude pipeline with single OpenAI `gpt-4o-transcribe-diarize` API call. Native speaker diarization eliminates separate Claude call, reducing cost and latency. Supports up to 4 speakers with custom labels
@@ -209,7 +212,7 @@ PBS_Admin/
 │   │   ├── medications.ts  # ✅ Behavior medication database with dosing, brands, contraindications
 │   │   ├── utils/          # ✅ Helpers (date, validation, phoneUtils, dateOffsetUtils)
 │   │   ├── constants.ts    # ✅ Application constants
-│   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin
+│   │   └── db.ts           # ✅ Database connection with Tauri SQL plugin + FTS5 initialization
 │   ├── contexts/
 │   │   └── WindowContext.tsx  # ✅ Multi-window state management
 │   ├── hooks/
@@ -237,7 +240,7 @@ PBS_Admin/
 1. **UI Layer** (React) → User interactions, forms, tables
 2. **API Layer** (Tauri Commands) → Bridge between frontend and backend
 3. **Service Layer** (Rust/TypeScript) → Business logic, validation, automation
-4. **Data Layer** (Prisma + SQLite) → Persistence, queries, transactions
+4. **Data Layer** (Prisma + SQLite) → Persistence, queries, transactions, FTS5 full-text search index
 
 ---
 
@@ -514,6 +517,50 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 - `@tiptap/extension-underline` - Underline support
 - `@tiptap/extension-text-align` - Text alignment
 - `@tiptap/extension-placeholder` - Placeholder text
+
+---
+
+### Client Search (FTS5)
+
+**Purpose**: Fast, server-side full-text search across clients and their pets using SQLite FTS5 virtual table.
+
+**FTS5 Virtual Table**: `ClientFTS`
+
+**Indexed Fields**:
+- `firstName`, `lastName`, `email`, `mobile`, `city` (from Client)
+- `petNames` (space-separated pet names for the client)
+
+**Tokenizer**: `unicode61 remove_diacritics 2` (accent-insensitive, Unicode-aware)
+
+**Auto-Sync Triggers** (6 total):
+- `client_fts_insert` / `client_fts_update` / `client_fts_delete` - Keep FTS in sync on Client changes
+- `pet_fts_insert` / `pet_fts_update` / `pet_fts_delete` - Keep petNames in sync on Pet changes
+
+**Initialization**: `initClientFTS()` called on app startup in `db.ts`. Creates table and triggers if not already present; safe to run multiple times.
+
+**Service Functions**:
+```typescript
+import { searchClientsForDashboard, searchClients } from "@/lib/services/clientService";
+
+// Dashboard use - includes petName in results
+const results = await searchClientsForDashboard("max");  // matches pet name "Max"
+
+// General use
+const results = await searchClients("smith");            // prefix match: "Smith", "Smithson"
+```
+
+**Query Behavior**:
+- Prefix matching: query terms automatically appended with `*` wildcard
+- Results ranked by FTS5 relevance (`rank` column)
+- Falls back to `LIKE %query%` on all fields if FTS5 unavailable
+- Empty query returns all clients (sorted by lastName, firstName)
+
+**Usage in Dashboard**: `ClientsList.tsx` uses `searchClientsForDashboard` with a 200ms debounce on the search input.
+
+**Implementation Files**:
+- [db.ts](src/lib/db.ts) - `initClientFTS()` - creates FTS table and triggers
+- [clientService.ts](src/lib/services/clientService.ts) - `searchClients()`, `searchClientsForDashboard()`
+- [ClientsList.tsx](src/components/Dashboard/ClientsList.tsx) - search input with 200ms debounce
 
 ---
 
@@ -3105,8 +3152,8 @@ npm test -- --watch
 | Metric | Target | Strategy |
 |--------|--------|----------|
 | App start (cold) | < 3s | Lazy loading, optimized bundle |
-| Client list (10k rows) | < 1s render | Virtual scrolling, indexed queries |
-| Search/filter | < 500ms | Debounced input, indexed columns |
+| Client list (10k rows) | < 1s render | Virtual scrolling, indexed queries, FTS5 index |
+| Search/filter | < 500ms | FTS5 MATCH with 200ms debounce, LIKE fallback |
 | CRUD operation | < 200ms perceived | Optimistic UI updates |
 
 ---
@@ -3134,6 +3181,7 @@ npm test -- --watch
   - Save confirmation with "Saved!" feedback
   - Australian state dropdown with Victoria as default
   - Mobile phone auto-formatting (xxxx xxx xxx format)
+  - FTS5 full-text search with prefix matching, relevance ranking, and pet name search
 - **Folder Management** - Client records organization
   - Create client folder on save (Documents/PBS_Admin/Client_Records)
   - Folder naming: surname_clientId (e.g., "smith_24")
@@ -3370,5 +3418,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2026-02-25
-**Version**: 2.2.0 (Security hardening, AI model upgrades to Claude Opus 4.6, transcription overhaul to gpt-4o-transcribe-diarize, localStorage to SQLite migration, OpenAI API key support)
+**Last Updated**: 2026-02-26
+**Version**: 2.3.0 (FTS5 full-text client search with prefix matching, relevance ranking, and pet name search; security hardening, AI model upgrades to Claude Opus 4.6, transcription overhaul to gpt-4o-transcribe-diarize, localStorage to SQLite migration, OpenAI API key support)

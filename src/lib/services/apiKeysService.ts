@@ -118,3 +118,37 @@ export function maskApiKey(key: string | null): string {
   if (key.length <= 12) return '••••••••';
   return `${key.substring(0, 8)}••••${key.substring(key.length - 4)}`;
 }
+
+// ============================================================================
+// AI MODEL CONFIGURATION
+// ============================================================================
+
+const AI_MODEL_CONFIG_KEY = 'pbs_admin_ai_model_config';
+
+export interface AIModelConfig {
+  /** Model for report generation (Claude Opus) */
+  reportModel: string;
+  /** Model for task extraction (Claude Sonnet - lighter/cheaper) */
+  taskExtractionModel: string;
+}
+
+const DEFAULT_AI_MODEL_CONFIG: AIModelConfig = {
+  reportModel: "claude-opus-4-6-20260205",
+  taskExtractionModel: "claude-sonnet-4-5-20250929",
+};
+
+/** Get current AI model configuration */
+export async function getAIModelConfig(): Promise<AIModelConfig> {
+  return getSettingJson<AIModelConfig>(AI_MODEL_CONFIG_KEY, DEFAULT_AI_MODEL_CONFIG);
+}
+
+/** Save AI model configuration */
+export async function saveAIModelConfig(config: Partial<AIModelConfig>): Promise<void> {
+  const current = await getAIModelConfig();
+  await setSettingJson(AI_MODEL_CONFIG_KEY, { ...current, ...config });
+}
+
+/** Get the default model config (for reset functionality) */
+export function getDefaultAIModelConfig(): AIModelConfig {
+  return { ...DEFAULT_AI_MODEL_CONFIG };
+}

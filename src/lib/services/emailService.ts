@@ -105,7 +105,13 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
   const { to, subject, body, attachments, includeSignature = true } = options;
 
   try {
-    const apiKey = await getResendApiKey();
+    // Try to get API key from settings; pass null to let backend use env var fallback
+    let apiKey: string | null = null;
+    try {
+      apiKey = await getResendApiKey();
+    } catch {
+      // Key not in settings — backend will try env var
+    }
     const from = getFromEmail();
     const htmlBody = buildHtmlBody(body, includeSignature);
 

@@ -1,7 +1,8 @@
 // PBS Admin - Clients List Component
 // Displays searchable, sortable table of all clients
+// Uses SQLite FTS5 for fast server-side full-text search
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -14,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "../ui/table";
-import { getClientsForDashboard } from "@/lib/services/clientService";
+import { getClientsForDashboard, searchClientsForDashboard } from "@/lib/services/clientService";
 import { formatFullName } from "@/lib/utils";
 import { formatDate } from "@/lib/utils/dateUtils";
 import { Plus, Search } from "lucide-react";
@@ -27,24 +28,25 @@ interface ClientsListProps {
 
 export function ClientsList({ onNewClient, onEditClient }: ClientsListProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const { data: clients, isLoading, error } = useQuery({
-    queryKey: ["clients", "dashboard"],
-    queryFn: getClientsForDashboard,
+  // Debounce search input — 200ms delay before triggering server-side query
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 200);
+    return () => clearTimeout(debounceRef.current);
+  }, [searchQuery]);
+
+  // When no search query, load all clients; otherwise use FTS5 search
+  const { data: filteredClients = [], isLoading, error } = useQuery({
+    queryKey: ["clients", "dashboard", debouncedQuery],
+    queryFn: () =>
+      debouncedQuery.trim()
+        ? searchClientsForDashboard(debouncedQuery)
+        : getClientsForDashboard(),
   });
-
-  // Filter clients based on search query
-  const filteredClients = clients?.filter((client: any) => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      client.firstName?.toLowerCase().includes(query) ||
-      client.lastName?.toLowerCase().includes(query) ||
-      client.email?.toLowerCase().includes(query) ||
-      client.mobile?.includes(query) ||
-      client.city?.toLowerCase().includes(query)
-    );
-  }) || [];
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">

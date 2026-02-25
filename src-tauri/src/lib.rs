@@ -4,6 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use std::collections::HashMap;
 use reqwest::blocking::get;
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -14,6 +17,33 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 use image::GenericImageView;
+use sha2::{Sha256, Digest};
+
+// ============================================================================
+// RATE LIMITING FOR API CALLS
+// ============================================================================
+
+static RATE_LIMITER: std::sync::LazyLock<Mutex<HashMap<&'static str, Instant>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Check if an operation is allowed based on cooldown period.
+/// Returns Ok(()) if allowed, Err with message if rate limited.
+fn check_rate_limit(operation: &'static str, cooldown: Duration) -> Result<(), String> {
+    let mut map = RATE_LIMITER.lock().map_err(|_| "Rate limiter lock error".to_string())?;
+    if let Some(last) = map.get(operation) {
+        let elapsed = last.elapsed();
+        if elapsed < cooldown {
+            let remaining = cooldown - elapsed;
+            return Err(format!(
+                "Please wait {} seconds before retrying {}.",
+                remaining.as_secs() + 1,
+                operation
+            ));
+        }
+    }
+    map.insert(operation, Instant::now());
+    Ok(())
+}
 
 // ============================================================================
 // PATH VALIDATION FOR SECURITY
@@ -430,6 +460,18 @@ fn get_templates_path() -> Result<String, String> {
 
 #[tauri::command]
 fn run_pandoc(input_path: String, output_path: String, template_path: Option<String>) -> Result<String, String> {
+    // Validate input file extension
+    let input_lower = input_path.to_lowercase();
+    if !input_lower.ends_with(".md") && !input_lower.ends_with(".markdown") && !input_lower.ends_with(".txt") {
+        return Err("Input file must be a .md, .markdown, or .txt file".to_string());
+    }
+
+    // Validate output file extension
+    let output_lower = output_path.to_lowercase();
+    if !output_lower.ends_with(".docx") && !output_lower.ends_with(".pdf") && !output_lower.ends_with(".html") {
+        return Err("Output file must be a .docx, .pdf, or .html file".to_string());
+    }
+
     // Build pandoc command
     let mut cmd = Command::new("pandoc");
 
@@ -448,6 +490,10 @@ fn run_pandoc(input_path: String, output_path: String, template_path: Option<Str
     // Note: The template's letterhead MUST be in the Word Header section (Insert > Header)
     // not in the document body, for Pandoc --reference-doc to apply it correctly
     if let Some(ref template) = template_path {
+        // Validate template is a .docx file
+        if !template.to_lowercase().ends_with(".docx") {
+            return Err("Template must be a .docx file".to_string());
+        }
         // Check if template file exists
         let template_path_obj = std::path::Path::new(template);
         if template_path_obj.exists() {
@@ -664,6 +710,9 @@ async fn transcribe_audio(
     api_key: Option<String>,
     speaker_names: Option<Vec<String>>,
 ) -> Result<TranscribeResult, String> {
+    // Rate limit: 1 transcription per 30 seconds
+    check_rate_limit("transcription", Duration::from_secs(30))?;
+
     println!("Transcribing audio file: {}", file_path);
 
     // Use provided API key or fall back to environment variable
@@ -928,11 +977,19 @@ fn create_database_backup() -> Result<serde_json::Value, String> {
     std::fs::copy(&db_path, &backup_path)
         .map_err(|e| format!("Failed to create backup: {}", e))?;
 
-    println!("Backup created: {}", backup_path.display());
+    // Compute SHA-256 hash of the backup
+    let data = std::fs::read(&backup_path)
+        .map_err(|e| format!("Failed to read backup for hash: {}", e))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let hash = format!("{:x}", hasher.finalize());
+
+    println!("Backup created: {} (SHA-256: {})", backup_path.display(), &hash[..16]);
 
     Ok(serde_json::json!({
         "file_path": backup_path.to_string_lossy().to_string(),
-        "file_name": backup_filename
+        "file_name": backup_filename,
+        "hash": hash
     }))
 }
 
@@ -1044,6 +1101,59 @@ fn delete_backup_file(backup_path: String) -> Result<String, String> {
     Ok("Backup deleted successfully".to_string())
 }
 
+/// Verify backup file integrity (SHA-256 hash + SQLite magic header check)
+#[tauri::command]
+fn verify_backup_integrity(backup_path: String) -> Result<serde_json::Value, String> {
+    let path = std::path::Path::new(&backup_path);
+
+    if !path.exists() {
+        return Ok(serde_json::json!({
+            "valid": false,
+            "error": "File not found"
+        }));
+    }
+
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let size = metadata.len();
+
+    if size == 0 {
+        return Ok(serde_json::json!({
+            "valid": false,
+            "size": 0,
+            "error": "File is empty"
+        }));
+    }
+
+    // Read file contents
+    let data = std::fs::read(path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Check SQLite magic header: first 16 bytes should be "SQLite format 3\0"
+    let sqlite_magic = b"SQLite format 3\0";
+    let has_valid_header = data.len() >= 16 && &data[..16] == sqlite_magic;
+
+    // Compute SHA-256 hash
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let hash = format!("{:x}", hasher.finalize());
+
+    if !has_valid_header {
+        return Ok(serde_json::json!({
+            "valid": false,
+            "size": size,
+            "hash": hash,
+            "error": "File is not a valid SQLite database"
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "valid": true,
+        "size": size,
+        "hash": hash
+    }))
+}
+
 // ============================================================================
 // EMAIL SENDING VIA RESEND API
 // ============================================================================
@@ -1078,13 +1188,28 @@ struct ResendEmailResponse {
 /// Send an email via Resend API with optional attachments
 #[tauri::command]
 async fn send_email(
-    api_key: String,
+    api_key: Option<String>,
     from: String,
     to: String,
     subject: String,
     html_body: String,
     attachment_paths: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
+    // Rate limit: 1 email per 5 seconds
+    check_rate_limit("email", Duration::from_secs(5))?;
+
+    // Use provided API key or fall back to environment variable
+    let api_key = if let Some(key) = api_key {
+        if key.is_empty() {
+            return Err("Resend API key cannot be empty".to_string());
+        }
+        key
+    } else {
+        std::env::var("RESEND_API_KEY")
+            .or_else(|_| std::env::var("VITE_RESEND_API_KEY"))
+            .map_err(|_| "Resend API key not configured. Please add your API key in Settings > API Keys.".to_string())?
+    };
+
     println!("Sending email to: {}", to);
     println!("Subject: {}", subject);
 
@@ -1263,7 +1388,11 @@ async fn generate_ai_report(
     user_prompt: String,
     max_tokens: u32,
     api_key: Option<String>,
+    model: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    // Rate limit: 1 report per 60 seconds
+    check_rate_limit("ai_report", Duration::from_secs(60))?;
+
     // Use provided API key, or fall back to environment variable
     let api_key = if let Some(key) = api_key {
         if key.is_empty() {
@@ -1291,7 +1420,7 @@ async fn generate_ai_report(
             .map_err(|_| "Anthropic API key not configured. Please add your API key in Settings > API Keys.".to_string())?
     };
 
-    let model = "claude-opus-4-6-20260205";
+    let model = model.unwrap_or_else(|| "claude-opus-4-6-20260205".to_string());
 
     println!("Generating AI report with model: {}", model);
     println!("System prompt length: {} chars", system_prompt.len());
@@ -1475,6 +1604,7 @@ pub fn run() {
             restore_database_backup,
             list_database_backups,
             delete_backup_file,
+            verify_backup_integrity,
             send_email,
             generate_ai_report,
             download_and_run_update
