@@ -346,6 +346,7 @@ async fn download_and_run_update(url: String, filename: String, expected_size: O
         "github.com",
         "objects.githubusercontent.com",
         "github-releases.githubusercontent.com",
+        "release-assets.githubusercontent.com",
     ];
     let final_host = response.url().host_str().unwrap_or("");
     if !allowed_hosts.iter().any(|h| final_host == *h || final_host.ends_with(&format!(".{}", h))) {
