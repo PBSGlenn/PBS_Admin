@@ -5,11 +5,13 @@
  * Allows users to upload audio files, transcribe with speaker labels,
  * and save transcripts for use in consultation events.
  *
+ * Supports files >25MB via FFmpeg compression/chunking.
+ *
  * Flow:
- * 1. Upload audio file (.m4a, .mp3, .wav)
+ * 1. Upload audio file (.m4a, .mp3, .wav, .ogg, .flac)
  * 2. Configure options (speaker count, labels)
  * 3. Preview cost estimate
- * 4. Transcribe (Whisper + Claude)
+ * 4. Transcribe (OpenAI gpt-4o-transcribe-diarize)
  * 5. Preview/edit transcript
  * 6. Save to client folder or custom location
  */
@@ -32,18 +34,22 @@ import {
   estimateTranscriptionCost,
   getTranscriptionStats,
   updateTranscriptionStats,
+  checkFFmpeg,
   type TranscriptionResult,
   type TranscriptionStats,
-  type TranscriptionOptions
+  type TranscriptionOptions,
+  type TranscriptionProgressCallback
 } from "@/lib/services/transcriptionService";
 import { toast } from "sonner";
-import { Loader2, Upload, FileAudio, DollarSign, Users, Save, Copy, FolderOpen, X } from "lucide-react";
+import { Loader2, Upload, FileAudio, DollarSign, Users, Save, Copy, FolderOpen, X, AlertTriangle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface TranscriptionToolProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const MAX_DIRECT_SIZE = 25 * 1024 * 1024; // 25MB — OpenAI API limit
 
 export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
   // File handling
@@ -60,6 +66,11 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null);
   const [editedTranscript, setEditedTranscript] = useState<string>("");
+  const [progressMessage, setProgressMessage] = useState<string>("");
+
+  // Large file handling
+  const [isLargeFile, setIsLargeFile] = useState(false);
+  const [ffmpegAvailable, setFfmpegAvailable] = useState<boolean | null>(null);
 
   // Cost estimation
   const [estimatedCost, setEstimatedCost] = useState<{ whisper: number; claude: number; total: number } | null>(null);
@@ -102,18 +113,26 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
     setSelectedFile(file);
 
-    // Check file size (OpenAI Whisper has 25MB limit)
-    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-    if (file.size > MAX_FILE_SIZE) {
-      const sizeMB = (file.size / 1_024_000).toFixed(1);
-      toast.error(
-        `File is too large (${sizeMB} MB). OpenAI Whisper has a 25MB limit. Please compress the audio or use a shorter clip.`,
-        { duration: 6000 }
-      );
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+    // Check if this is a large file (>25MB)
+    const large = file.size > MAX_DIRECT_SIZE;
+    setIsLargeFile(large);
+
+    if (large) {
+      // Check FFmpeg availability for large files
+      const ffcheck = await checkFFmpeg();
+      setFfmpegAvailable(ffcheck.available);
+      if (!ffcheck.available) {
+        toast.warning(
+          "This file is larger than 25MB and requires FFmpeg for processing. Please install FFmpeg.",
+          { duration: 8000 }
+        );
+      } else {
+        const sizeMB = (file.size / 1_048_576).toFixed(1);
+        toast.info(
+          `Large file (${sizeMB} MB) — will use FFmpeg to compress/split before transcription.`,
+          { duration: 5000 }
+        );
       }
-      return;
     }
 
     // Get duration for cost estimation
@@ -127,11 +146,13 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
       toast.success(`Audio loaded: ${formatDuration(duration)}`);
     } catch (error) {
       console.error("Error reading audio duration:", error);
-      toast.error("Could not read audio file duration");
+      // For large files, browser Audio API may not load — that's okay
+      if (!large) {
+        toast.error("Could not read audio file duration");
+      }
     }
 
     // Save file temporarily for Tauri to access
-    // We need to copy it to a temp location the Tauri backend can read
     try {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
@@ -150,7 +171,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
   };
 
   /**
-   * Handle transcription
+   * Handle transcription (with progress for chunked files)
    */
   const handleTranscribe = async () => {
     if (!selectedFile || !audioFilePath) {
@@ -160,6 +181,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
     setIsTranscribing(true);
     setTranscriptionResult(null);
+    setProgressMessage("");
 
     try {
       const options: TranscriptionOptions = {
@@ -168,7 +190,16 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
         speakerLabels: customLabels.split(',').map(l => l.trim()).filter(Boolean)
       };
 
-      const result = await transcribeAudio(audioFilePath, options);
+      // Progress callback for chunked transcription
+      const onProgress: TranscriptionProgressCallback = (progress) => {
+        let msg = progress.message;
+        if (progress.current && progress.total && progress.total > 1) {
+          msg = `${progress.message} (${progress.current}/${progress.total})`;
+        }
+        setProgressMessage(msg);
+      };
+
+      const result = await transcribeAudio(audioFilePath, options, onProgress);
 
       if (!result.success) {
         toast.error(result.error || "Transcription failed");
@@ -198,6 +229,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
       toast.error("Transcription failed. Please try again.");
     } finally {
       setIsTranscribing(false);
+      setProgressMessage("");
     }
   };
 
@@ -296,6 +328,9 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
     setAudioDuration(null);
     setSelectedClientId(null);
     setCustomSavePath("");
+    setIsLargeFile(false);
+    setFfmpegAvailable(null);
+    setProgressMessage("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -312,6 +347,9 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
   // Clients with folders
   const clientsWithFolders = clients.filter(c => c.folderPath);
+
+  // Can transcribe: file selected, and if large file, FFmpeg must be available
+  const canTranscribe = !!audioFilePath && (!isLargeFile || ffmpegAvailable === true);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -338,7 +376,7 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
           {/* File Upload */}
           <div className="space-y-2">
-            <Label className="text-[10px] uppercase text-muted-foreground">Audio File (max 25 MB)</Label>
+            <Label className="text-[10px] uppercase text-muted-foreground">Audio File</Label>
             <div className="flex gap-2">
               <input
                 ref={fileInputRef}
@@ -360,15 +398,50 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
                 <div className="flex-1 flex items-center gap-2 px-3 py-2 border rounded-md bg-muted/30">
                   <FileAudio className="h-4 w-4 text-muted-foreground" />
                   <span className="text-[11px] truncate">{selectedFile.name}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {(selectedFile.size / 1_048_576).toFixed(1)} MB
+                  </Badge>
                   {audioDuration && (
                     <Badge variant="outline" className="text-[10px]">
                       {formatDuration(audioDuration)}
+                    </Badge>
+                  )}
+                  {isLargeFile && (
+                    <Badge variant="secondary" className="text-[10px]">
+                      FFmpeg
                     </Badge>
                   )}
                 </div>
               )}
             </div>
           </div>
+
+          {/* Large file warning */}
+          {isLargeFile && ffmpegAvailable === false && (
+            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 p-3 rounded-md">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <div className="text-[11px] font-medium text-amber-900 dark:text-amber-100">
+                    FFmpeg Required
+                  </div>
+                  <div className="text-[10px] text-amber-700 dark:text-amber-300">
+                    This file exceeds the 25MB API limit and needs FFmpeg to compress/split before transcription.
+                    Install FFmpeg from <strong>ffmpeg.org</strong> and ensure it's in your system PATH.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isLargeFile && ffmpegAvailable === true && (
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 p-3 rounded-md">
+              <div className="text-[10px] text-blue-700 dark:text-blue-300">
+                Large file detected. FFmpeg will compress and split the audio into chunks for transcription.
+                This may take longer than usual.
+              </div>
+            </div>
+          )}
 
           {/* Configuration */}
           {selectedFile && (
@@ -438,24 +511,26 @@ export function TranscriptionTool({ isOpen, onClose }: TranscriptionToolProps) {
 
           {/* Transcribe Button */}
           {selectedFile && !transcriptionResult && (
-            <Button
-              onClick={handleTranscribe}
-              disabled={isTranscribing || !audioFilePath}
-              className="w-full"
-              size="lg"
-            >
-              {isTranscribing ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Transcribing... (this may take 1-2 minutes)
-                </>
-              ) : (
-                <>
-                  <Users className="h-4 w-4 mr-2" />
-                  Transcribe with Speaker Labels
-                </>
-              )}
-            </Button>
+            <div className="space-y-2">
+              <Button
+                onClick={handleTranscribe}
+                disabled={isTranscribing || !canTranscribe}
+                className="w-full"
+                size="lg"
+              >
+                {isTranscribing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {progressMessage || "Transcribing... (this may take 1-2 minutes)"}
+                  </>
+                ) : (
+                  <>
+                    <Users className="h-4 w-4 mr-2" />
+                    Transcribe with Speaker Labels
+                  </>
+                )}
+              </Button>
+            </div>
           )}
 
           {/* Transcription Result */}

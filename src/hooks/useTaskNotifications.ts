@@ -1,13 +1,38 @@
 // PBS Admin - Task Notifications Hook
 // Polls for due/overdue tasks and shows notifications
+// Sends native OS notifications (via Tauri) + in-app toasts (via Sonner)
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getDueTasksForNotification, type TaskNotification } from '@/lib/services/notificationService';
 import { format } from 'date-fns';
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification';
 
 const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
 const INITIAL_DELAY = 30 * 1000; // 30 seconds after app starts
+
+/**
+ * Send a native OS notification via Tauri plugin.
+ * Silently fails if permissions not granted or running outside Tauri.
+ */
+async function sendNativeNotification(title: string, body: string) {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      const permission = await requestPermission();
+      granted = permission === 'granted';
+    }
+    if (granted) {
+      sendNotification({ title, body });
+    }
+  } catch {
+    // Silently fail — native notifications are a best-effort enhancement
+  }
+}
 
 /**
  * Hook to check for due/overdue tasks and show notifications
@@ -36,20 +61,29 @@ export function useTaskNotifications() {
         const dueTime = format(new Date(notification.dueDate), 'h:mm a');
 
         if (notification.status === 'overdue') {
-          toast.error(`Overdue Task${clientInfo}`, {
-            description: `${notification.description} - was due ${dueTime}`,
+          const title = `Overdue Task${clientInfo}`;
+          const body = `${notification.description} - was due ${dueTime}`;
+
+          toast.error(title, {
+            description: body,
             duration: 10000,
             action: {
               label: 'View',
               onClick: () => {
-                // Navigate to client view or task
                 console.log('Navigate to task:', notification.taskId);
               },
             },
           });
+
+          // Native OS notification for overdue tasks
+          sendNativeNotification(title, body);
+
         } else if (notification.status === 'due-today') {
-          toast.warning(`Task Due Today${clientInfo}`, {
-            description: `${notification.description} - due at ${dueTime}`,
+          const title = `Task Due Today${clientInfo}`;
+          const body = `${notification.description} - due at ${dueTime}`;
+
+          toast.warning(title, {
+            description: body,
             duration: 8000,
             action: {
               label: 'View',
@@ -58,12 +92,17 @@ export function useTaskNotifications() {
               },
             },
           });
+
+          // Native OS notification for due-today tasks
+          sendNativeNotification(title, body);
+
         } else if (notification.status === 'due-tomorrow') {
           // Only show tomorrow notifications once, less intrusively
           toast(`Task Due Tomorrow${clientInfo}`, {
             description: `${notification.description} - due at ${dueTime}`,
             duration: 5000,
           });
+          // No native notification for due-tomorrow (less urgent)
         }
 
         // Mark as notified

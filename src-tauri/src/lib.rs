@@ -701,6 +701,158 @@ fn save_temp_audio_file(file_name: String, file_data: Vec<u8>) -> Result<String,
     }
 }
 
+/// Check if FFmpeg is available on the system
+#[tauri::command]
+fn check_ffmpeg() -> Result<String, String> {
+    let output = Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .map_err(|_| "FFmpeg is not installed or not in PATH. Please install FFmpeg to process large audio files.".to_string())?;
+
+    if !output.status.success() {
+        return Err("FFmpeg found but returned an error.".to_string());
+    }
+
+    let version_str = String::from_utf8_lossy(&output.stdout);
+    let first_line = version_str.lines().next().unwrap_or("unknown").to_string();
+    Ok(first_line)
+}
+
+/// Compress audio file to mono MP3 at specified bitrate using FFmpeg
+/// This reduces file size significantly for transcription
+#[tauri::command]
+fn compress_audio(input_path: String, bitrate: Option<String>) -> Result<String, String> {
+    let br = bitrate.unwrap_or_else(|| "64k".to_string());
+
+    let temp_dir = std::env::temp_dir().join("PBS_Admin");
+    if !temp_dir.exists() {
+        fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let output_path = temp_dir.join(format!("{}_compressed.mp3", timestamp));
+
+    println!("Compressing audio: {} -> {} (bitrate: {})", input_path, output_path.display(), br);
+
+    let output = Command::new("ffmpeg")
+        .args([
+            "-i", &input_path,
+            "-ac", "1",           // mono
+            "-ab", &br,           // bitrate (e.g., "64k")
+            "-ar", "16000",       // 16kHz sample rate (sufficient for speech)
+            "-y",                 // overwrite output
+            &output_path.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg compression failed: {}", stderr));
+    }
+
+    let compressed_size = fs::metadata(&output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    println!("Compression complete: {:.1} MB", compressed_size as f64 / 1_048_576.0);
+
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+/// Split audio file into chunks of specified duration (in seconds) using FFmpeg
+/// Returns a list of chunk file paths
+#[tauri::command]
+fn split_audio(input_path: String, chunk_duration_secs: u64) -> Result<Vec<String>, String> {
+    let temp_dir = std::env::temp_dir().join("PBS_Admin").join("chunks");
+    if temp_dir.exists() {
+        // Clean up old chunks
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create chunks directory: {}", e))?;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let output_pattern = temp_dir.join(format!("{}_chunk_%03d.mp3", timestamp));
+
+    println!("Splitting audio into {}s chunks: {}", chunk_duration_secs, input_path);
+
+    let output = Command::new("ffmpeg")
+        .args([
+            "-i", &input_path,
+            "-f", "segment",
+            "-segment_time", &chunk_duration_secs.to_string(),
+            "-ac", "1",           // mono
+            "-ab", "64k",         // 64kbps
+            "-ar", "16000",       // 16kHz
+            "-y",
+            &output_pattern.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg split failed: {}", stderr));
+    }
+
+    // Collect all generated chunk files (sorted by name)
+    let mut chunk_paths: Vec<String> = fs::read_dir(&temp_dir)
+        .map_err(|e| format!("Failed to read chunks directory: {}", e))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension().map(|e| e == "mp3").unwrap_or(false) {
+                Some(path.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    chunk_paths.sort();
+
+    println!("Split into {} chunks", chunk_paths.len());
+
+    if chunk_paths.is_empty() {
+        return Err("FFmpeg produced no output chunks".to_string());
+    }
+
+    Ok(chunk_paths)
+}
+
+/// Get audio file duration in seconds using FFmpeg
+#[tauri::command]
+fn get_audio_duration_ffmpeg(file_path: String) -> Result<f64, String> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            &file_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffprobe failed: {}", stderr));
+    }
+
+    let duration_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    duration_str.parse::<f64>()
+        .map_err(|_| format!("Failed to parse duration: {}", duration_str))
+}
+
 /// Transcribe audio using OpenAI gpt-4o-transcribe-diarize API
 /// Uses native speaker diarization - no separate Claude call needed
 #[tauri::command]
@@ -733,12 +885,12 @@ async fn transcribe_audio(
     let file_size = file_data.len();
     println!("Audio file size: {} bytes ({:.1} MB)", file_size, file_size as f64 / 1_048_576.0);
 
-    // Check file size limit (OpenAI API has 25MB limit)
+    // Check file size limit (OpenAI API has 25MB limit per request)
     const MAX_FILE_SIZE: usize = 25 * 1024 * 1024; // 25MB
     if file_size > MAX_FILE_SIZE {
         let mb = file_size as f64 / 1_048_576.0;
         return Err(format!(
-            "Audio file is too large ({:.1} MB). OpenAI API has a 25MB limit. Please compress the audio file or split it into smaller segments.",
+            "CHUNK_REQUIRED:{:.1}",
             mb
         ));
     }
@@ -1513,6 +1665,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]) // Pass args when auto-started
         ))
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Create system tray menu
             let show_item = MenuItem::with_id(app, "show", "Show PBS Admin", true, None::<&str>)?;
@@ -1605,6 +1758,10 @@ pub fn run() {
             convert_docx_to_pdf,
             generate_prescription_docx,
             save_temp_audio_file,
+            check_ffmpeg,
+            compress_audio,
+            split_audio,
+            get_audio_duration_ffmpeg,
             transcribe_audio,
             get_backups_path,
             create_database_backup,

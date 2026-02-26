@@ -68,7 +68,18 @@ git push origin --delete branch-name
 
 **Last Updated**: 2026-02-26
 
-**Recent Changes** (2026-02-26):
+**Recent Changes** (2026-02-26 — v0.3.0):
+- **Dashboard UX Overhaul**: Resizable left/right panes using react-resizable-panels (drag handle between panes). Right pane now uses tabbed layout (Upcoming Bookings, Tasks, Website Bookings, Questionnaires). Sortable columns in ClientsList (click headers to sort by name, email, mobile, city/state, pets, last event).
+- **Window Close Guard**: Windows with unsaved changes now prompt before closing. `WindowContext` uses ref-based close guard registry. `ClientView` registers guard when form has changes. `forceCloseWindow()` available to bypass guard.
+- **Component Factory Pattern**: `WindowContext` supports `componentFactory` for fresh renders on each window paint, preventing stale ReactNode captures.
+- **Automation Idempotency**: Automation engine checks for duplicate tasks before creation (same automatedAction + eventId + clientId + description, excluding Canceled). Prevents duplicate tasks on repeated event triggers.
+- **Automation Transactions**: Rule action execution wrapped in `withTransaction()` for atomicity. If any action fails, all changes roll back.
+- **Tray Icon Crash Fix**: Replaced `.expect()` panic on tray icon decode failure with graceful fallback to 1x1 transparent icon.
+- **Native Windows Notifications**: Added `tauri-plugin-notification` for OS-level task notifications. Overdue and due-today tasks now trigger native Windows notification center alerts in addition to in-app Sonner toasts. Due-tomorrow tasks remain toast-only (less urgent). Graceful fallback if permissions not granted.
+- **Audio Transcription >25MB**: Files exceeding the 25MB OpenAI API limit are now automatically handled via FFmpeg. Pipeline: (1) compress to mono 64kbps MP3, (2) if still >25MB, split into 15-minute chunks, (3) transcribe each chunk, (4) merge results with adjusted timestamps. New Rust commands: `check_ffmpeg`, `compress_audio`, `split_audio`, `get_audio_duration_ffmpeg`. UI shows progress per chunk and FFmpeg availability warning.
+- **Version 0.3.0**: Version bump across package.json, Cargo.toml, tauri.conf.json.
+
+**Previous Changes** (2026-02-26):
 - **SQLite FTS5 Client Search**: Client search now uses SQLite FTS5 full-text search instead of in-memory JavaScript filtering. Supports prefix matching, relevance ranking, and pet name search. Server-side search with 200ms debounce. LIKE fallback if FTS5 unavailable.
 - **Command Palette**: Global Ctrl+K command palette with FTS5 client search, keyboard navigation (arrow keys, Enter, Esc), and grouped results (Clients, Actions, Settings). Component at `src/components/CommandPalette/CommandPalette.tsx`, integrated in Dashboard.
 - **Zod Runtime Validation**: Centralized Zod v4 schemas in `src/lib/schemas.ts` with `safeParse`/`safeParseArray` helpers. Validation at system boundaries in 6 services: bookingSyncService (Supabase data), jotformService (Jotform API), apiKeysService, backupService, vetClinicsService, transcriptionService.
@@ -113,7 +124,8 @@ git push origin --delete branch-name
 - **Production build ready**: CSP enabled, relative paths for Tauri webview, NSIS installer working
 
 **Remaining TODO**:
-- Audio transcription tool: Test with large audio files in production (transcription API updated to gpt-4o-transcribe-diarize)
+- Audio transcription: Test with large audio files in production (FFmpeg chunking implemented but not yet tested with real files)
+- Drug Compendium: Editable medication reference table accessible via Settings menu
 
 ---
 
@@ -1039,10 +1051,6 @@ Special instructions: Give with food
 **Dependencies**:
 - **Pandoc 3.8+**: Must be installed on system (`pandoc-3.8.2.1-windows-x86_64.msi`)
 - **MS Word**: Required for DOCX → PDF conversion (desktop Office, not web version)
-
-**Known Issues** (TODO):
-- Event notes not updating after prescription generation (query invalidation issue)
-- Letterhead not appearing in generated DOCX (template header configuration)
 
 ---
 
@@ -3534,4 +3542,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2026-02-26
-**Version**: 2.5.0 (MCP server for Claude Desktop/Cowork with 8 read-only tools; database startup migrations for timestamp normalization, UNIQUE email constraint, and missing indexes; FTS5 index rebuild on startup; localStorage cleanup after SQLite migration; Command Palette; Zod v4 validation; Perplexity Sonar; FTS5 client search; Claude Opus 4.6; gpt-4o-transcribe-diarize transcription)
+**Version**: 3.0.0 (v0.3.0: Native Windows notifications via tauri-plugin-notification; audio transcription >25MB via FFmpeg chunking; Dashboard UX overhaul with resizable panes and tabs; window close guards for unsaved changes; component factory pattern; automation idempotency and transactions; tray icon crash fix; MCP server; database startup migrations; FTS5 client search; Command Palette; Zod v4 validation; Perplexity Sonar; Claude Opus 4.6; gpt-4o-transcribe-diarize transcription)
