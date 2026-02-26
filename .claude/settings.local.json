@@ -68,9 +68,31 @@
       "Bash(npx tauri:*)",
       "Bash(cargo --version:*)",
       "Bash(npx @tauri-apps/cli build:*)",
-      "Bash(cargo tauri build:*)"
+      "Bash(cargo tauri build:*)",
+      "Bash(gh release list:*)",
+      "Bash(gh release create:*)",
+      "Bash(where:*)",
+      "Bash(npx:*)",
+      "Bash(npm root:*)",
+      "Bash(NODE_PATH=\"C:/Users/grubb/.npm-global/node_modules\" node:*)",
+      "Bash(npm audit:*)",
+      "Bash(npm test)",
+      "Read(//c/Users/grubb/.claude/projects/c--Dev-PBS-Admin/**)",
+      "Bash(find \"c:/Dev/PBS_Admin/src/components\" -name \"*.tsx\" -exec grep -l \"React.memo\" {} ;)",
+      "Bash(git status -u)",
+      "Read(//c/Users/grubb/AppData/Local/Temp/claude/c--Dev-PBS-Admin/tasks/**)",
+      "Read(//c/Users/grubb/Documents/PBS_Admin/data/**)",
+      "Read(//c/Users/grubb/AppData/Roaming/Claude/**)",
+      "Bash(find \"c:\\\\Dev\\\\PBS_Admin\\\\src\\\\components\" -name \"*.tsx\" -exec wc -l {} +)",
+      "Bash(powershell -NoProfile -Command \"[Environment]::GetFolderPath\\(''MyDocuments''\\)\")",
+      "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"search_clients\"\",\"\"arguments\"\":{\"\"query\"\":\"\"Bella\"\"}}}\\\\n')",
+      "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"run_query\"\",\"\"arguments\"\":{\"\"sql\"\":\"\"SELECT name FROM sqlite_master WHERE type='\"''\"'table'\"''\"' ORDER BY name\"\",\"\"params\"\":[]}}}\\\\n')",
+      "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"run_query\"\",\"\"arguments\"\":{\"\"sql\"\":\"\"SELECT p.petId, p.name, p.clientId, c.firstName, c.lastName FROM Pet p JOIN Client c ON p.clientId = c.clientId WHERE p.name LIKE '\"''\"'%bell%'\"''\"'\"\",\"\"params\"\":[]}}}\\\\n')"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\Users\\grubb\\AppData\\Roaming\\Claude"
+    ]
   }
 }

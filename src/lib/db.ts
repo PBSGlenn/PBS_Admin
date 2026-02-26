@@ -4,7 +4,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "./utils/logger";
-import { initSettingsTable, migrateFromLocalStorage } from "./services/settingsService";
+import { initSettingsTable, migrateFromLocalStorage, getSetting, setSetting } from "./services/settingsService";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -41,6 +41,12 @@ export async function getDatabase(): Promise<Database> {
       // Ensure Settings table exists and migrate localStorage data
       await initSettingsTable();
       await migrateFromLocalStorage();
+
+      // Normalize any inconsistent timestamps in the database (one-time)
+      await normalizeTimestampData(db);
+
+      // Apply any pending schema migrations not covered by Prisma (one-time)
+      await applyPendingSchemaChanges(db);
 
       // Initialize FTS5 full-text search for clients
       await initClientFTS(db);
@@ -166,6 +172,154 @@ export async function executeBatch(
 }
 
 /**
+ * Normalize inconsistent timestamp data (one-time migration).
+ *
+ * Fixes two issues found in the post-audit verification:
+ * 1. Client/Pet/Event/Task createdAt/updatedAt have mixed types:
+ *    - Integer epoch milliseconds (from old Prisma Client)
+ *    - Text in various formats (from raw SQL CURRENT_TIMESTAMP)
+ *    Normalizes all to CURRENT_TIMESTAMP text format: "YYYY-MM-DD HH:MM:SS"
+ *
+ * 2. Event.date has mixed ISO 8601 formats:
+ *    - "2025-09-28T17:55:55+10:00" (with timezone offset)
+ *    - "2025-10-31T03:25:00.000Z" (UTC with Z suffix)
+ *    - "2025-11-13T05:20:37.724+00:00" (explicit +00:00)
+ *    Normalizes all to UTC Z-suffix format to match dateToISO() output.
+ */
+async function normalizeTimestampData(database: Database): Promise<void> {
+  const SENTINEL = "_migration_normalize_timestamps_v1";
+  const done = await getSetting(SENTINEL);
+  if (done) return;
+
+  logger.info("[DB] Normalizing timestamp data (one-time migration)...");
+
+  try {
+    await database.execute("BEGIN TRANSACTION");
+
+    // --- Fix 1: Convert integer epoch ms to text for createdAt/updatedAt ---
+    const tables = ["Client", "Pet", "Event", "Task"];
+    let totalFixed = 0;
+
+    for (const table of tables) {
+      // Convert integer createdAt (epoch ms) to "YYYY-MM-DD HH:MM:SS" UTC text
+      const r1 = await database.execute(`
+        UPDATE ${table}
+        SET createdAt = datetime(createdAt / 1000, 'unixepoch')
+        WHERE typeof(createdAt) = 'integer'
+      `);
+
+      // Convert integer updatedAt (epoch ms) to "YYYY-MM-DD HH:MM:SS" UTC text
+      const r2 = await database.execute(`
+        UPDATE ${table}
+        SET updatedAt = datetime(updatedAt / 1000, 'unixepoch')
+        WHERE typeof(updatedAt) = 'integer'
+      `);
+
+      totalFixed += r1.rowsAffected + r2.rowsAffected;
+    }
+
+    logger.info(`[DB] Fixed ${totalFixed} integer timestamps across ${tables.length} tables`);
+
+    // --- Fix 2: Normalize Event.date to UTC Z-suffix ISO 8601 ---
+    // Convert dates with timezone offsets (e.g. +10:00, +00:00) to UTC Z-suffix
+    // SQLite's strftime handles timezone conversion automatically
+    const r3 = await database.execute(`
+      UPDATE Event
+      SET date = strftime('%Y-%m-%dT%H:%M:%fZ', date)
+      WHERE date IS NOT NULL
+        AND date NOT LIKE '%Z'
+        AND (date LIKE '%+%' OR date LIKE '%-%:%')
+    `);
+
+    // Also normalize dates that have +00:00 (redundant, but ensures Z suffix)
+    const r4 = await database.execute(`
+      UPDATE Event
+      SET date = REPLACE(date, '+00:00', 'Z')
+      WHERE date LIKE '%+00:00'
+    `);
+
+    logger.info(`[DB] Normalized ${r3.rowsAffected + r4.rowsAffected} event dates to UTC Z-suffix`);
+
+    // Also normalize Task.dueDate and Task.completedOn
+    const r5 = await database.execute(`
+      UPDATE Task
+      SET dueDate = strftime('%Y-%m-%dT%H:%M:%fZ', dueDate)
+      WHERE dueDate IS NOT NULL
+        AND dueDate NOT LIKE '%Z'
+        AND (dueDate LIKE '%+%' OR dueDate LIKE '%-%:%')
+    `);
+
+    const r6 = await database.execute(`
+      UPDATE Task
+      SET completedOn = strftime('%Y-%m-%dT%H:%M:%fZ', completedOn)
+      WHERE completedOn IS NOT NULL
+        AND completedOn NOT LIKE '%Z'
+        AND (completedOn LIKE '%+%' OR completedOn LIKE '%-%:%')
+    `);
+
+    logger.info(`[DB] Normalized ${r5.rowsAffected + r6.rowsAffected} task dates to UTC Z-suffix`);
+
+    await database.execute("COMMIT");
+
+    // Mark migration as complete
+    await setSetting(SENTINEL, new Date().toISOString());
+    logger.info("[DB] Timestamp normalization complete");
+  } catch (error) {
+    try {
+      await database.execute("ROLLBACK");
+    } catch {
+      // Rollback may fail if transaction wasn't started
+    }
+    logger.error("[DB] Timestamp normalization failed (non-fatal, will retry on next startup):", error);
+    console.warn("[DB] Timestamp normalization failed:", error);
+  }
+}
+
+/**
+ * Apply pending schema changes that weren't deployed via Prisma migrate.
+ *
+ * Prisma migrations target prisma/dev.db (DATABASE_URL="file:./dev.db"),
+ * but the production database lives in Documents/PBS_Admin/data/pbs_admin.db.
+ * This function applies schema changes that exist as migration SQL files
+ * but were never applied to the production database.
+ *
+ * Idempotent — uses IF NOT EXISTS and sentinel to avoid re-running.
+ */
+async function applyPendingSchemaChanges(database: Database): Promise<void> {
+  const SENTINEL = "_migration_schema_changes_v1";
+  const done = await getSetting(SENTINEL);
+  if (done) return;
+
+  logger.info("[DB] Applying pending schema changes...");
+
+  try {
+    await database.execute("BEGIN TRANSACTION");
+
+    // Migration 20260225100056: Add UNIQUE constraint on Client.email
+    // Drop the old non-unique index and create a unique one
+    await database.execute(`DROP INDEX IF EXISTS "Client_email_idx"`);
+    await database.execute(`CREATE UNIQUE INDEX IF NOT EXISTS "Client_email_key" ON "Client"("email")`);
+
+    // Migration 20260225102000: Add missing indexes
+    await database.execute(`CREATE INDEX IF NOT EXISTS "Event_processingState_idx" ON "Event"("processingState")`);
+    await database.execute(`CREATE INDEX IF NOT EXISTS "Task_automatedAction_idx" ON "Task"("automatedAction")`);
+
+    await database.execute("COMMIT");
+
+    await setSetting(SENTINEL, new Date().toISOString());
+    logger.info("[DB] Pending schema changes applied (UNIQUE email, processingState index, automatedAction index)");
+  } catch (error) {
+    try {
+      await database.execute("ROLLBACK");
+    } catch {
+      // Rollback may fail if transaction wasn't started
+    }
+    logger.error("[DB] Schema changes failed (non-fatal, will retry on next startup):", error);
+    console.warn("[DB] Schema changes failed:", error);
+  }
+}
+
+/**
  * Initialize FTS5 virtual table for client search.
  * Creates the table, sync triggers, and populates from existing data.
  * Idempotent — safe to call on every startup.
@@ -213,6 +367,26 @@ async function initClientFTS(database: Database): Promise<void> {
 
       logger.info("[FTS] ClientFTS populated with existing data");
     }
+
+    // Rebuild FTS index on every startup to fix any row bloat from
+    // contentless table trigger issues (DELETE may not work reliably
+    // on contentless FTS5 tables, causing duplicate rows to accumulate)
+    await database.execute(`DELETE FROM ClientFTS`);
+    await database.execute(`
+      INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+      SELECT
+        c.clientId,
+        COALESCE(c.firstName, ''),
+        COALESCE(c.lastName, ''),
+        COALESCE(c.email, ''),
+        COALESCE(c.mobile, ''),
+        COALESCE(c.city, ''),
+        COALESCE(GROUP_CONCAT(p.name, ', '), '')
+      FROM Client c
+      LEFT JOIN Pet p ON c.clientId = p.clientId
+      GROUP BY c.clientId
+    `);
+    logger.info("[FTS] ClientFTS index rebuilt");
 
     // Create triggers (DROP IF EXISTS + CREATE for idempotency)
     // Trigger: After INSERT on Client

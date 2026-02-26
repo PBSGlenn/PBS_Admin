@@ -73,6 +73,10 @@ git push origin --delete branch-name
 - **Command Palette**: Global Ctrl+K command palette with FTS5 client search, keyboard navigation (arrow keys, Enter, Esc), and grouped results (Clients, Actions, Settings). Component at `src/components/CommandPalette/CommandPalette.tsx`, integrated in Dashboard.
 - **Zod Runtime Validation**: Centralized Zod v4 schemas in `src/lib/schemas.ts` with `safeParse`/`safeParseArray` helpers. Validation at system boundaries in 6 services: bookingSyncService (Supabase data), jotformService (Jotform API), apiKeysService, backupService, vetClinicsService, transcriptionService.
 - **Perplexity Sonar Medication Checker**: Replaced web-scraping stubs in medicationUpdateService.ts with Perplexity Sonar API. Batches medications in groups of 10. Perplexity API key (`pplx-` prefix) added to apiKeysService, ApiKeysSettingsDialog, and Zod schemas.
+- **MCP Server**: New `mcp-server/` directory with read-only MCP server for Claude Desktop/Cowork. 8 tools: search_clients, get_client, list_upcoming_events, list_pending_tasks, get_dashboard_summary, get_client_pets, get_setting, run_query. Resolves Windows OneDrive Documents redirect via PowerShell fallback. Uses LIKE queries (not FTS5) due to contentless table limitations in better-sqlite3.
+- **Database Startup Migrations**: Three idempotent startup migrations in `db.ts` run on every app launch: (1) `normalizeTimestampData` — converts integer epoch ms timestamps to text, normalizes Event/Task dates to UTC Z-suffix; (2) `applyPendingSchemaChanges` — applies UNIQUE constraint on Client.email, adds missing indexes (Event.processingState, Task.automatedAction); (3) FTS5 index rebuild — DELETE + repopulate on every startup to prevent row bloat from contentless table trigger issues.
+- **localStorage Cleanup**: Migration now removes old localStorage keys after copying to SQLite Settings table.
+- **Audit Fixes**: Fixed FTS index bloat (61→28 rows), added UNIQUE constraint on Client.email, added 2 missing database indexes, fixed MCP server pointing to wrong database file (OneDrive Documents redirect).
 
 **Previous Changes** (2026-02-25):
 - **Security: RCE Fix for Auto-Update**: Update installer download now validates redirect domains (github.com/GitHub only), checks file size against GitHub API metadata, and verifies PE header before execution
@@ -229,6 +233,13 @@ PBS_Admin/
 │   ├── App.tsx
 │   └── main.tsx
 │
+├── mcp-server/             # MCP server for Claude Desktop/Cowork
+│   ├── src/
+│   │   └── index.ts        # ✅ 8 read-only tools, SQLite via better-sqlite3
+│   ├── dist/               # Compiled output
+│   ├── package.json
+│   └── tsconfig.json
+│
 ├── prisma/
 │   ├── schema.prisma       # ✅ Complete database schema
 │   ├── migrations/         # ✅ Initial migration generated
@@ -283,7 +294,9 @@ Task (parent) ──> Task (children)
 - Has many Events (CASCADE delete)
 - Has many Tasks (SET NULL on delete)
 
-**Indexes**: email, mobile, lastName+firstName, city+state
+**Indexes**: email (UNIQUE), mobile, lastName+firstName, city+state
+
+**Note**: The UNIQUE constraint on `email` is enforced at the database level via startup migration (`applyPendingSchemaChanges`), not only at the Prisma schema level.
 
 ---
 
@@ -544,7 +557,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 - `client_fts_insert` / `client_fts_update` / `client_fts_delete` - Keep FTS in sync on Client changes
 - `pet_fts_insert` / `pet_fts_update` / `pet_fts_delete` - Keep petNames in sync on Pet changes
 
-**Initialization**: `initClientFTS()` called on app startup in `db.ts`. Creates table and triggers if not already present; safe to run multiple times.
+**Initialization**: `initClientFTS()` called on app startup in `db.ts`. Creates table and triggers if not already present. On every startup, the FTS index is fully rebuilt (DELETE + repopulate) to prevent row bloat caused by contentless table trigger issues with Tauri SQL plugin.
 
 **Service Functions**:
 ```typescript
@@ -2786,6 +2799,49 @@ restartScheduledBackups(): void // Called after settings change
 
 ---
 
+## MCP Server (Claude Desktop / Cowork)
+
+**Purpose**: Expose PBS Admin's SQLite database as read-only MCP tools for Claude Desktop and Cowork agents.
+
+**Location**: `mcp-server/` directory
+
+**Configuration**: `%APPDATA%\Claude\claude_desktop_config.json`
+```json
+{
+  "mcpServers": {
+    "pbs-admin": {
+      "command": "node",
+      "args": ["C:\\Dev\\PBS_Admin\\mcp-server\\dist\\index.js"]
+    }
+  }
+}
+```
+
+**Tools** (8 total):
+- `search_clients` — Search by name, email, phone, or pet name (LIKE query with Pet JOIN)
+- `get_client` — Full client details with pets, events, and tasks
+- `list_upcoming_events` — Events in the next N days
+- `list_pending_tasks` — Pending/in-progress tasks with overdue highlighting
+- `get_dashboard_summary` — Client count, pending tasks, upcoming events, overdue items
+- `get_client_pets` — All pets for a specific client
+- `get_setting` — Read a value from the Settings table
+- `run_query` — Run arbitrary read-only SQL (SELECT/PRAGMA/EXPLAIN only)
+
+**Database Path Resolution**: Windows may redirect Documents to OneDrive\Documents. The MCP server resolves the correct path using:
+1. PowerShell `[Environment]::GetFolderPath('MyDocuments')` (follows Windows Known Folder redirect)
+2. Fallback: `~/OneDrive/Documents/`
+3. Last resort: `~/Documents/`
+
+**Technology**: better-sqlite3 (readonly mode), @modelcontextprotocol/sdk, Zod validation
+
+**Build**: `cd mcp-server && npm run build`
+
+**Known Limitation**: FTS5 contentless tables return NULL for UNINDEXED columns in better-sqlite3, so the MCP server uses LIKE queries instead of FTS5 MATCH. The Tauri app's FTS5 search works correctly via @tauri-apps/plugin-sql.
+
+**Implementation File**: [mcp-server/src/index.ts](mcp-server/src/index.ts)
+
+---
+
 ## Startup + Background Mode
 
 ### Overview
@@ -3478,4 +3534,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2026-02-26
-**Version**: 2.4.0 (Command Palette with Ctrl+K global search; Zod v4 runtime validation at external API boundaries; Perplexity Sonar integration for medication brand name updates; FTS5 client search; security hardening; Claude Opus 4.6; gpt-4o-transcribe-diarize transcription; localStorage to SQLite migration)
+**Version**: 2.5.0 (MCP server for Claude Desktop/Cowork with 8 read-only tools; database startup migrations for timestamp normalization, UNIQUE email constraint, and missing indexes; FTS5 index rebuild on startup; localStorage cleanup after SQLite migration; Command Palette; Zod v4 validation; Perplexity Sonar; FTS5 client search; Claude Opus 4.6; gpt-4o-transcribe-diarize transcription)

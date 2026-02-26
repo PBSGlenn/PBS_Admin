@@ -112,7 +112,20 @@ export async function migrateFromLocalStorage(): Promise<void> {
     }
   }
 
+  // Clean up old localStorage keys now that data is in SQLite
+  let cleaned = 0;
+  for (const key of LOCALSTORAGE_KEYS) {
+    try {
+      if (localStorage.getItem(key) !== null) {
+        localStorage.removeItem(key);
+        cleaned++;
+      }
+    } catch {
+      // localStorage may not be available in all contexts
+    }
+  }
+
   // Set sentinel to prevent re-migration
   await setSetting(MIGRATION_SENTINEL, new Date().toISOString());
-  logger.info(`localStorage migration complete: ${migrated} keys migrated`);
+  logger.info(`localStorage migration complete: ${migrated} keys migrated, ${cleaned} old keys cleaned up`);
 }
