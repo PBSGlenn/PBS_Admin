@@ -2,7 +2,7 @@
 // Displays searchable, sortable table of all clients
 // Uses SQLite FTS5 for fast server-side full-text search
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -18,8 +18,11 @@ import {
 import { getClientsForDashboard, searchClientsForDashboard } from "@/lib/services/clientService";
 import { formatFullName } from "@/lib/utils";
 import { formatDate } from "@/lib/utils/dateUtils";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { LoadingCard } from "../ui/loading-spinner";
+
+type SortColumn = "name" | "location" | "pets" | "lastEvent";
+type SortDirection = "asc" | "desc";
 
 interface ClientsListProps {
   onNewClient?: () => void;
@@ -29,6 +32,8 @@ interface ClientsListProps {
 export function ClientsList({ onNewClient, onEditClient }: ClientsListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [sortColumn, setSortColumn] = useState<SortColumn>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Debounce search input — 200ms delay before triggering server-side query
@@ -47,6 +52,50 @@ export function ClientsList({ onNewClient, onEditClient }: ClientsListProps) {
         ? searchClientsForDashboard(debouncedQuery)
         : getClientsForDashboard(),
   });
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const sortedClients = useMemo(() => {
+    return [...filteredClients].sort((a: any, b: any) => {
+      let valA: string | number, valB: string | number;
+      switch (sortColumn) {
+        case "name":
+          valA = `${a.lastName ?? ""} ${a.firstName ?? ""}`.toLowerCase();
+          valB = `${b.lastName ?? ""} ${b.firstName ?? ""}`.toLowerCase();
+          break;
+        case "location":
+          valA = `${a.city ?? ""} ${a.state ?? ""}`.toLowerCase().trim();
+          valB = `${b.city ?? ""} ${b.state ?? ""}`.toLowerCase().trim();
+          break;
+        case "pets":
+          valA = a.petCount ?? 0;
+          valB = b.petCount ?? 0;
+          break;
+        case "lastEvent":
+          valA = a.lastEventDate ?? "";
+          valB = b.lastEventDate ?? "";
+          break;
+        default:
+          return 0;
+      }
+      const cmp = valA < valB ? -1 : valA > valB ? 1 : 0;
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+  }, [filteredClients, sortColumn, sortDirection]);
+
+  const SortIcon = ({ column }: { column: SortColumn }) => {
+    if (sortColumn !== column) return <ArrowUpDown className="h-3 w-3 text-muted-foreground/50" />;
+    return sortDirection === "asc"
+      ? <ArrowUp className="h-3 w-3" />
+      : <ArrowDown className="h-3 w-3" />;
+  };
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -95,16 +144,24 @@ export function ClientsList({ onNewClient, onEditClient }: ClientsListProps) {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="h-8 text-xs">Name</TableHead>
+                <TableHead className="h-8 text-xs cursor-pointer hover:bg-muted/50 select-none" onClick={() => handleSort("name")}>
+                  <span className="flex items-center gap-1">Name <SortIcon column="name" /></span>
+                </TableHead>
                 <TableHead className="h-8 text-xs">Contact</TableHead>
-                <TableHead className="h-8 text-xs">Location</TableHead>
-                <TableHead className="h-8 text-xs text-center">Pets</TableHead>
-                <TableHead className="h-8 text-xs">Last Event</TableHead>
+                <TableHead className="h-8 text-xs cursor-pointer hover:bg-muted/50 select-none" onClick={() => handleSort("location")}>
+                  <span className="flex items-center gap-1">Location <SortIcon column="location" /></span>
+                </TableHead>
+                <TableHead className="h-8 text-xs text-center cursor-pointer hover:bg-muted/50 select-none" onClick={() => handleSort("pets")}>
+                  <span className="flex items-center justify-center gap-1">Pets <SortIcon column="pets" /></span>
+                </TableHead>
+                <TableHead className="h-8 text-xs cursor-pointer hover:bg-muted/50 select-none" onClick={() => handleSort("lastEvent")}>
+                  <span className="flex items-center gap-1">Last Event <SortIcon column="lastEvent" /></span>
+                </TableHead>
                 <TableHead className="h-8 text-xs text-center">Notes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredClients.map((client: any) => (
+              {sortedClients.map((client: any) => (
                 <TableRow
                   key={client.clientId}
                   className="cursor-pointer h-10"

@@ -7,8 +7,10 @@ import { useWindowContext, OpenWindowOptions } from "@/contexts/WindowContext";
 interface UseWindowReturn {
   // Open a window with the given options
   openWindow: (options: OpenWindowOptions) => void;
-  // Close a window by ID
+  // Close a window by ID (checks unsaved changes guard)
   closeWindow: (id: string) => void;
+  // Force close a window by ID (skips unsaved changes guard)
+  forceCloseWindow: (id: string) => void;
   // Minimize a window by ID
   minimizeWindow: (id: string) => void;
   // Restore a minimized window
@@ -21,6 +23,10 @@ interface UseWindowReturn {
   getWindowData: <T extends Record<string, unknown>>(id: string) => T | undefined;
   // Update window data
   updateWindowData: (id: string, data: Record<string, unknown>) => void;
+  // Register a close guard (returns true if window has unsaved changes)
+  registerCloseGuard: (windowId: string, guard: () => boolean) => void;
+  // Unregister a close guard
+  unregisterCloseGuard: (windowId: string) => void;
 }
 
 export function useWindow(): UseWindowReturn {
@@ -37,12 +43,15 @@ export function useWindow(): UseWindowReturn {
   return {
     openWindow: context.openWindow,
     closeWindow: context.closeWindow,
+    forceCloseWindow: context.forceCloseWindow,
     minimizeWindow: context.minimizeWindow,
     restoreWindow: context.restoreWindow,
     focusWindow: context.focusWindow,
     isWindowOpen: context.isWindowOpen,
     getWindowData,
     updateWindowData: context.updateWindowData,
+    registerCloseGuard: context.registerCloseGuard,
+    unregisterCloseGuard: context.unregisterCloseGuard,
   };
 }
 

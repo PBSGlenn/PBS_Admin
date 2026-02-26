@@ -1521,13 +1521,20 @@ pub fn run() {
 
             let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
 
-            // Load tray icon from embedded PNG
+            // Load tray icon from embedded PNG (with graceful fallback)
             let icon_bytes = include_bytes!("../icons/32x32.png");
-            let icon_img = image::load_from_memory(icon_bytes)
-                .expect("Failed to decode tray icon PNG");
-            let rgba = icon_img.to_rgba8();
-            let (width, height) = icon_img.dimensions();
-            let icon = TauriImage::new_owned(rgba.into_raw(), width, height);
+            let icon = match image::load_from_memory(icon_bytes) {
+                Ok(icon_img) => {
+                    let rgba = icon_img.to_rgba8();
+                    let (width, height) = icon_img.dimensions();
+                    TauriImage::new_owned(rgba.into_raw(), width, height)
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to decode tray icon PNG: {}. Using fallback.", e);
+                    // Create a minimal 1x1 transparent fallback icon
+                    TauriImage::new_owned(vec![0, 0, 0, 0], 1, 1)
+                }
+            };
 
             // Build system tray
             let _tray = TrayIconBuilder::new()

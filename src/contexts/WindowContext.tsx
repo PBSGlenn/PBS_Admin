@@ -1,7 +1,7 @@
 // PBS Admin - Window Context
 // Manages multi-window state for the application
 
-import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef, ReactNode } from "react";
 
 // ============================================================================
 // Types
@@ -21,7 +21,10 @@ export interface WindowState {
   id: string;
   title: string;
   icon?: ReactNode;
-  component: ReactNode;
+  /** Static component (legacy) — prefer componentFactory for fresh renders */
+  component?: ReactNode;
+  /** Component factory for fresh renders on each window paint */
+  componentFactory?: () => ReactNode;
   position: WindowPosition;
   size: WindowSize;
   minSize?: WindowSize;
@@ -37,7 +40,10 @@ export interface OpenWindowOptions {
   id: string;
   title: string;
   icon?: ReactNode;
-  component: ReactNode;
+  /** Static component (legacy) — prefer componentFactory for fresh renders */
+  component?: ReactNode;
+  /** Component factory for fresh renders on each window paint */
+  componentFactory?: () => ReactNode;
   defaultPosition?: WindowPosition;
   defaultSize?: WindowSize;
   minSize?: WindowSize;
@@ -50,6 +56,7 @@ interface WindowContextValue {
   activeWindowId: string | null;
   openWindow: (options: OpenWindowOptions) => void;
   closeWindow: (id: string) => void;
+  forceCloseWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
   maximizeWindow: (id: string) => void;
@@ -59,6 +66,10 @@ interface WindowContextValue {
   updateWindowData: (id: string, data: Record<string, unknown>) => void;
   getWindow: (id: string) => WindowState | undefined;
   isWindowOpen: (id: string) => boolean;
+  /** Register a close guard for a window. Returns true if window has unsaved changes. */
+  registerCloseGuard: (windowId: string, guard: () => boolean) => void;
+  /** Unregister a close guard for a window */
+  unregisterCloseGuard: (windowId: string) => void;
 }
 
 // ============================================================================
@@ -95,6 +106,17 @@ export function WindowProvider({ children }: WindowProviderProps) {
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
   const [windowCount, setWindowCount] = useState(0);
 
+  // Close guards: callbacks that return true if window has unsaved changes
+  const closeGuardsRef = useRef<Map<string, () => boolean>>(new Map());
+
+  const registerCloseGuard = useCallback((windowId: string, guard: () => boolean) => {
+    closeGuardsRef.current.set(windowId, guard);
+  }, []);
+
+  const unregisterCloseGuard = useCallback((windowId: string) => {
+    closeGuardsRef.current.delete(windowId);
+  }, []);
+
   // Calculate default position for new window (cascade effect)
   const getDefaultPosition = useCallback((): WindowPosition => {
     const offset = (windowCount % 10) * WINDOW_OFFSET;
@@ -129,6 +151,7 @@ export function WindowProvider({ children }: WindowProviderProps) {
         title: options.title,
         icon: options.icon,
         component: options.component,
+        componentFactory: options.componentFactory,
         position: options.defaultPosition || getDefaultPosition(),
         size: options.defaultSize || DEFAULT_WINDOW_SIZE,
         minSize: options.minSize || DEFAULT_MIN_SIZE,
@@ -146,8 +169,9 @@ export function WindowProvider({ children }: WindowProviderProps) {
     });
   }, [getDefaultPosition]);
 
-  // Close a window
-  const closeWindow = useCallback((id: string) => {
+  // Internal close implementation (no guard check)
+  const doCloseWindow = useCallback((id: string) => {
+    closeGuardsRef.current.delete(id);
     setWindows((prev) => {
       const filtered = prev.filter((w) => w.id !== id);
 
@@ -162,6 +186,24 @@ export function WindowProvider({ children }: WindowProviderProps) {
       return filtered;
     });
   }, [activeWindowId]);
+
+  // Close a window (checks close guard first — prompts if unsaved changes)
+  const closeWindow = useCallback((id: string) => {
+    const guard = closeGuardsRef.current.get(id);
+    if (guard && guard()) {
+      // Window has unsaved changes — ask user to confirm
+      const discard = window.confirm(
+        "You have unsaved changes. Are you sure you want to close this window?"
+      );
+      if (!discard) return;
+    }
+    doCloseWindow(id);
+  }, [doCloseWindow]);
+
+  // Force close a window (skips guard check)
+  const forceCloseWindow = useCallback((id: string) => {
+    doCloseWindow(id);
+  }, [doCloseWindow]);
 
   // Minimize a window
   const minimizeWindow = useCallback((id: string) => {
@@ -264,6 +306,7 @@ export function WindowProvider({ children }: WindowProviderProps) {
     activeWindowId,
     openWindow,
     closeWindow,
+    forceCloseWindow,
     minimizeWindow,
     restoreWindow,
     maximizeWindow,
@@ -273,11 +316,13 @@ export function WindowProvider({ children }: WindowProviderProps) {
     updateWindowData,
     getWindow,
     isWindowOpen,
+    registerCloseGuard,
+    unregisterCloseGuard,
   }), [
     windows, activeWindowId,
-    openWindow, closeWindow, minimizeWindow, restoreWindow, maximizeWindow,
+    openWindow, closeWindow, forceCloseWindow, minimizeWindow, restoreWindow, maximizeWindow,
     focusWindow, updateWindowPosition, updateWindowSize, updateWindowData,
-    getWindow, isWindowOpen,
+    getWindow, isWindowOpen, registerCloseGuard, unregisterCloseGuard,
   ]);
 
   return (

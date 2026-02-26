@@ -13,6 +13,7 @@ import { getRulesForTrigger } from "./rules";
 import { createTask } from "../services/taskService";
 import { createEvent } from "../services/eventService";
 import { createQuestionnaireCheckDate, subtractDaysFromDate, addDaysToDate } from "../utils/dateUtils";
+import { withTransaction, query } from "../db";
 import { logger } from "../utils/logger";
 
 /**
@@ -34,27 +35,45 @@ export async function executeAutomation(
 
       logger.debug(`[Automation] Executing rule: ${rule.name}`);
 
-      let actionsExecuted = 0;
-      const errors: string[] = [];
+      // Wrap all actions for this rule in a transaction for atomicity
+      try {
+        const { actionsExecuted, errors } = await withTransaction(async () => {
+          let actionsExecuted = 0;
+          const errors: string[] = [];
 
-      // Execute each action in the rule
-      for (const action of rule.actions) {
-        try {
-          await executeAction(action, context);
-          actionsExecuted++;
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          errors.push(`Action ${action.type} failed: ${errorMessage}`);
-          logger.error(`[Automation] Action failed:`, error);
-        }
+          for (const action of rule.actions) {
+            try {
+              await executeAction(action, context);
+              actionsExecuted++;
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              errors.push(`Action ${action.type} failed: ${errorMessage}`);
+              logger.error(`[Automation] Action failed:`, error);
+              // Re-throw to trigger transaction rollback
+              throw error;
+            }
+          }
+
+          return { actionsExecuted, errors };
+        });
+
+        results.push({
+          ruleId: rule.id,
+          success: errors.length === 0,
+          actionsExecuted,
+          errors: errors.length > 0 ? errors : undefined,
+        });
+      } catch (error) {
+        // Transaction was rolled back — report failure
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(`[Automation] Rule ${rule.id} rolled back:`, error);
+        results.push({
+          ruleId: rule.id,
+          success: false,
+          actionsExecuted: 0,
+          errors: [errorMessage],
+        });
       }
-
-      results.push({
-        ruleId: rule.id,
-        success: errors.length === 0,
-        actionsExecuted,
-        errors: errors.length > 0 ? errors : undefined,
-      });
     } catch (error) {
       logger.error(`[Automation] Rule ${rule.id} failed:`, error);
       results.push({
@@ -131,6 +150,18 @@ async function executeCreateTask(
 
   if (!dueDate) {
     throw new Error("Cannot create task: dueDate could not be determined");
+  }
+
+  // Idempotency check: skip if a matching task already exists
+  const existing = await query<{ count: number }>(
+    `SELECT COUNT(*) as count FROM Task
+     WHERE automatedAction = ? AND eventId = ? AND clientId = ? AND description = ?
+     AND status NOT IN ('Canceled')`,
+    [payload.automatedAction, eventId || null, clientId || null, payload.description]
+  );
+  if (existing.length > 0 && existing[0].count > 0) {
+    logger.debug(`[Automation] Skipping duplicate task: ${payload.description} (already exists)`);
+    return;
   }
 
   const taskInput = {

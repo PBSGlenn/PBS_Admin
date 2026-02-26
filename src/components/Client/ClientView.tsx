@@ -1,7 +1,7 @@
 // PBS Admin - Client View Component
 // Two-pane layout for editing client and managing related data
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -24,13 +24,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
 import { UnsavedChangesDialog } from "../ui/unsaved-changes-dialog";
+import { useWindowContext } from "@/contexts/WindowContext";
 
 export interface ClientViewProps {
   client: any;
   onClose: () => void;
+  /** Window ID for registering close guard (unsaved changes check) */
+  windowId?: string;
 }
 
-export function ClientView({ client, onClose }: ClientViewProps) {
+export function ClientView({ client, onClose, windowId }: ClientViewProps) {
   const queryClient = useQueryClient();
 
   // Form state
@@ -80,6 +83,17 @@ export function ClientView({ client, onClose }: ClientViewProps) {
   } = useUnsavedChanges({
     checkDirty: () => hasChanges,
   });
+
+  // Register close guard so the window system prompts before closing with unsaved changes
+  const { registerCloseGuard, unregisterCloseGuard } = useWindowContext();
+  const hasChangesRef = useRef(hasChanges);
+  hasChangesRef.current = hasChanges;
+  useEffect(() => {
+    if (windowId) {
+      registerCloseGuard(windowId, () => hasChangesRef.current);
+      return () => unregisterCloseGuard(windowId);
+    }
+  }, [windowId, registerCloseGuard, unregisterCloseGuard]);
 
   // Folder management state
   const [showFolderDialog, setShowFolderDialog] = useState(false);

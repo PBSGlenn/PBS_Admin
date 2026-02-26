@@ -186,7 +186,7 @@ export const Window = React.memo(function Window({ window: windowState }: Window
 
         {/* Window Content */}
         <div className="flex-1 overflow-auto">
-          {windowState.component}
+          {windowState.componentFactory ? windowState.componentFactory() : windowState.component}
         </div>
       </div>
     </Rnd>

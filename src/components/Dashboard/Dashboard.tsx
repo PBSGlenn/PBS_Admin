@@ -2,7 +2,8 @@
 // Two-pane layout: Clients list (left) + Overview (right)
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { Badge } from "../ui/badge";
 import { ClientsList } from "./ClientsList";
 import { UpcomingBookings } from "./UpcomingBookings";
@@ -50,6 +51,7 @@ export function Dashboard() {
   const [isApiKeysSettingsOpen, setIsApiKeysSettingsOpen] = useState(false);
   const [isVetClinicsSettingsOpen, setIsVetClinicsSettingsOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("tasks");
   const { notificationCount } = useTaskNotifications();
   const { openWindow, closeWindow } = useWindow();
 
@@ -108,6 +110,7 @@ export function Dashboard() {
         <ClientView
           client={client}
           onClose={() => closeWindow(windowId)}
+          windowId={windowId}
         />
       ),
       defaultSize: WINDOW_CONFIGS.client.defaultSize,
@@ -131,6 +134,7 @@ export function Dashboard() {
         <ClientView
           client={client}
           onClose={() => closeWindow(windowId)}
+          windowId={windowId}
         />
       ),
       defaultSize: WINDOW_CONFIGS.client.defaultSize,
@@ -308,187 +312,162 @@ export function Dashboard() {
 
   // Show dashboard
   return (
-    <div className="flex h-screen bg-background">
-      {/* Left Pane - Clients List */}
-      <div className="w-1/2 border-r border-border flex flex-col">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">PBS Admin</h1>
-            <p className="text-xs text-muted-foreground">Pet Behaviour Services</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Command Palette Trigger */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs text-muted-foreground"
-              onClick={() => setIsCommandPaletteOpen(true)}
-            >
-              <Search className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Search</span>
-              <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
-                Ctrl K
-              </kbd>
-            </Button>
-            {/* Notification Bell */}
-            {notificationCount > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="relative h-8 w-8 p-0"
-                onClick={() => {
-                  // Scroll to tasks section
-                  document.getElementById('tasks-section')?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                title={`${notificationCount} task${notificationCount > 1 ? 's' : ''} due or overdue`}
-              >
-                <Bell className="h-5 w-5 text-muted-foreground" />
-                <Badge
-                  variant="destructive"
-                  className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+    <div className="h-screen bg-background">
+      <PanelGroup orientation="horizontal">
+        {/* Left Pane - Clients List */}
+        <Panel defaultSize={50} minSize={30}>
+          <div className="h-full flex flex-col border-r border-border">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-bold">PBS Admin</h1>
+                <p className="text-xs text-muted-foreground">Pet Behaviour Services</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Command Palette Trigger */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground"
+                  onClick={() => setIsCommandPaletteOpen(true)}
                 >
-                  {notificationCount}
-                </Badge>
-              </Button>
-            )}
-            {/* Settings Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <Settings className="h-4 w-4" />
+                  <Search className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Search</span>
+                  <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
+                    Ctrl K
+                  </kbd>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="text-xs">Settings</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setCurrentView("email-templates")}
-                >
-                  <Mail className="h-3.5 w-3.5 mr-2" />
-                  Email Templates
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setCurrentView("ai-prompts")}
-                >
-                  <FileText className="h-3.5 w-3.5 mr-2" />
-                  AI Prompts
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsMedicationUpdateCheckerOpen(true)}
-                >
-                  <Pill className="h-3.5 w-3.5 mr-2" />
-                  Medication Updates
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsTranscriptionToolOpen(true)}
-                >
-                  <FileAudio className="h-3.5 w-3.5 mr-2" />
-                  Audio Transcription Tool
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsBackupManagerOpen(true)}
-                >
-                  <Database className="h-3.5 w-3.5 mr-2" />
-                  Backup & Restore
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsStartupSettingsOpen(true)}
-                >
-                  <Power className="h-3.5 w-3.5 mr-2" />
-                  Startup Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsApiKeysSettingsOpen(true)}
-                >
-                  <Key className="h-3.5 w-3.5 mr-2" />
-                  API Keys
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsVetClinicsSettingsOpen(true)}
-                >
-                  <Building2 className="h-3.5 w-3.5 mr-2" />
-                  Vet Clinics Directory
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-xs cursor-pointer"
-                  onClick={() => setIsAboutDialogOpen(true)}
-                >
-                  <Info className="h-3.5 w-3.5 mr-2" />
-                  About
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                {/* Notification Bell */}
+                {notificationCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="relative h-8 w-8 p-0"
+                    onClick={() => setActiveTab("tasks")}
+                    title={`${notificationCount} task${notificationCount > 1 ? 's' : ''} due or overdue`}
+                  >
+                    <Bell className="h-5 w-5 text-muted-foreground" />
+                    <Badge
+                      variant="destructive"
+                      className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]"
+                    >
+                      {notificationCount}
+                    </Badge>
+                  </Button>
+                )}
+                {/* Settings Menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel className="text-xs">Settings</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setCurrentView("email-templates")}
+                    >
+                      <Mail className="h-3.5 w-3.5 mr-2" />
+                      Email Templates
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setCurrentView("ai-prompts")}
+                    >
+                      <FileText className="h-3.5 w-3.5 mr-2" />
+                      AI Prompts
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsMedicationUpdateCheckerOpen(true)}
+                    >
+                      <Pill className="h-3.5 w-3.5 mr-2" />
+                      Medication Updates
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsTranscriptionToolOpen(true)}
+                    >
+                      <FileAudio className="h-3.5 w-3.5 mr-2" />
+                      Audio Transcription Tool
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsBackupManagerOpen(true)}
+                    >
+                      <Database className="h-3.5 w-3.5 mr-2" />
+                      Backup & Restore
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsStartupSettingsOpen(true)}
+                    >
+                      <Power className="h-3.5 w-3.5 mr-2" />
+                      Startup Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsApiKeysSettingsOpen(true)}
+                    >
+                      <Key className="h-3.5 w-3.5 mr-2" />
+                      API Keys
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsVetClinicsSettingsOpen(true)}
+                    >
+                      <Building2 className="h-3.5 w-3.5 mr-2" />
+                      Vet Clinics Directory
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-xs cursor-pointer"
+                      onClick={() => setIsAboutDialogOpen(true)}
+                    >
+                      <Info className="h-3.5 w-3.5 mr-2" />
+                      About
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            <ClientsList onNewClient={handleNewClient} onEditClient={handleEditClient} />
           </div>
-        </div>
-        <ClientsList onNewClient={handleNewClient} onEditClient={handleEditClient} />
-      </div>
+        </Panel>
 
-      {/* Right Pane - Overview */}
-      <div className="w-1/2 flex flex-col overflow-hidden">
-        <div className="p-3 space-y-3 overflow-auto">
-          {/* Website Bookings Sync */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Website Bookings</CardTitle>
-              <CardDescription className="text-xs">
-                Import new bookings from petbehaviourservices.com.au
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <WebsiteBookingsSync />
-            </CardContent>
-          </Card>
+        {/* Resize Handle */}
+        <PanelResizeHandle className="w-1.5 bg-border hover:bg-primary/20 transition-colors cursor-col-resize" />
 
-          {/* Questionnaire Sync */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Questionnaires</CardTitle>
-              <CardDescription className="text-xs">
-                Process submitted questionnaires from Jotform
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <QuestionnaireSync />
-            </CardContent>
-          </Card>
-
-          {/* Upcoming Bookings */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Upcoming Bookings</CardTitle>
-              <CardDescription className="text-xs">
-                Appointments and training sessions in the next 30 days
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <UpcomingBookings />
-            </CardContent>
-          </Card>
-
-          {/* Tasks Overview */}
-          <Card id="tasks-section">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Tasks</CardTitle>
-              <CardDescription className="text-xs">
-                Pending and in-progress tasks
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <TasksOverview />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+        {/* Right Pane - Tabbed Overview */}
+        <Panel defaultSize={50} minSize={25}>
+          <div className="h-full flex flex-col">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+              <div className="px-3 pt-3 pb-0">
+                <TabsList className="w-full justify-start">
+                  <TabsTrigger value="tasks" className="text-xs">Tasks</TabsTrigger>
+                  <TabsTrigger value="upcoming" className="text-xs">Upcoming</TabsTrigger>
+                  <TabsTrigger value="bookings" className="text-xs">Bookings</TabsTrigger>
+                  <TabsTrigger value="questionnaires" className="text-xs">Questionnaires</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="tasks" className="flex-1 overflow-auto p-3 mt-0">
+                <TasksOverview />
+              </TabsContent>
+              <TabsContent value="upcoming" className="flex-1 overflow-auto p-3 mt-0">
+                <UpcomingBookings />
+              </TabsContent>
+              <TabsContent value="bookings" className="flex-1 overflow-auto p-3 mt-0">
+                <WebsiteBookingsSync />
+              </TabsContent>
+              <TabsContent value="questionnaires" className="flex-1 overflow-auto p-3 mt-0">
+                <QuestionnaireSync />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </Panel>
+      </PanelGroup>
 
       {/* Audio Transcription Tool Dialog */}
       <TranscriptionTool
