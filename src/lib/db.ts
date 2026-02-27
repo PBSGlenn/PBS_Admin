@@ -4,7 +4,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "./utils/logger";
-import { initSettingsTable, migrateFromLocalStorage, getSetting, setSetting } from "./services/settingsService";
+import { initSettingsTable, migrateFromLocalStorage, getSetting, setSetting, getSettingJson, setSettingJson } from "./services/settingsService";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -47,6 +47,9 @@ export async function getDatabase(): Promise<Database> {
 
       // Apply any pending schema migrations not covered by Prisma (one-time)
       await applyPendingSchemaChanges(db);
+
+      // Upgrade stale custom prompt templates (one-time per version)
+      await upgradePromptTemplates();
 
       // Initialize FTS5 full-text search for clients
       await initClientFTS(db);
@@ -507,6 +510,67 @@ async function initClientFTS(database: Database): Promise<void> {
     // FTS5 not available — log and continue without full-text search
     logger.error("[FTS] Failed to initialize FTS5 (search will fall back to LIKE):", error);
     console.warn("[FTS] FTS5 initialization failed:", error);
+  }
+}
+
+/**
+ * Upgrade stale custom prompt templates on startup.
+ *
+ * When a default prompt template is revised in code, any custom override
+ * stored in SQLite will still contain the old version. This migration
+ * detects stale overrides and replaces them with the current default.
+ *
+ * Each upgrade round is tracked by a versioned sentinel key so it only
+ * runs once per code release.
+ */
+async function upgradePromptTemplates(): Promise<void> {
+  const SENTINEL = "_migration_prompt_templates_v2"; // bump version for each new upgrade
+  const done = await getSetting(SENTINEL);
+  if (done) return;
+
+  try {
+    const { DEFAULT_PROMPT_TEMPLATES } = await import("./prompts/promptTemplates");
+    const SETTINGS_KEY = "pbs_admin_prompt_templates";
+    const customTemplates = await getSettingJson<Array<{ id: string; systemPrompt?: string; [key: string]: unknown }>>(SETTINGS_KEY, []);
+
+    if (customTemplates.length === 0) {
+      await setSetting(SENTINEL, "done");
+      return;
+    }
+
+    let updated = false;
+
+    for (let i = 0; i < customTemplates.length; i++) {
+      const custom = customTemplates[i];
+      const defaultTemplate = DEFAULT_PROMPT_TEMPLATES.find((t: { id: string }) => t.id === custom.id);
+      if (!defaultTemplate) continue;
+
+      // Detect stale vet-report: old prompt had "STANDARD DOSES" or "3/4 to 1 page"
+      if (
+        custom.id === "vet-report" &&
+        custom.systemPrompt &&
+        (custom.systemPrompt.includes("STANDARD DOSES") ||
+         custom.systemPrompt.includes("3/4 to 1 page"))
+      ) {
+        logger.info(`[DB] Upgrading stale custom prompt template: ${custom.id}`);
+        customTemplates[i] = {
+          ...defaultTemplate,
+          updatedAt: new Date().toISOString(),
+          createdAt: (custom as Record<string, unknown>).createdAt as string || new Date().toISOString(),
+        };
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      await setSettingJson(SETTINGS_KEY, customTemplates);
+      logger.info("[DB] Prompt template upgrade complete");
+    }
+
+    await setSetting(SENTINEL, "done");
+  } catch (error) {
+    logger.error("[DB] Failed to upgrade prompt templates:", error);
+    // Non-fatal — app continues with whatever templates exist
   }
 }
 
