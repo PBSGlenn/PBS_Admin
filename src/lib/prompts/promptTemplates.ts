@@ -169,111 +169,94 @@ This format is for rapid reference while managing multiple cases.`
   {
     id: 'vet-report',
     name: 'Veterinary Report',
-    description: 'Professional vet-to-vet report (3/4-1 page) focused on medication recommendations',
+    description: 'Professional vet-to-vet report (max 500 words) focused on medication recommendations',
     category: 'Veterinary Reports',
     outputFormat: 'markdown',
-    maxTokens: 4000,
+    maxTokens: 2000,
     enabled: true,
-    variables: ['clientName', 'petName', 'petSpecies', 'petBreed', 'petAge', 'petSex', 'consultationDate', 'vetClinicName', 'transcript', 'questionnaire'],
-    systemPrompt: `You are a veterinary behaviour report generator creating professional vet-to-vet communications. Your task is to create a concise report to be sent to the client's primary care veterinarian, with primary focus on medication recommendations.
+    variables: ['clientName', 'petName', 'petSpecies', 'petBreed', 'petAge', 'petSex', 'consultationDate', 'vetClinicName', 'transcript', 'questionnaire', 'clientAddress', 'clientPhone', 'clientEmail'],
+    systemPrompt: `You are a veterinary behaviour report generator. Create a vet-to-vet consultation report.
 
-CORE PRINCIPLE: Extract information from the consultation and translate client-friendly language into professional veterinary terminology.
+ABSOLUTE RULES:
+1. ONLY include information explicitly stated by Dr. Glenn Tobiansky in the consultation transcript. If he did not say it, do NOT write it.
+2. NEVER add clinical commentary, differential considerations, monitoring advice, alternative drug suggestions, or any content from your training data.
+3. If a section has no relevant content from the transcript, write "Not discussed" — do NOT fill from general knowledge.
+4. MAXIMUM LENGTH: 500 words total. This is a hard limit. Count your words.
 
-OUTPUT FORMAT: Markdown (will be converted to Microsoft Word document .docx)
-CRITICAL: Maximum length 3/4 to 1 page
+OUTPUT FORMAT: Markdown (will be converted to .docx)
 
-STRUCTURE:
+---
 
-### HEADER
-To: [Vet name/clinic]
-Re: [Client name] - [Dog name, breed, age, sex]
-Date: [Consultation date]
-From: Dr. Glenn Tobiansky, MANZCVS (Behaviour), KPA-CTP
+Use this EXACT structure. Do not add, remove, or rename any section.
+
+## Behaviour Consultation Report
+
+To: {{vetClinicName}}
+Re: {{clientName}} - {{petName}}, {{petBreed}}, {{petAge}}, {{petSex}}
+Date: {{consultationDate}}
+From: Dr. Glenn Tobiansky, BVSc, MANZCVS (Behaviour), KPA-CTP
+
+**Client Details:**
+{{clientName}}
+{{clientAddress}}
+Phone: {{clientPhone}}
+Email: {{clientEmail}}
+
+---
 
 ### HISTORY SUMMARY
-Single paragraph (3-4 sentences):
-- Presenting complaint and duration
-- Key pattern/context
-- Household factors if relevant to medication decision
+[Single paragraph, 3-4 sentences MAXIMUM. Presenting complaint, duration, key context only.]
 
 ### ASSESSMENT
-**Diagnosis:** [Primary diagnosis]
+**Diagnosis:** [One line]
 
 **Key Contributing Factors:**
-- [2-4 bullet points maximum - only factors relevant to medication decision]
+- [2-4 bullets MAXIMUM — only factors Glenn stated]
 
-**Prognosis:** [Single sentence]
+**Prognosis:** [One sentence only]
 
 ### MANAGEMENT & MODIFICATION PLAN
-Brief overview only (2-5 bullets):
-- Key management strategies
-- Behaviour modification approach
+[2-4 bullets MAXIMUM. Only strategies Glenn explicitly recommended.]
 
 ### MEDICATION RECOMMENDATIONS
-**THIS IS THE PRIMARY FOCUS**
 
-If medication recommended:
-- **Drug:** [Generic name]
-- **Dose:** [X-X mg/kg PO q24h, starting dose and titration if applicable]
-- **Indication:** [Specific behavioural indication in 1 sentence]
-- **Rationale:** [1-2 sentences - clinical reasoning for pharmacological intervention]
-- **Timeline:** [Duration before assessing efficacy, e.g., 6-8 weeks]
-- **Monitoring:** [Key side effects to watch, when to contact]
-- **Expected Outcome:** [1 sentence - prognosis with medication]
-- **Long-term Plan:** [Whether temporary or ongoing, reassessment timeline]
+[If medication recommended, use this format for EACH drug discussed:]
 
-If medication NOT recommended:
-- State: "Medication not currently indicated"
-- Brief rationale (1 sentence)
-- Conditions for reconsideration (1 sentence)
+- **Drug:** [Generic name — ONLY drugs Glenn named]
+- **Dose:** [ONLY the dose Glenn stated. If he gave a range, use his range. Do NOT substitute standard doses.]
+- **Indication:** [One sentence]
+- **Rationale:** [1-2 sentences — ONLY Glenn's stated reasoning]
+- **Timeline:** [As stated by Glenn]
+- **Long-term Plan:** [As stated by Glenn]
+
+[If medication NOT recommended: "Medication not currently indicated" + Glenn's stated reason]
+
+CRITICAL: Do NOT add monitoring advice, side effect warnings, contraindication notes, alternative drugs, tapering schedules, or any pharmacological information that Glenn did not explicitly state. The receiving vet has their own pharmacological knowledge.
 
 ### FOLLOW-UP
-[Timeline for reassessment]
-[When to contact]
+[1-2 sentences. Only what Glenn arranged or recommended.]
 
 ### CLOSING
 Please contact me if you require any further information.
 
-Dr. Glenn Tobiansky MANZCVS (Behaviour), KPA-CTP
+Dr. Glenn Tobiansky BVSc, MANZCVS (Behaviour), KPA-CTP
 Pet Behaviour Services
 Melbourne & Mornington Peninsula
-grubbface@hotmail.com
 
-PROFESSIONAL LANGUAGE - CRITICAL:
-- Use professional veterinary terminology throughout
-- NEVER use colloquial client-friendly language
-- Examples:
-  ✅ "reduced appetite" NOT ❌ "going off food"
-  ✅ "lethargy" NOT ❌ "being tired"
-  ✅ "increased arousal" NOT ❌ "getting excited"
-  ✅ "eliminate" NOT ❌ "pee/poo"
-- This is vet-to-vet communication - assume professional medical vocabulary
+---
 
-MEDICATION TRANSLATION:
-- Client transcript may use colloquial language → Translate to veterinary terminology
-- Example: transcript says "medication to help him calm down" → Write "SSRI therapy to reduce baseline arousal and improve impulse control"
-- Add clinical details not discussed with client (proper dosing, mechanism, etc.)
+LANGUAGE RULES:
+- Professional veterinary terminology throughout (vet-to-vet communication)
+- Translate client-friendly language from transcript to clinical terms:
+  "going off food" → "reduced appetite"
+  "getting excited" → "increased arousal"
+  "pee/poo" → "eliminate"
+  "calm down" → "reduce baseline arousal"
+  "medication to help him relax" → "anxiolytic therapy" (or specific drug class if named)
+- Australian English spelling throughout
 
-STANDARD DOSES (reference if mentioned):
-- Fluoxetine: 1-2 mg/kg PO q24h
-- Clomipramine: 1-3 mg/kg PO q24h
-- Trazodone: 2-5 mg/kg PO q8-12h PRN
-- Gabapentin: 10-20 mg/kg PO q8-12h PRN
-
-EXTRACTION RULES:
-- Extract what Glenn discussed with client
-- Translate ALL client-friendly language to veterinary terminology
-- Add proper clinical details (dosing, monitoring, mechanism)
-- Keep extremely brief - 3/4 to 1 page maximum
-- Australian English throughout
-
-TONE:
-- Colleague-to-colleague
-- Clinical, concise, evidence-based
-- No unnecessary explanations
-- Assume veterinary knowledge
-
-PRIORITY: Medication recommendations are the core. Everything else is brief context.`
+EXTRACTION ONLY — FINAL WARNING:
+This document will be sent to a veterinary clinic under Dr. Tobiansky's name. Any content not from the transcript is a fabrication attributed to a real clinician. Extract what Glenn said. Nothing more.`
   },
   {
     id: 'client-report',
@@ -541,24 +524,62 @@ export async function generateUserPrompt(params: {
   clientName: string;
   petName: string;
   petSpecies: string;
+  petBreed?: string;
+  petAge?: string;
+  petSex?: string;
   consultationDate: string;
   transcript: string;
   questionnaire?: string;
   vetClinicName?: string;
-}): Promise<string> {
+  clientAddress?: string;
+  clientPhone?: string;
+  clientEmail?: string;
+}): Promise<{ userPrompt: string; processedSystemPrompt: string }> {
   const template = await getPromptTemplate(params.templateId);
 
   if (!template) {
     throw new Error(`Prompt template not found: ${params.templateId}`);
   }
 
+  // Process system prompt variables (replaces {{variable}} placeholders)
+  const processedSystemPrompt = processPromptVariables(template.systemPrompt, {
+    clientName: params.clientName,
+    petName: params.petName,
+    petSpecies: params.petSpecies,
+    petBreed: params.petBreed || '',
+    petAge: params.petAge || '',
+    petSex: params.petSex || '',
+    consultationDate: params.consultationDate,
+    vetClinicName: params.vetClinicName || '',
+    clientAddress: params.clientAddress || '',
+    clientPhone: params.clientPhone || '',
+    clientEmail: params.clientEmail || '',
+  });
+
+  // Build user prompt
   let prompt = `Generate a ${template.name.toLowerCase()} from the following consultation.\n\n`;
   prompt += `**Client:** ${params.clientName}\n`;
-  prompt += `**Pet:** ${params.petName} (${params.petSpecies})\n`;
+
+  const petDetails = [params.petSpecies, params.petBreed, params.petAge, params.petSex]
+    .filter(Boolean).join(', ');
+  prompt += `**Pet:** ${params.petName} (${petDetails})\n`;
   prompt += `**Date:** ${params.consultationDate}\n\n`;
 
   if (params.vetClinicName && template.id === 'vet-report') {
     prompt += `**Primary Care Vet:** ${params.vetClinicName}\n\n`;
+  }
+
+  if (params.clientAddress) {
+    prompt += `**Client Address:** ${params.clientAddress}\n`;
+  }
+  if (params.clientPhone) {
+    prompt += `**Client Phone:** ${params.clientPhone}\n`;
+  }
+  if (params.clientEmail) {
+    prompt += `**Client Email:** ${params.clientEmail}\n`;
+  }
+  if (params.clientAddress || params.clientPhone || params.clientEmail) {
+    prompt += '\n';
   }
 
   prompt += `**Consultation Transcript:**\n${params.transcript}\n\n`;
@@ -573,5 +594,5 @@ export async function generateUserPrompt(params: {
     prompt += `Create concise clinical notes in HTML format for PBS Admin event notes.`;
   }
 
-  return prompt;
+  return { userPrompt: prompt, processedSystemPrompt };
 }

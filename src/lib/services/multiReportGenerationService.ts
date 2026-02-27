@@ -20,6 +20,9 @@ export interface ReportGenerationParams {
   transcript: string;
   questionnaire?: string;
   vetClinicName?: string;
+  clientAddress?: string;
+  clientPhone?: string;
+  clientEmail?: string;
 }
 
 export interface ReportGenerationResult {
@@ -59,21 +62,27 @@ async function generateSingleReport(
     throw new Error(`Prompt template is disabled: ${templateId}`);
   }
 
-  // Generate user prompt with parameters
-  const userPrompt = await generateUserPrompt({
+  // Generate user prompt and process system prompt variables
+  const { userPrompt, processedSystemPrompt } = await generateUserPrompt({
     templateId,
     clientName: params.clientName,
     petName: params.petName,
     petSpecies: params.petSpecies,
+    petBreed: params.petBreed,
+    petAge: params.petAge,
+    petSex: params.petSex,
     consultationDate: params.consultationDate,
     transcript: params.transcript,
     questionnaire: params.questionnaire,
-    vetClinicName: params.vetClinicName
+    vetClinicName: params.vetClinicName,
+    clientAddress: params.clientAddress,
+    clientPhone: params.clientPhone,
+    clientEmail: params.clientEmail,
   });
 
-  // Call Claude API through secure Tauri backend
+  // Call Claude API with processed system prompt (variables injected)
   const result = await generateAIReport(
-    template.systemPrompt,
+    processedSystemPrompt,
     userPrompt,
     template.maxTokens
   );

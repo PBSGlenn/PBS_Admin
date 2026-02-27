@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { invoke } from "@tauri-apps/api/core";
+import { calculateAge } from "@/lib/utils/ageUtils";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { getEventsByClientId, updateEvent } from "@/lib/services/eventService";
 import { getPetsByClientId } from "@/lib/services/petService";
@@ -427,19 +428,30 @@ export function ReportSentEventPanel({
         throw new Error("No source documents found. Please ensure transcript or clinical notes are available.");
       }
 
-      // Prepare params
+      // Prepare params with client details for variable injection
       const pet = pets[0];
+      const clientAddressParts = [
+        client?.streetAddress,
+        [client?.city, client?.state, client?.postcode].filter(Boolean).join(' ')
+      ].filter(Boolean);
+      const clientAddress = clientAddressParts.join('\n');
+
       const reportParams = {
         clientName: clientName || "Unknown Client",
         petName: pet?.name || "Unknown Pet",
         petSpecies: pet?.species || "Dog",
         petBreed: pet?.breed || undefined,
+        petAge: pet?.dateOfBirth ? calculateAge(pet.dateOfBirth) : undefined,
+        petSex: pet?.sex || undefined,
         consultationDate: consultation.formattedDate,
         // Use transcript as main content source
         // In future, we'd extract text from clinical notes DOCX and use that as primary
         transcript: transcriptContent || clinicalNotesContent,
         questionnaire: undefined,
-        vetClinicName: reportType === "vet" ? vetClinicName : undefined
+        vetClinicName: reportType === "vet" ? vetClinicName : undefined,
+        clientAddress: clientAddress || undefined,
+        clientPhone: client?.mobile || undefined,
+        clientEmail: client?.email || undefined,
       };
 
       // Generate report

@@ -13,6 +13,7 @@ import { calculateDueDate } from "@/lib/utils/dateOffsetUtils";
 import { updateEvent } from "@/lib/services/eventService";
 import { saveTranscriptFile } from "@/lib/services/transcriptFileService";
 import { getPetsByClientId } from "@/lib/services/petService";
+import { getClientById } from "@/lib/services/clientService";
 import { generateAbridgedClinicalNotes, generateComprehensiveClinicalReport } from "@/lib/services/multiReportGenerationService";
 import { convertReportToDocxDirectly } from "@/lib/services/docxConversionService";
 import { createTask } from "@/lib/services/taskService";
@@ -151,6 +152,23 @@ export function ConsultationEventPanel({
 
     return { pet, consultationDate, petAge };
   }, [pets, event?.date]);
+
+  // Fetch client data for variable injection
+  const getClientDetails = useCallback(async () => {
+    const client = await getClientById(clientId);
+    if (!client) return {};
+
+    const addressParts = [
+      client.streetAddress,
+      [client.city, client.state, client.postcode].filter(Boolean).join(' ')
+    ].filter(Boolean);
+
+    return {
+      clientAddress: addressParts.join('\n') || undefined,
+      clientPhone: client.mobile || undefined,
+      clientEmail: client.email || undefined,
+    };
+  }, [clientId]);
 
   // Update event notes with processing log
   const updateProcessingLog = useCallback(async (
@@ -329,6 +347,7 @@ export function ConsultationEventPanel({
       const questionnaireData = await getSelectedContextContents();
       const params = getGenerationParams();
       if (!params) throw new Error("No pet found for this client");
+      const clientDetails = await getClientDetails();
 
       const result = await generateAbridgedClinicalNotes({
         clientName: clientName || "Unknown Client",
@@ -339,7 +358,8 @@ export function ConsultationEventPanel({
         petSex: params.pet.sex || undefined,
         consultationDate: params.consultationDate,
         transcript: transcriptContent,
-        questionnaire: questionnaireData
+        questionnaire: questionnaireData,
+        ...clientDetails,
       });
 
       await updateEvent(event.eventId, { notes: result.content });
@@ -383,6 +403,7 @@ export function ConsultationEventPanel({
       const questionnaireData = await getSelectedContextContents();
       const params = getGenerationParams();
       if (!params) throw new Error("No pet found for this client");
+      const clientDetails = await getClientDetails();
 
       const consultationDateForFile = event.date
         ? format(new Date(event.date), "yyyyMMdd")
@@ -398,7 +419,8 @@ export function ConsultationEventPanel({
         petSex: params.pet.sex || undefined,
         consultationDate: params.consultationDate,
         transcript: transcriptContent,
-        questionnaire: questionnaireData
+        questionnaire: questionnaireData,
+        ...clientDetails,
       });
 
       const docxResult = await convertReportToDocxDirectly({

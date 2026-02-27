@@ -8,6 +8,7 @@ import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { generateConsultationReports, estimateReportCost } from "@/lib/services/multiReportGenerationService";
+import { getClientById } from "@/lib/services/clientService";
 import { createEvent, getReportCreationEvents, deleteEvent, getReportSentEvents, updateEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
@@ -267,6 +268,14 @@ export function ReportGeneratorDialog({
     setError(null);
 
     try {
+      // Fetch full client record for variable injection
+      const client = await getClientById(clientId);
+      const clientAddressParts = [
+        client?.streetAddress,
+        [client?.city, client?.state, client?.postcode].filter(Boolean).join(' ')
+      ].filter(Boolean);
+      const clientAddress = clientAddressParts.join('\n');
+
       // Generate all 3 reports in parallel
       const results = await generateConsultationReports(
         {
@@ -276,6 +285,9 @@ export function ReportGeneratorDialog({
           consultationDate: formattedDate,
           transcript,
           questionnaire: questionnaireData || undefined,
+          clientAddress: clientAddress || undefined,
+          clientPhone: client?.mobile || undefined,
+          clientEmail: client?.email || undefined,
         },
         {
           generateComprehensive: true,
