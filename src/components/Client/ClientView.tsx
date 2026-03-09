@@ -196,7 +196,9 @@ export function ClientView({ client, onClose, windowId }: ClientViewProps) {
     if (currentFolderPath) {
       // If folder path exists, open it
       try {
-        await invoke("plugin:opener|open_path", { path: currentFolderPath });
+        // Normalize forward slashes to backslashes for Windows opener plugin
+        const normalizedPath = currentFolderPath.replace(/\//g, "\\");
+        await invoke("plugin:opener|open_path", { path: normalizedPath });
       } catch (error) {
         console.error("Failed to open folder:", error);
         toast.error("Could not open folder", {

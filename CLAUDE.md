@@ -452,9 +452,12 @@ get_default_client_records_path() -> Result<String, String>
 ```typescript
 import { invoke } from "@tauri-apps/api/core";
 
-// Open folder in File Explorer
-await invoke("plugin:opener|open_path", { path: folderPath });
+// Open folder in File Explorer (normalize slashes for Windows opener plugin)
+const normalizedPath = folderPath.replace(/\//g, "\\");
+await invoke("plugin:opener|open_path", { path: normalizedPath });
 ```
+
+**Note**: The Tauri opener plugin on Windows requires backslash paths. `ClientView.tsx` normalizes forward slashes to backslashes before calling `open_path` to handle edge cases where paths were stored with forward slashes.
 
 **Permissions**: Requires `opener:allow-open-path` permission with `$DOCUMENT/**` scope in capabilities/default.json
 
