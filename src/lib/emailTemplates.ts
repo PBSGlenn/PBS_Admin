@@ -185,7 +185,7 @@ Dr. Glenn Tobiansky
 BVSc MANZCVS (Veterinary Behaviour), KPA-CTP
 Pet Behaviour Services
 Melbourne & Mornington Peninsula
-grubbface@hotmail.com
+glenn@petbehaviourservices.com.au
 0402 857 064`,
     variables: ['petName', 'clientLastName', 'consultationDate'],
     description: 'Cover letter for sending reports to referring veterinarians'

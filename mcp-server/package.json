@@ -1,7 +1,7 @@
 {
   "name": "pbs-admin-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for PBS Admin - exposes client, event, and task data to Claude",
+  "version": "2.0.0",
+  "description": "MCP server for PBS Admin - read/write access to client, event, task, and pet data via Claude",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
