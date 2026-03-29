@@ -44,6 +44,7 @@ export const WebsiteBookingSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   synced_to_admin: z.boolean().nullable(),
+  training_package_id: z.string().nullable().optional(),
 });
 
 export type WebsiteBookingValidated = z.infer<typeof WebsiteBookingSchema>;

@@ -76,6 +76,8 @@ model Event {
   transcriptFilePath   String?  // Path to saved consultation transcript (.txt file)
   questionnaireFilePath String? // Path to saved questionnaire file (.json file)
   processingState      String?  // JSON string storing event processing workflow state (pause/resume)
+  bookingReference     String?  // Website booking reference (PBS-XXX or BKXXXXXX)
+  trainingPackageId    String?  // Supabase training_package_id (UUID) for package sessions
 
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -95,6 +97,7 @@ model Event {
   @@index([date])
   @@index([parentEventId])
   @@index([processingState])
+  @@index([bookingReference])
 }
 
 // Task entity - Action items, automation triggers, and reminders

@@ -11,7 +11,8 @@ const EVENT_VALID_FIELDS = new Set([
   'calendlyEventUri', 'calendlyStatus',
   'invoiceFilePath', 'hostedInvoiceUrl',
   'transcriptFilePath', 'questionnaireFilePath',
-  'processingState', 'parentEventId',
+  'processingState', 'bookingReference', 'trainingPackageId',
+  'parentEventId',
 ]);
 
 /**
@@ -100,9 +101,11 @@ export async function createEvent(input: EventInput): Promise<Event> {
     INSERT INTO Event (
       clientId, eventType, date, notes,
       calendlyEventUri, calendlyStatus,
-      invoiceFilePath, hostedInvoiceUrl, parentEventId,
+      invoiceFilePath, hostedInvoiceUrl,
+      bookingReference, trainingPackageId,
+      parentEventId,
       createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `, [
     input.clientId,
     input.eventType,
@@ -112,6 +115,8 @@ export async function createEvent(input: EventInput): Promise<Event> {
     input.calendlyStatus || "",
     input.invoiceFilePath || null,
     input.hostedInvoiceUrl || null,
+    input.bookingReference || null,
+    input.trainingPackageId || null,
     input.parentEventId || null,
   ]);
 
@@ -188,6 +193,17 @@ export async function getParentEvent(eventId: number): Promise<Event | null> {
     INNER JOIN Event parent ON child.parentEventId = parent.eventId
     WHERE child.eventId = ?
   `, [eventId]);
+
+  return events.length > 0 ? events[0] : null;
+}
+
+/**
+ * Find an event by its booking reference (for deduplication)
+ */
+export async function findEventByBookingReference(bookingReference: string): Promise<Event | null> {
+  const events = await query<Event>(`
+    SELECT * FROM Event WHERE bookingReference = ?
+  `, [bookingReference]);
 
   return events.length > 0 ? events[0] : null;
 }

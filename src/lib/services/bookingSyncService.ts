@@ -16,6 +16,7 @@ import {
 } from './petService';
 import {
   createEvent,
+  findEventByBookingReference,
 } from './eventService';
 import { onEventCreated } from '../automation/engine';
 import type { Client, Pet } from '../types';
@@ -63,6 +64,7 @@ export interface WebsiteBooking {
   created_at: string;
   updated_at: string;
   synced_to_admin: boolean | null; // Flag to track if synced
+  training_package_id: string | null; // UUID linking to training_packages table
 }
 
 /**
@@ -253,6 +255,22 @@ export async function importWebsiteBooking(
 ): Promise<BookingSyncResult> {
   const { firstName, lastName } = splitCustomerName(booking.customer_name);
 
+  // Dedup: Check if an event with this booking reference already exists locally
+  const existingEvent = await findEventByBookingReference(booking.booking_reference);
+  if (existingEvent) {
+    logger.info(`[BookingSync] SKIP: Event already exists for ${booking.booking_reference} (eventId=${existingEvent.eventId})`);
+    return {
+      success: true,
+      bookingId: booking.id,
+      bookingReference: booking.booking_reference,
+      clientName: booking.customer_name,
+      petName: booking.pet_name,
+      isNewClient: false,
+      bookingEventId: existingEvent.eventId,
+      clientId: existingEvent.clientId,
+    };
+  }
+
   // Check for existing client (read operation)
   const existingClient = await findExistingClient(
     booking.customer_email,
@@ -366,22 +384,30 @@ export async function importWebsiteBooking(
     const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
     const isoDate = formatISO(zonedDate);
 
+    // For package sessions, show per-session rate instead of $0
+    const isPackageSession = !!booking.training_package_id;
+    const displayBasePrice = isPackageSession && (booking.base_price || 0) === 0
+      ? 55.30  // Per-session rate for 10-session $553 package
+      : (booking.base_price || 0);
+    const displayTotal = isPackageSession && (booking.base_price || 0) === 0
+      ? displayBasePrice + (booking.travel_charge || 0)
+      : (booking.total_price || 0);
+
     const bookingNotes = `
       <h2>Website Booking Details</h2>
       <p><strong>Booking Reference:</strong> ${booking.booking_reference}</p>
       <p><strong>Service:</strong> ${booking.service_type} (${booking.service_delivery})</p>
       <p><strong>Pet:</strong> ${booking.pet_name}${booking.pet_species ? ` (${booking.pet_species})` : ''}</p>
+      ${isPackageSession ? `<p><strong>Package Session</strong> (paid via training package)</p>` : ''}
 
       ${booking.zoom_link ? `<p><strong>Zoom Link:</strong> <a href="${booking.zoom_link}" target="_blank">${booking.zoom_link}</a></p>` : ''}
       ${booking.customer_postcode ? `<p><strong>Postcode:</strong> ${booking.customer_postcode}</p>` : ''}
 
-      ${booking.base_price != null ? `
       <h3>Pricing</h3>
-      <p><strong>Base Price:</strong> $${(booking.base_price || 0).toFixed(2)}</p>
+      <p><strong>Base Price:</strong> $${displayBasePrice.toFixed(2)}${isPackageSession ? ' (per-session package rate)' : ''}</p>
       ${(booking.travel_charge || 0) > 0 ? `<p><strong>Travel Charge:</strong> $${booking.travel_charge!.toFixed(2)}</p>` : ''}
-      <p><strong>Total:</strong> $${(booking.total_price || 0).toFixed(2)} ${booking.currency || 'AUD'}</p>
-      ` : ''}
-      <p><strong>Payment Status:</strong> ${booking.payment_status || 'N/A'}</p>
+      <p><strong>Total:</strong> $${displayTotal.toFixed(2)} ${booking.currency || 'AUD'}</p>
+      <p><strong>Payment Status:</strong> ${isPackageSession ? 'Paid via package' : (booking.payment_status || 'N/A')}</p>
 
       ${booking.referral_required ? `
         <h3>Referral</h3>
@@ -415,6 +441,8 @@ export async function importWebsiteBooking(
       hostedInvoiceUrl: booking.stripe_session_id
         ? `https://dashboard.stripe.com/payments/${booking.stripe_payment_intent_id}`
         : undefined,
+      bookingReference: booking.booking_reference,
+      trainingPackageId: booking.training_package_id || undefined,
       parentEventId: undefined,
     });
     bookingEventId = bookingEvent.eventId;
@@ -618,8 +646,8 @@ export async function syncAllWebsiteBookings(): Promise<{
 function extractBookingReference(notesHtml: string | null | undefined): string | null {
   if (!notesHtml) return null;
 
-  // Match "Booking Reference:" followed by the reference (PBS-XXX format or similar)
-  const match = notesHtml.match(/Booking Reference:<\/strong>\s*([A-Z]+-\d+)/i);
+  // Match "Booking Reference:" followed by any non-whitespace ref (PBS-XXX, BKXXXXXX, etc.)
+  const match = notesHtml.match(/Booking Reference:<\/strong>\s*(\S+?)(?:<|$)/i);
   return match ? match[1] : null;
 }
 

@@ -47,6 +47,7 @@ export async function getDatabase(): Promise<Database> {
 
       // Apply any pending schema migrations not covered by Prisma (one-time)
       await applyPendingSchemaChanges(db);
+      await applyPendingSchemaChanges_v2(db);
 
       // Upgrade stale custom prompt templates (one-time per version)
       await upgradePromptTemplates();
@@ -323,6 +324,57 @@ async function applyPendingSchemaChanges(database: Database): Promise<void> {
 }
 
 /**
+ * Schema changes v2: Add bookingReference and trainingPackageId columns to Event.
+ * Also backfills bookingReference from existing Event.notes HTML.
+ */
+async function applyPendingSchemaChanges_v2(database: Database): Promise<void> {
+  const SENTINEL = "_migration_schema_changes_v2";
+  const done = await getSetting(SENTINEL);
+  if (done) return;
+
+  logger.info("[DB] Applying pending schema changes v2 (bookingReference, trainingPackageId)...");
+
+  try {
+    // Add columns (ALTER TABLE ADD COLUMN is idempotent-ish in SQLite — errors if exists, so catch per-column)
+    for (const col of ["bookingReference", "trainingPackageId"]) {
+      try {
+        await database.execute(`ALTER TABLE Event ADD COLUMN ${col} TEXT`);
+      } catch {
+        // Column already exists — safe to ignore
+      }
+    }
+
+    // Add index for dedup lookups
+    await database.execute(`CREATE INDEX IF NOT EXISTS "Event_bookingReference_idx" ON "Event"("bookingReference")`);
+
+    // Backfill bookingReference from Event.notes HTML
+    const eventsWithRefs = await database.select<{ eventId: number; notes: string }[]>(
+      `SELECT eventId, notes FROM Event WHERE notes LIKE '%Booking Reference:%' AND (bookingReference IS NULL OR bookingReference = '')`
+    );
+
+    let backfilled = 0;
+    for (const event of eventsWithRefs) {
+      // Match both PBS-XXX and BKXXXXXX formats
+      const match = event.notes.match(/Booking Reference:<\/strong>\s*(\S+?)(?:<|$)/i);
+      if (match) {
+        const ref = match[1];
+        await database.execute(
+          `UPDATE Event SET bookingReference = ? WHERE eventId = ?`,
+          [ref, event.eventId]
+        );
+        backfilled++;
+      }
+    }
+
+    await setSetting(SENTINEL, new Date().toISOString());
+    logger.info(`[DB] Schema changes v2 applied (bookingReference, trainingPackageId columns + ${backfilled} events backfilled)`);
+  } catch (error) {
+    logger.error("[DB] Schema changes v2 failed (non-fatal, will retry on next startup):", error);
+    console.warn("[DB] Schema changes v2 failed:", error);
+  }
+}
+
+/**
  * Initialize FTS5 virtual table for client search.
  * Creates the table, sync triggers, and populates from existing data.
  * Idempotent — safe to call on every startup.
@@ -524,7 +576,7 @@ async function initClientFTS(database: Database): Promise<void> {
  * runs once per code release.
  */
 async function upgradePromptTemplates(): Promise<void> {
-  const SENTINEL = "_migration_prompt_templates_v2"; // bump version for each new upgrade
+  const SENTINEL = "_migration_prompt_templates_v3"; // bump version for each new upgrade
   const done = await getSetting(SENTINEL);
   if (done) return;
 
@@ -545,7 +597,7 @@ async function upgradePromptTemplates(): Promise<void> {
       const defaultTemplate = DEFAULT_PROMPT_TEMPLATES.find((t: { id: string }) => t.id === custom.id);
       if (!defaultTemplate) continue;
 
-      // Detect stale vet-report: old prompt had "STANDARD DOSES" or "3/4 to 1 page"
+      // v2: Detect stale vet-report: old prompt had "STANDARD DOSES" or "3/4 to 1 page"
       if (
         custom.id === "vet-report" &&
         custom.systemPrompt &&
@@ -557,6 +609,35 @@ async function upgradePromptTemplates(): Promise<void> {
           ...defaultTemplate,
           updatedAt: new Date().toISOString(),
           createdAt: (custom as Record<string, unknown>).createdAt as string || new Date().toISOString(),
+        };
+        updated = true;
+      }
+
+      // v3: Fix BVSc missing from closing credentials in any custom template
+      if (
+        custom.systemPrompt &&
+        custom.systemPrompt.includes("Glenn Tobiansky") &&
+        custom.systemPrompt.includes("MANZCVS") &&
+        !custom.systemPrompt.includes("BVSc")
+      ) {
+        logger.info(`[DB] Adding BVSc to credentials in custom template: ${custom.id}`);
+        // Fix closing signature blocks: "Dr. Glenn Tobiansky\nMANZCVS" → "Dr. Glenn Tobiansky\nBVSc, MANZCVS"
+        customTemplates[i] = {
+          ...custom,
+          systemPrompt: custom.systemPrompt
+            .replace(
+              /(\*\*Dr\. Glenn Tobiansky\*\*\n)(MANZCVS)/g,
+              "$1BVSc, $2"
+            )
+            .replace(
+              /(Dr\. Glenn Tobiansky,?\s+)(MANZCVS)/g,
+              "$1BVSc, $2"
+            )
+            .replace(
+              /(behaviourist \()(MANZCVS)/g,
+              "$1BVSc, $2"
+            ),
+          updatedAt: new Date().toISOString(),
         };
         updated = true;
       }

@@ -45,6 +45,8 @@ export interface Event {
   transcriptFilePath: string | null;
   questionnaireFilePath: string | null;
   processingState: string | null;
+  bookingReference: string | null;
+  trainingPackageId: string | null;
   parentEventId: number | null;
   createdAt: Date;
   updatedAt: Date;
@@ -198,6 +200,8 @@ export interface EventInput {
   hostedInvoiceUrl?: string;
   transcriptFilePath?: string;
   questionnaireFilePath?: string;
+  bookingReference?: string;
+  trainingPackageId?: string;
   parentEventId?: number;
 }
 
