@@ -381,55 +381,39 @@ async function applyPendingSchemaChanges_v2(database: Database): Promise<void> {
  */
 async function initClientFTS(database: Database): Promise<void> {
   try {
-    // Create FTS5 virtual table (IF NOT EXISTS not supported for FTS5, so check first)
-    const tables = await database.select<{ name: string }[]>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='ClientFTS'"
-    );
+    // Always drop and recreate the FTS table on startup.
+    // Previously used content='' (contentless), which broke DELETE inside
+    // triggers and corrupted transactions. Now uses a regular FTS5 table
+    // with rowid = clientId for reliable deletion.
+    await database.execute(`DROP TABLE IF EXISTS ClientFTS`);
 
-    if (tables.length === 0) {
-      logger.info("[FTS] Creating ClientFTS virtual table...");
-
-      // FTS5 virtual table indexing searchable client fields + pet names
-      await database.execute(`
-        CREATE VIRTUAL TABLE ClientFTS USING fts5(
-          clientId UNINDEXED,
-          firstName,
-          lastName,
-          email,
-          mobile,
-          city,
-          petNames,
-          content='',
-          tokenize='unicode61 remove_diacritics 2'
-        )
-      `);
-
-      // Populate from existing data (join pet names as comma-separated)
-      await database.execute(`
-        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
-        SELECT
-          c.clientId,
-          COALESCE(c.firstName, ''),
-          COALESCE(c.lastName, ''),
-          COALESCE(c.email, ''),
-          COALESCE(c.mobile, ''),
-          COALESCE(c.city, ''),
-          COALESCE(GROUP_CONCAT(p.name, ', '), '')
-        FROM Client c
-        LEFT JOIN Pet p ON c.clientId = p.clientId
-        GROUP BY c.clientId
-      `);
-
-      logger.info("[FTS] ClientFTS populated with existing data");
+    // Drop all triggers before recreating
+    for (const name of [
+      'ClientFTS_insert', 'ClientFTS_update', 'ClientFTS_delete',
+      'ClientFTS_pet_insert', 'ClientFTS_pet_update', 'ClientFTS_pet_delete',
+    ]) {
+      await database.execute(`DROP TRIGGER IF EXISTS ${name}`);
     }
 
-    // Rebuild FTS index on every startup to fix any row bloat from
-    // contentless table trigger issues (DELETE may not work reliably
-    // on contentless FTS5 tables, causing duplicate rows to accumulate)
-    await database.execute(`DELETE FROM ClientFTS`);
+    // FTS5 table WITHOUT content='' — stores own content, supports DELETE by rowid
     await database.execute(`
-      INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+      CREATE VIRTUAL TABLE ClientFTS USING fts5(
+        clientId UNINDEXED,
+        firstName,
+        lastName,
+        email,
+        mobile,
+        city,
+        petNames,
+        tokenize='unicode61 remove_diacritics 2'
+      )
+    `);
+
+    // Populate with rowid = clientId for fast, reliable deletion
+    await database.execute(`
+      INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
       SELECT
+        c.clientId,
         c.clientId,
         COALESCE(c.firstName, ''),
         COALESCE(c.lastName, ''),
@@ -443,14 +427,15 @@ async function initClientFTS(database: Database): Promise<void> {
     `);
     logger.info("[FTS] ClientFTS index rebuilt");
 
-    // Create triggers (DROP IF EXISTS + CREATE for idempotency)
+    // All triggers use DELETE by rowid (always works in FTS5)
+
     // Trigger: After INSERT on Client
-    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_insert`);
     await database.execute(`
       CREATE TRIGGER ClientFTS_insert AFTER INSERT ON Client
       BEGIN
-        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
         VALUES (
+          NEW.clientId,
           NEW.clientId,
           COALESCE(NEW.firstName, ''),
           COALESCE(NEW.lastName, ''),
@@ -462,14 +447,14 @@ async function initClientFTS(database: Database): Promise<void> {
       END
     `);
 
-    // Trigger: After UPDATE on Client — delete old row, insert new
-    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_update`);
+    // Trigger: After UPDATE on Client — delete old row by rowid, insert new
     await database.execute(`
       CREATE TRIGGER ClientFTS_update AFTER UPDATE ON Client
       BEGIN
-        DELETE FROM ClientFTS WHERE clientId = OLD.clientId;
-        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        DELETE FROM ClientFTS WHERE rowid = OLD.clientId;
+        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
         SELECT
+          NEW.clientId,
           NEW.clientId,
           COALESCE(NEW.firstName, ''),
           COALESCE(NEW.lastName, ''),
@@ -483,22 +468,21 @@ async function initClientFTS(database: Database): Promise<void> {
     `);
 
     // Trigger: After DELETE on Client
-    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_delete`);
     await database.execute(`
       CREATE TRIGGER ClientFTS_delete AFTER DELETE ON Client
       BEGIN
-        DELETE FROM ClientFTS WHERE clientId = OLD.clientId;
+        DELETE FROM ClientFTS WHERE rowid = OLD.clientId;
       END
     `);
 
     // Trigger: After INSERT on Pet — update parent client's petNames
-    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_pet_insert`);
     await database.execute(`
       CREATE TRIGGER ClientFTS_pet_insert AFTER INSERT ON Pet
       BEGIN
-        DELETE FROM ClientFTS WHERE clientId = NEW.clientId;
-        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        DELETE FROM ClientFTS WHERE rowid = NEW.clientId;
+        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
         SELECT
+          c.clientId,
           c.clientId,
           COALESCE(c.firstName, ''),
           COALESCE(c.lastName, ''),
@@ -514,13 +498,13 @@ async function initClientFTS(database: Database): Promise<void> {
     `);
 
     // Trigger: After UPDATE on Pet
-    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_pet_update`);
     await database.execute(`
       CREATE TRIGGER ClientFTS_pet_update AFTER UPDATE ON Pet
       BEGIN
-        DELETE FROM ClientFTS WHERE clientId = NEW.clientId;
-        INSERT INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        DELETE FROM ClientFTS WHERE rowid = NEW.clientId;
+        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
         SELECT
+          c.clientId,
           c.clientId,
           COALESCE(c.firstName, ''),
           COALESCE(c.lastName, ''),
@@ -536,13 +520,13 @@ async function initClientFTS(database: Database): Promise<void> {
     `);
 
     // Trigger: After DELETE on Pet
-    await database.execute(`DROP TRIGGER IF EXISTS ClientFTS_pet_delete`);
     await database.execute(`
       CREATE TRIGGER ClientFTS_pet_delete AFTER DELETE ON Pet
       BEGIN
-        DELETE FROM ClientFTS WHERE clientId = OLD.clientId;
-        INSERT OR IGNORE INTO ClientFTS(clientId, firstName, lastName, email, mobile, city, petNames)
+        DELETE FROM ClientFTS WHERE rowid = OLD.clientId;
+        INSERT OR IGNORE INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
         SELECT
+          c.clientId,
           c.clientId,
           COALESCE(c.firstName, ''),
           COALESCE(c.lastName, ''),
