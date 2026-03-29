@@ -3,7 +3,6 @@
  * Automatically downloads submitted questionnaires and saves them to client folders
  */
 
-import { withTransaction } from '../db';
 import { logger } from '../utils/logger';
 import {
   updateClient,
@@ -437,76 +436,78 @@ export async function processQuestionnaire(
     // Find existing pet before transaction (read operation)
     const existingPet = await findExistingPet(validClient.clientId, validParsed.pet.name);
 
-    // Wrap all database write operations in a transaction
-    logger.debug(`[Questionnaire] Starting DB transaction for ${validParsed.firstName} ${validParsed.lastName}, pet: ${validParsed.pet.name}`);
-    const result = await withTransaction(async () => {
-      // Update client address if questionnaire has address data
-      if (validParsed.address) {
-        const addressUpdate: Record<string, string> = {};
-        if (validParsed.address.street && !validClient.streetAddress) addressUpdate.streetAddress = validParsed.address.street;
-        if (validParsed.address.city && !validClient.city) addressUpdate.city = validParsed.address.city;
-        if (validParsed.address.state && !validClient.state) addressUpdate.state = validParsed.address.state;
-        if (validParsed.address.postcode && !validClient.postcode) addressUpdate.postcode = validParsed.address.postcode;
+    // Database writes — each operation auto-commits individually.
+    // NOTE: withTransaction() doesn't work with the Tauri SQL plugin because
+    // each database.execute() call acquires a separate connection from the pool,
+    // so BEGIN TRANSACTION on one connection doesn't persist to subsequent calls.
+    logger.debug(`[Questionnaire] Processing DB updates for ${validParsed.firstName} ${validParsed.lastName}, pet: ${validParsed.pet.name}`);
 
-        if (Object.keys(addressUpdate).length > 0) {
-          await updateClient(validClient.clientId, addressUpdate);
-          logger.debug('Updated client address from questionnaire');
+    // Update client address if questionnaire has address data
+    if (validParsed.address) {
+      const addressUpdate: Record<string, string> = {};
+      if (validParsed.address.street && !validClient.streetAddress) addressUpdate.streetAddress = validParsed.address.street;
+      if (validParsed.address.city && !validClient.city) addressUpdate.city = validParsed.address.city;
+      if (validParsed.address.state && !validClient.state) addressUpdate.state = validParsed.address.state;
+      if (validParsed.address.postcode && !validClient.postcode) addressUpdate.postcode = validParsed.address.postcode;
+
+      if (Object.keys(addressUpdate).length > 0) {
+        await updateClient(validClient.clientId, addressUpdate);
+        logger.debug('Updated client address from questionnaire');
+      }
+    }
+
+    // Update pet details if pet exists
+    let pet = existingPet;
+    if (pet) {
+      // Calculate DOB from age if pet doesn't already have one
+      let calculatedDob: string | undefined;
+      if (!pet.dateOfBirth && validParsed.pet.age) {
+        calculatedDob = parseAgeToDateOfBirth(validParsed.pet.age) || undefined;
+        if (calculatedDob) {
+          logger.debug(`Calculated DOB from age "${validParsed.pet.age}": ${calculatedDob}`);
         }
       }
 
-      // Update pet details if pet exists
-      let pet = existingPet;
-      if (pet) {
-        // Calculate DOB from age if pet doesn't already have one
-        let calculatedDob: string | undefined;
-        if (!pet.dateOfBirth && validParsed.pet.age) {
-          calculatedDob = parseAgeToDateOfBirth(validParsed.pet.age) || undefined;
-          if (calculatedDob) {
-            logger.debug(`Calculated DOB from age "${validParsed.pet.age}": ${calculatedDob}`);
-          }
-        }
-
-        // Update pet details with questionnaire data
-        await updatePet(pet.petId, {
-          breed: validParsed.pet.breed || pet.breed || undefined,
-          sex: validParsed.pet.sex || pet.sex || undefined,
-          dateOfBirth: calculatedDob || pet.dateOfBirth || undefined,
-          notes: pet.notes
-            ? `${pet.notes}\n\nQuestionnaire data: Weight: ${validParsed.pet.weight || 'N/A'}, Age reported: ${validParsed.pet.age}`
-            : `Questionnaire data: Weight: ${validParsed.pet.weight || 'N/A'}, Age reported: ${validParsed.pet.age}`,
-        });
-        logger.debug('Updated pet details from questionnaire');
-      }
-
-      // Create "Questionnaire Received" event
-      logger.debug('[Questionnaire] Creating QuestionnaireReceived event...');
-      const event = await createEvent({
-        clientId: validClient.clientId,
-        eventType: 'QuestionnaireReceived',
-        date: formatISO(toZonedTime(new Date(validParsed.submittedAt), TIMEZONE)),
-        notes: `
-          <p><strong>Submission ID:</strong> ${validParsed.submissionId}</p>
-          <p><strong>Form Type:</strong> ${validParsed.formType === 'dog' ? 'Dog' : 'Cat'} Behaviour Questionnaire</p>
-          <p><strong>Pet:</strong> ${validParsed.pet.name} (${validParsed.pet.species})</p>
-          <p><strong>Breed:</strong> ${validParsed.pet.breed}</p>
-          <p><strong>Age:</strong> ${validParsed.pet.age}</p>
-          <p><strong>Sex:</strong> ${validParsed.pet.sex}</p>
-          ${validParsed.pet.weight ? `<p><strong>Weight:</strong> ${validParsed.pet.weight}</p>` : ''}
-          <p><em>Files saved to client folder:</em></p>
-          <ul>
-            <li>${filesDownloaded.json ? '✓' : '✗'} JSON data</li>
-            <li>${filesDownloaded.pdf ? '✓' : '✗'} PDF questionnaire</li>
-          </ul>
-        `.trim(),
-        calendlyEventUri: undefined,
-        calendlyStatus: undefined,
-        invoiceFilePath: undefined,
-        hostedInvoiceUrl: undefined,
-        parentEventId: undefined,
+      // Update pet details with questionnaire data
+      await updatePet(pet.petId, {
+        breed: validParsed.pet.breed || pet.breed || undefined,
+        sex: validParsed.pet.sex || pet.sex || undefined,
+        dateOfBirth: calculatedDob || pet.dateOfBirth || undefined,
+        notes: pet.notes
+          ? `${pet.notes}\n\nQuestionnaire data: Weight: ${validParsed.pet.weight || 'N/A'}, Age reported: ${validParsed.pet.age}`
+          : `Questionnaire data: Weight: ${validParsed.pet.weight || 'N/A'}, Age reported: ${validParsed.pet.age}`,
       });
+      logger.debug('Updated pet details from questionnaire');
+    }
 
-      return { pet, event };
+    // Create "Questionnaire Received" event
+    logger.debug('[Questionnaire] Creating QuestionnaireReceived event...');
+    const event = await createEvent({
+      clientId: validClient.clientId,
+      eventType: 'QuestionnaireReceived',
+      date: formatISO(toZonedTime(new Date(validParsed.submittedAt), TIMEZONE)),
+      notes: `
+        <p><strong>Submission ID:</strong> ${validParsed.submissionId}</p>
+        <p><strong>Form Type:</strong> ${validParsed.formType === 'dog' ? 'Dog' : 'Cat'} Behaviour Questionnaire</p>
+        <p><strong>Pet:</strong> ${validParsed.pet.name} (${validParsed.pet.species})</p>
+        <p><strong>Breed:</strong> ${validParsed.pet.breed}</p>
+        <p><strong>Age:</strong> ${validParsed.pet.age}</p>
+        <p><strong>Sex:</strong> ${validParsed.pet.sex}</p>
+        ${validParsed.pet.weight ? `<p><strong>Weight:</strong> ${validParsed.pet.weight}</p>` : ''}
+        <p><em>Files saved to client folder:</em></p>
+        <ul>
+          <li>${filesDownloaded.json ? '✓' : '✗'} JSON data</li>
+          <li>${filesDownloaded.pdf ? '✓' : '✗'} PDF questionnaire</li>
+        </ul>
+      `.trim(),
+      calendlyEventUri: undefined,
+      calendlyStatus: undefined,
+      invoiceFilePath: undefined,
+      hostedInvoiceUrl: undefined,
+      parentEventId: undefined,
     });
+
+    const result = { pet, event };
 
     return {
       success: true,
