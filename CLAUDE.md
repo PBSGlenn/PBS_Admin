@@ -2822,7 +2822,7 @@ restartScheduledBackups(): void // Called after settings change
   "mcpServers": {
     "pbs-admin": {
       "command": "node",
-      "args": ["C:\\Dev\\PBS_Admin\\mcp-server\\dist\\index.js"]
+      "args": ["C:\\Users\\grubb\\OneDrive\\Pet Behaviour Services\\Management\\Dev\\PBS_Admin\\mcp-server\\dist\\index.js"]
     }
   }
 }
@@ -3174,7 +3174,7 @@ version = "0.3.0"
 
 **2. Build the Production Installer**:
 ```bash
-cd c:/Dev/PBS_Admin
+cd "c:/Users/grubb/OneDrive/Pet Behaviour Services/Management/Dev/PBS_Admin"
 node node_modules/@tauri-apps/cli/tauri.js build
 ```
 

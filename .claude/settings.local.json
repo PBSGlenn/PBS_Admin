@@ -87,12 +87,18 @@
       "Bash(powershell -NoProfile -Command \"[Environment]::GetFolderPath\\(''MyDocuments''\\)\")",
       "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"search_clients\"\",\"\"arguments\"\":{\"\"query\"\":\"\"Bella\"\"}}}\\\\n')",
       "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"run_query\"\",\"\"arguments\"\":{\"\"sql\"\":\"\"SELECT name FROM sqlite_master WHERE type='\"''\"'table'\"''\"' ORDER BY name\"\",\"\"params\"\":[]}}}\\\\n')",
-      "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"run_query\"\",\"\"arguments\"\":{\"\"sql\"\":\"\"SELECT p.petId, p.name, p.clientId, c.firstName, c.lastName FROM Pet p JOIN Client c ON p.clientId = c.clientId WHERE p.name LIKE '\"''\"'%bell%'\"''\"'\"\",\"\"params\"\":[]}}}\\\\n')"
+      "Bash(printf '{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":1,\"\"method\"\":\"\"initialize\"\",\"\"params\"\":{\"\"protocolVersion\"\":\"\"2024-11-05\"\",\"\"capabilities\"\":{},\"\"clientInfo\"\":{\"\"name\"\":\"\"test\"\",\"\"version\"\":\"\"1.0.0\"\"}}}\\\\n{\"\"jsonrpc\"\":\"\"2.0\"\",\"\"id\"\":2,\"\"method\"\":\"\"tools/call\"\",\"\"params\"\":{\"\"name\"\":\"\"run_query\"\",\"\"arguments\"\":{\"\"sql\"\":\"\"SELECT p.petId, p.name, p.clientId, c.firstName, c.lastName FROM Pet p JOIN Client c ON p.clientId = c.clientId WHERE p.name LIKE '\"''\"'%bell%'\"''\"'\"\",\"\"params\"\":[]}}}\\\\n')",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"c:\\\\Users\\\\grubb\\\\OneDrive\\\\Pet Behaviour Services\\\\Management\\\\Dev\\\\PBS_Admin\\\\create-shortcut.ps1\")",
+      "Read(//c/Users/grubb/AppData/Local/PBS Admin/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(python -m json.tool)"
     ],
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "C:\\Users\\grubb\\AppData\\Roaming\\Claude"
+      "C:\\Users\\grubb\\AppData\\Roaming\\Claude",
+      "c:\\Users\\grubb\\.claude\\projects\\c--Dev-PBS-Admin\\memory"
     ]
   }
 }
