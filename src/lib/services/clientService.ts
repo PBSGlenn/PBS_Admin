@@ -1,7 +1,7 @@
 // PBS Admin - Client Service
 // Handles all database operations for Clients
 
-import { query, execute } from "../db";
+import { query, execute, refreshClientFTS, removeClientFTS } from "../db";
 import type { Client, ClientInput, ClientWithRelations } from "../types";
 import { normalizeEmail, normalizeMobile } from "../utils/validation";
 
@@ -121,6 +121,7 @@ export async function createClient(input: ClientInput): Promise<Client> {
     throw new Error("Failed to retrieve created client");
   }
 
+  await refreshClientFTS(newClient.clientId);
   return newClient;
 }
 
@@ -161,6 +162,7 @@ export async function updateClient(clientId: number, input: Partial<ClientInput>
     throw new Error("Client not found after update");
   }
 
+  await refreshClientFTS(clientId);
   return updatedClient;
 }
 
@@ -169,6 +171,7 @@ export async function updateClient(clientId: number, input: Partial<ClientInput>
  */
 export async function deleteClient(clientId: number): Promise<void> {
   await execute(`DELETE FROM Client WHERE clientId = ?`, [clientId]);
+  await removeClientFTS(clientId);
 }
 
 /**

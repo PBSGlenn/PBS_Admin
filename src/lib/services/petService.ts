@@ -1,7 +1,7 @@
 // PBS Admin - Pet Service
 // Handles all database operations for Pets
 
-import { query, execute } from "../db";
+import { query, execute, refreshClientFTS } from "../db";
 import type { Pet, PetInput } from "../types";
 
 /** Whitelist of columns allowed in dynamic UPDATE statements */
@@ -82,6 +82,7 @@ export async function createPet(input: PetInput): Promise<Pet> {
     throw new Error("Failed to retrieve created pet");
   }
 
+  await refreshClientFTS(newPet.clientId);
   return newPet;
 }
 
@@ -116,6 +117,7 @@ export async function updatePet(petId: number, input: Partial<PetInput>): Promis
     throw new Error("Pet not found after update");
   }
 
+  await refreshClientFTS(updatedPet.clientId);
   return updatedPet;
 }
 
@@ -123,5 +125,10 @@ export async function updatePet(petId: number, input: Partial<PetInput>): Promis
  * Delete a pet
  */
 export async function deletePet(petId: number): Promise<void> {
+  // Get clientId before deletion for FTS refresh
+  const pet = await getPetById(petId);
   await execute(`DELETE FROM Pet WHERE petId = ?`, [petId]);
+  if (pet) {
+    await refreshClientFTS(pet.clientId);
+  }
 }

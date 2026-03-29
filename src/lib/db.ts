@@ -381,13 +381,12 @@ async function applyPendingSchemaChanges_v2(database: Database): Promise<void> {
  */
 async function initClientFTS(database: Database): Promise<void> {
   try {
-    // Always drop and recreate the FTS table on startup.
-    // Previously used content='' (contentless), which broke DELETE inside
-    // triggers and corrupted transactions. Now uses a regular FTS5 table
-    // with rowid = clientId for reliable deletion.
+    // Drop old table and any leftover triggers from previous versions.
+    // FTS maintenance is now done in application code (refreshClientFTS),
+    // NOT via triggers — trigger errors inside the Tauri SQL plugin's
+    // implicit transactions silently roll them back, causing
+    // "cannot commit - no transaction is active" errors.
     await database.execute(`DROP TABLE IF EXISTS ClientFTS`);
-
-    // Drop all triggers before recreating
     for (const name of [
       'ClientFTS_insert', 'ClientFTS_update', 'ClientFTS_delete',
       'ClientFTS_pet_insert', 'ClientFTS_pet_update', 'ClientFTS_pet_delete',
@@ -395,7 +394,7 @@ async function initClientFTS(database: Database): Promise<void> {
       await database.execute(`DROP TRIGGER IF EXISTS ${name}`);
     }
 
-    // FTS5 table WITHOUT content='' — stores own content, supports DELETE by rowid
+    // FTS5 table — no content='', no triggers
     await database.execute(`
       CREATE VIRTUAL TABLE ClientFTS USING fts5(
         clientId UNINDEXED,
@@ -409,7 +408,7 @@ async function initClientFTS(database: Database): Promise<void> {
       )
     `);
 
-    // Populate with rowid = clientId for fast, reliable deletion
+    // Populate with rowid = clientId for fast deletion
     await database.execute(`
       INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
       SELECT
@@ -425,127 +424,53 @@ async function initClientFTS(database: Database): Promise<void> {
       LEFT JOIN Pet p ON c.clientId = p.clientId
       GROUP BY c.clientId
     `);
-    logger.info("[FTS] ClientFTS index rebuilt");
-
-    // All triggers use DELETE by rowid (always works in FTS5)
-
-    // Trigger: After INSERT on Client
-    await database.execute(`
-      CREATE TRIGGER ClientFTS_insert AFTER INSERT ON Client
-      BEGIN
-        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
-        VALUES (
-          NEW.clientId,
-          NEW.clientId,
-          COALESCE(NEW.firstName, ''),
-          COALESCE(NEW.lastName, ''),
-          COALESCE(NEW.email, ''),
-          COALESCE(NEW.mobile, ''),
-          COALESCE(NEW.city, ''),
-          ''
-        );
-      END
-    `);
-
-    // Trigger: After UPDATE on Client — delete old row by rowid, insert new
-    await database.execute(`
-      CREATE TRIGGER ClientFTS_update AFTER UPDATE ON Client
-      BEGIN
-        DELETE FROM ClientFTS WHERE rowid = OLD.clientId;
-        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
-        SELECT
-          NEW.clientId,
-          NEW.clientId,
-          COALESCE(NEW.firstName, ''),
-          COALESCE(NEW.lastName, ''),
-          COALESCE(NEW.email, ''),
-          COALESCE(NEW.mobile, ''),
-          COALESCE(NEW.city, ''),
-          COALESCE(GROUP_CONCAT(p.name, ', '), '')
-        FROM (SELECT 1) dummy
-        LEFT JOIN Pet p ON p.clientId = NEW.clientId;
-      END
-    `);
-
-    // Trigger: After DELETE on Client
-    await database.execute(`
-      CREATE TRIGGER ClientFTS_delete AFTER DELETE ON Client
-      BEGIN
-        DELETE FROM ClientFTS WHERE rowid = OLD.clientId;
-      END
-    `);
-
-    // Trigger: After INSERT on Pet — update parent client's petNames
-    await database.execute(`
-      CREATE TRIGGER ClientFTS_pet_insert AFTER INSERT ON Pet
-      BEGIN
-        DELETE FROM ClientFTS WHERE rowid = NEW.clientId;
-        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
-        SELECT
-          c.clientId,
-          c.clientId,
-          COALESCE(c.firstName, ''),
-          COALESCE(c.lastName, ''),
-          COALESCE(c.email, ''),
-          COALESCE(c.mobile, ''),
-          COALESCE(c.city, ''),
-          COALESCE(GROUP_CONCAT(p.name, ', '), '')
-        FROM Client c
-        LEFT JOIN Pet p ON c.clientId = p.clientId
-        WHERE c.clientId = NEW.clientId
-        GROUP BY c.clientId;
-      END
-    `);
-
-    // Trigger: After UPDATE on Pet
-    await database.execute(`
-      CREATE TRIGGER ClientFTS_pet_update AFTER UPDATE ON Pet
-      BEGIN
-        DELETE FROM ClientFTS WHERE rowid = NEW.clientId;
-        INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
-        SELECT
-          c.clientId,
-          c.clientId,
-          COALESCE(c.firstName, ''),
-          COALESCE(c.lastName, ''),
-          COALESCE(c.email, ''),
-          COALESCE(c.mobile, ''),
-          COALESCE(c.city, ''),
-          COALESCE(GROUP_CONCAT(p.name, ', '), '')
-        FROM Client c
-        LEFT JOIN Pet p ON c.clientId = p.clientId
-        WHERE c.clientId = NEW.clientId
-        GROUP BY c.clientId;
-      END
-    `);
-
-    // Trigger: After DELETE on Pet
-    await database.execute(`
-      CREATE TRIGGER ClientFTS_pet_delete AFTER DELETE ON Pet
-      BEGIN
-        DELETE FROM ClientFTS WHERE rowid = OLD.clientId;
-        INSERT OR IGNORE INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
-        SELECT
-          c.clientId,
-          c.clientId,
-          COALESCE(c.firstName, ''),
-          COALESCE(c.lastName, ''),
-          COALESCE(c.email, ''),
-          COALESCE(c.mobile, ''),
-          COALESCE(c.city, ''),
-          COALESCE(GROUP_CONCAT(p.name, ', '), '')
-        FROM Client c
-        LEFT JOIN Pet p ON c.clientId = p.clientId
-        WHERE c.clientId = OLD.clientId
-        GROUP BY c.clientId;
-      END
-    `);
-
-    logger.info("[FTS] Client FTS5 triggers initialized");
+    logger.info("[FTS] ClientFTS index rebuilt (no triggers — app-level maintenance)");
   } catch (error) {
-    // FTS5 not available — log and continue without full-text search
     logger.error("[FTS] Failed to initialize FTS5 (search will fall back to LIKE):", error);
     console.warn("[FTS] FTS5 initialization failed:", error);
+  }
+}
+
+/**
+ * Refresh the FTS index for a single client.
+ * Call after any Client or Pet create/update/delete.
+ * Errors are caught and logged — FTS failures never break the main operation.
+ */
+export async function refreshClientFTS(clientId: number): Promise<void> {
+  try {
+    const database = await getDatabase();
+    await database.execute(`DELETE FROM ClientFTS WHERE rowid = ?`, [clientId]);
+    await database.execute(`
+      INSERT INTO ClientFTS(rowid, clientId, firstName, lastName, email, mobile, city, petNames)
+      SELECT
+        c.clientId,
+        c.clientId,
+        COALESCE(c.firstName, ''),
+        COALESCE(c.lastName, ''),
+        COALESCE(c.email, ''),
+        COALESCE(c.mobile, ''),
+        COALESCE(c.city, ''),
+        COALESCE(GROUP_CONCAT(p.name, ', '), '')
+      FROM Client c
+      LEFT JOIN Pet p ON c.clientId = p.clientId
+      WHERE c.clientId = ?
+      GROUP BY c.clientId
+    `, [clientId]);
+  } catch (error) {
+    logger.error("[FTS] Failed to refresh FTS for client", clientId, error);
+  }
+}
+
+/**
+ * Remove a client from the FTS index.
+ * Call after Client deletion.
+ */
+export async function removeClientFTS(clientId: number): Promise<void> {
+  try {
+    const database = await getDatabase();
+    await database.execute(`DELETE FROM ClientFTS WHERE rowid = ?`, [clientId]);
+  } catch (error) {
+    logger.error("[FTS] Failed to remove FTS for client", clientId, error);
   }
 }
 
