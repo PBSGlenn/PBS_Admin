@@ -23,6 +23,9 @@ import {
   ExternalLink,
   AlertCircle,
   CheckCircle2,
+  ListTodo,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
@@ -39,8 +42,22 @@ import { getEmailTemplate, processTemplate } from "@/lib/emailTemplates";
 import { EmailDraftDialog, EmailAttachment } from "@/components/ui/email-draft-dialog";
 import type { Event } from "@/lib/types";
 import { getVetClinics, type VetClinic } from "@/lib/services/vetClinicsService";
+import { getTasksByEventId, createTask } from "@/lib/services/taskService";
+import { getAnthropicApiKey, getAIModelConfig } from "@/lib/services/apiKeysService";
+import { calculateDueDate } from "@/lib/utils/dateOffsetUtils";
+import type { Task, TaskInput } from "@/lib/types";
 
 type ReportType = "client" | "vet";
+
+interface ExtractedTask {
+  id: string;
+  description: string;
+  offset: string;
+  priority: 1 | 2 | 3 | 4 | 5;
+  context: string;
+  isDuplicate?: boolean; // Flagged if similar to existing task
+  duplicateOf?: string; // Description of the existing task it duplicates
+}
 
 interface ConsultationSummary {
   eventId: number;
@@ -95,6 +112,13 @@ export function ReportSentEventPanel({
   const [emailSent, setEmailSent] = useState(false);
   const [emailingReportPath, setEmailingReportPath] = useState<string | null>(null); // Track which report is being emailed
   const [emailContent, setEmailContent] = useState({ subject: "", body: "" });
+
+  // Task extraction state
+  const [extractedTasks, setExtractedTasks] = useState<ExtractedTask[]>([]);
+  const [existingTasks, setExistingTasks] = useState<Task[]>([]);
+  const [isExtractingTasks, setIsExtractingTasks] = useState(false);
+  const [isCreatingTasks, setIsCreatingTasks] = useState(false);
+  const [tasksCreated, setTasksCreated] = useState(false);
 
   // Report log state - tracks all generated reports and their email status
   const [reportLog, setReportLog] = useState<Array<{
@@ -392,6 +416,248 @@ export function ReportSentEventPanel({
 
     detectFiles();
   }, [selectedConsultationId, clientFolderPath, consultations, fileRefreshKey]);
+
+  // Load existing tasks for the selected consultation
+  useEffect(() => {
+    if (!selectedConsultationId) {
+      setExistingTasks([]);
+      return;
+    }
+    getTasksByEventId(selectedConsultationId).then(tasks => {
+      setExistingTasks(tasks.filter(t => t.status !== "Canceled"));
+    }).catch(() => setExistingTasks([]));
+  }, [selectedConsultationId, tasksCreated]);
+
+  // Check if an extracted task is similar to an existing task
+  const findDuplicate = (description: string, existing: Task[]): Task | undefined => {
+    const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+    const desc = normalise(description);
+    return existing.find(t => {
+      const existingDesc = normalise(t.description);
+      // Check for significant overlap
+      const words = desc.split(" ").filter(w => w.length > 3);
+      const matchCount = words.filter(w => existingDesc.includes(w)).length;
+      return matchCount >= Math.ceil(words.length * 0.5);
+    });
+  };
+
+  // Extract tasks from reports
+  const handleExtractTasksFromReports = async () => {
+    if (!selectedConsultationId || !clientFolderPath) return;
+
+    const consultation = consultations.find(c => c.eventId === selectedConsultationId);
+    if (!consultation) return;
+
+    setIsExtractingTasks(true);
+    setExtractedTasks([]);
+
+    try {
+      // Read comprehensive clinical report (.md)
+      let comprehensiveContent = "";
+      let clientReportContent = "";
+      const dateStr = format(parseISO(consultation.date), "yyyyMMdd");
+      const entries = await invoke<Array<{ name: string; isDirectory: boolean }>>(
+        "plugin:fs|read_dir",
+        { path: clientFolderPath }
+      );
+
+      const comprehensiveMd = entries.find(f =>
+        !f.isDirectory &&
+        f.name.includes(dateStr) &&
+        f.name.includes("comprehensive-clinical") &&
+        f.name.endsWith(".md")
+      );
+      if (comprehensiveMd) {
+        comprehensiveContent = await invoke<string>("read_text_file", {
+          filePath: `${clientFolderPath}\\${comprehensiveMd.name}`
+        });
+      }
+
+      const clientReportMd = entries.find(f =>
+        !f.isDirectory &&
+        f.name.includes(dateStr) &&
+        f.name.includes("client-report") &&
+        f.name.endsWith(".md")
+      );
+      if (clientReportMd) {
+        clientReportContent = await invoke<string>("read_text_file", {
+          filePath: `${clientFolderPath}\\${clientReportMd.name}`
+        });
+      }
+
+      if (!comprehensiveContent && !clientReportContent) {
+        toast.error("No report files found", {
+          description: "Generate comprehensive and client reports first"
+        });
+        return;
+      }
+
+      // Read transcript if available
+      let transcriptContent = "";
+      if (consultation.transcriptPath) {
+        try {
+          transcriptContent = await invoke<string>("read_text_file", {
+            filePath: consultation.transcriptPath
+          });
+        } catch { /* transcript is optional here */ }
+      }
+
+      const apiKey = await getAnthropicApiKey();
+      if (!apiKey) {
+        toast.error("Anthropic API key not configured");
+        return;
+      }
+
+      const modelConfig = await getAIModelConfig();
+
+      // Build existing tasks context for duplicate awareness
+      const existingTasksContext = existingTasks.length > 0
+        ? `\n\nEXISTING TASKS (already created for this consultation - do NOT duplicate these):\n${existingTasks.map(t => `- ${t.description} (${t.status}, due: ${t.dueDate})`).join("\n")}`
+        : "";
+
+      // Build source documents
+      let sourceDocuments = "";
+      if (comprehensiveContent) {
+        sourceDocuments += `COMPREHENSIVE CLINICAL REPORT:\n${comprehensiveContent.substring(0, 10000)}\n\n`;
+      }
+      if (clientReportContent) {
+        sourceDocuments += `CLIENT REPORT:\n${clientReportContent.substring(0, 8000)}\n\n`;
+      }
+      if (transcriptContent) {
+        sourceDocuments += `TRANSCRIPT (supplementary):\n${transcriptContent.substring(0, 10000)}\n\n`;
+      }
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: modelConfig.taskExtractionModel,
+          max_tokens: 2000,
+          messages: [{
+            role: "user",
+            content: `You are a veterinary behaviour consultant's assistant. Extract ONLY practitioner tasks (things the vet needs to do) from the consultation reports below. Do NOT include client homework or pet training exercises.
+
+Cross-reference the comprehensive clinical report AND client report to ensure:
+- All commitments made to the client are captured as tasks (e.g., "I'll send a follow-up email", "We'll schedule a training session")
+- All clinical recommendations requiring practitioner action are captured
+- Tasks are consistent between both reports — no contradictions
+
+Common practitioner tasks include:
+- Send consultation report to client
+- Send vet report/letter to referring vet
+- Schedule follow-up consultation
+- Send specific resources, protocols, or training plans
+- Contact referring vet about medication
+- Review case in X weeks
+- Send follow-up email to check progress
+${existingTasksContext}
+
+Return a JSON array of NEW tasks only (exclude any that duplicate existing tasks listed above). Each task should have:
+- description: Clear, actionable task description
+- offset: When due relative to consultation date (e.g., "3 days", "1 week", "2 weeks")
+- priority: 1-5 (1 = highest priority)
+- context: Which report this task came from and why it's needed
+
+If no additional tasks are found, return an empty array: []
+
+${sourceDocuments}
+
+Return ONLY valid JSON array, no other text.`
+          }]
+        })
+      });
+
+      if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+
+      const data = await response.json();
+      let content = data.content[0]?.text || "[]";
+
+      content = content.trim();
+      if (content.startsWith("```")) {
+        content = content.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      }
+
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        const tasks: ExtractedTask[] = parsed.map((task: any, index: number) => {
+          const rawPriority = Number(task.priority) || 2;
+          const priority = Math.max(1, Math.min(5, rawPriority)) as 1 | 2 | 3 | 4 | 5;
+          const duplicate = findDuplicate(task.description || "", existingTasks);
+          return {
+            id: `report-task-${Date.now()}-${index}`,
+            description: task.description || "",
+            offset: task.offset || "1 week",
+            priority,
+            context: task.context || "",
+            isDuplicate: !!duplicate,
+            duplicateOf: duplicate?.description,
+          };
+        });
+        setExtractedTasks(tasks);
+        const newCount = tasks.filter(t => !t.isDuplicate).length;
+        const dupCount = tasks.filter(t => t.isDuplicate).length;
+        let msg = `Extracted ${newCount} new task${newCount !== 1 ? "s" : ""}`;
+        if (dupCount > 0) msg += ` (${dupCount} potential duplicate${dupCount !== 1 ? "s" : ""} flagged)`;
+        toast.success(msg);
+      }
+    } catch (error) {
+      console.error("Task extraction failed:", error);
+      toast.error("Failed to extract tasks", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    } finally {
+      setIsExtractingTasks(false);
+    }
+  };
+
+  // Create selected extracted tasks
+  const handleCreateExtractedTasks = async () => {
+    const tasksToCreate = extractedTasks.filter(t => !t.isDuplicate);
+    if (tasksToCreate.length === 0) {
+      toast.info("No new tasks to create");
+      return;
+    }
+
+    const consultation = consultations.find(c => c.eventId === selectedConsultationId);
+    if (!consultation) return;
+
+    setIsCreatingTasks(true);
+    try {
+      for (const task of tasksToCreate) {
+        const dueDate = calculateDueDate(consultation.date, task.offset);
+        const taskInput: TaskInput = {
+          clientId,
+          eventId: selectedConsultationId!,
+          description: task.description,
+          dueDate,
+          status: "Pending",
+          priority: task.priority,
+          automatedAction: "ReportTaskExtraction",
+          triggeredBy: "ReportSent",
+        };
+        await createTask(taskInput);
+      }
+
+      toast.success(`Created ${tasksToCreate.length} task${tasksToCreate.length !== 1 ? "s" : ""}`);
+      setTasksCreated(true);
+      setExtractedTasks([]);
+
+      // Invalidate task queries
+      queryClient.invalidateQueries({ queryKey: ["tasks", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["tasks", "dashboard"] });
+    } catch (error) {
+      toast.error("Failed to create tasks", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      });
+    } finally {
+      setIsCreatingTasks(false);
+    }
+  };
 
   // Generate report mutation
   const generateReportMutation = useMutation({
@@ -1014,6 +1280,142 @@ export function ReportSentEventPanel({
                 <Mail className="h-3 w-3 mr-1.5" />
                 Preview & Send Email
               </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Section 5: Task Extraction from Reports */}
+      {selectedConsultationId && existingReports.length > 0 && (
+        <Card className="p-3">
+          <h4 className="text-xs font-semibold mb-2">TASKS FROM REPORTS</h4>
+
+          {/* Existing tasks for this consultation */}
+          {existingTasks.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[10px] font-medium text-muted-foreground mb-1">
+                Existing tasks ({existingTasks.length}):
+              </p>
+              <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                {existingTasks.map(t => (
+                  <div key={t.taskId} className="flex items-center gap-1.5 text-[10px]">
+                    <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      t.status === "Done" ? "bg-green-500" :
+                      t.status === "Canceled" ? "bg-gray-400" :
+                      "bg-blue-500"
+                    }`} />
+                    <span className={t.status === "Done" ? "line-through text-muted-foreground" : ""}>
+                      {t.description}
+                    </span>
+                    <span className="text-muted-foreground ml-auto flex-shrink-0">
+                      P{t.priority} · {t.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Extract button */}
+          {!tasksCreated && (
+            <>
+              <Button
+                onClick={handleExtractTasksFromReports}
+                disabled={isExtractingTasks}
+                variant="outline"
+                className="w-full h-8 text-xs"
+              >
+                {isExtractingTasks ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                    Extracting tasks from reports...
+                  </>
+                ) : (
+                  <>
+                    <ListTodo className="h-3 w-3 mr-1.5" />
+                    Extract Tasks from Reports
+                  </>
+                )}
+              </Button>
+
+              {/* Extracted tasks list */}
+              {extractedTasks.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {extractedTasks.map(task => (
+                    <div
+                      key={task.id}
+                      className={`p-2 rounded-md border text-[10px] ${
+                        task.isDuplicate
+                          ? "bg-amber-50 border-amber-200 opacity-60"
+                          : "bg-gray-50 border-gray-200"
+                      }`}
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">{task.description}</span>
+                            {task.isDuplicate && (
+                              <span className="text-[9px] text-amber-600 flex items-center gap-0.5">
+                                <AlertTriangle className="h-2.5 w-2.5" />
+                                Duplicate
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground mt-0.5">
+                            Due: +{task.offset} · Priority: {task.priority}
+                            {task.context && <> · {task.context}</>}
+                          </div>
+                          {task.isDuplicate && task.duplicateOf && (
+                            <div className="text-[9px] text-amber-600 mt-0.5">
+                              Similar to: "{task.duplicateOf}"
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setExtractedTasks(prev => prev.filter(t => t.id !== task.id))}
+                          className="h-5 w-5 p-0 flex-shrink-0"
+                        >
+                          <Trash2 className="h-3 w-3 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Create tasks button */}
+                  <Button
+                    onClick={handleCreateExtractedTasks}
+                    disabled={isCreatingTasks || extractedTasks.filter(t => !t.isDuplicate).length === 0}
+                    className="w-full h-8 text-xs mt-2"
+                  >
+                    {isCreatingTasks ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <ListTodo className="h-3 w-3 mr-1.5" />
+                        Create {extractedTasks.filter(t => !t.isDuplicate).length} Task{extractedTasks.filter(t => !t.isDuplicate).length !== 1 ? "s" : ""}
+                        {extractedTasks.some(t => t.isDuplicate) && " (excluding duplicates)"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Success message */}
+          {tasksCreated && (
+            <div className="p-2 bg-green-50 rounded-md border border-green-200">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <p className="text-[11px] text-green-800 font-medium">
+                  Tasks created from reports
+                </p>
+              </div>
             </div>
           )}
         </Card>
