@@ -23,6 +23,7 @@ export interface ReportGenerationParams {
   clientAddress?: string;
   clientPhone?: string;
   clientEmail?: string;
+  comprehensiveClinicalReport?: string;
 }
 
 export interface ReportGenerationResult {
@@ -78,6 +79,7 @@ async function generateSingleReport(
     clientAddress: params.clientAddress,
     clientPhone: params.clientPhone,
     clientEmail: params.clientEmail,
+    comprehensiveClinicalReport: params.comprehensiveClinicalReport,
   });
 
   // Call Claude API with processed system prompt (variables injected)
@@ -146,8 +148,12 @@ export async function generateVeterinaryReport(
 }
 
 /**
- * Generate multiple reports in parallel
- * Used during consultation event creation
+ * Generate multiple reports with comprehensive clinical report as source of truth.
+ *
+ * Generation order:
+ * 1. Comprehensive clinical report generated FIRST (if enabled)
+ * 2. Client report uses comprehensive report as primary source (sequential dependency)
+ * 3. Abridged notes, practitioner, and vet reports run in parallel with step 2
  */
 export async function generateConsultationReports(
   params: ReportGenerationParams,
@@ -166,22 +172,42 @@ export async function generateConsultationReports(
   }
 ): Promise<MultiReportResult> {
   const errors: string[] = [];
-  const promises: Promise<{ type: string; result: ReportGenerationResult }>[] = [];
+  const multiResult: MultiReportResult = { errors };
 
-  // Queue report generation tasks
+  // Step 1: Generate comprehensive clinical report FIRST (if enabled)
+  // This becomes the source of truth for the client report
+  let comprehensiveContent: string | undefined;
+
   if (options.generateComprehensive) {
-    promises.push(
-      generateComprehensiveClinicalReport(params)
-        .then(result => ({ type: "comprehensive", result }))
+    try {
+      const comprehensiveResult = await generateComprehensiveClinicalReport(params);
+      multiResult.comprehensiveReport = comprehensiveResult;
+      comprehensiveContent = comprehensiveResult.content;
+    } catch (error: any) {
+      errors.push(`Comprehensive Report: ${error.message}`);
+    }
+  }
+
+  // Step 2: Generate remaining reports in parallel
+  // Client report receives comprehensive content as source of truth
+  const parallelPromises: Promise<{ type: string; result: ReportGenerationResult }>[] = [];
+
+  if (options.generateClient) {
+    const clientParams = comprehensiveContent
+      ? { ...params, comprehensiveClinicalReport: comprehensiveContent }
+      : params;
+    parallelPromises.push(
+      generateClientReport(clientParams)
+        .then(result => ({ type: "client", result }))
         .catch(error => {
-          errors.push(`Comprehensive Report: ${error.message}`);
-          return { type: "comprehensive", result: null as any };
+          errors.push(`Client Report: ${error.message}`);
+          return { type: "client", result: null as any };
         })
     );
   }
 
   if (options.generateAbridged) {
-    promises.push(
+    parallelPromises.push(
       generateAbridgedClinicalNotes(params)
         .then(result => ({ type: "abridged", result }))
         .catch(error => {
@@ -191,19 +217,8 @@ export async function generateConsultationReports(
     );
   }
 
-  if (options.generateClient) {
-    promises.push(
-      generateClientReport(params)
-        .then(result => ({ type: "client", result }))
-        .catch(error => {
-          errors.push(`Client Report: ${error.message}`);
-          return { type: "client", result: null as any };
-        })
-    );
-  }
-
   if (options.generatePractitioner) {
-    promises.push(
+    parallelPromises.push(
       generateComprehensiveClinicalReport(params)
         .then(result => ({ type: "practitioner", result }))
         .catch(error => {
@@ -214,7 +229,7 @@ export async function generateConsultationReports(
   }
 
   if (options.generateVet) {
-    promises.push(
+    parallelPromises.push(
       generateVeterinaryReport(params)
         .then(result => ({ type: "vet", result }))
         .catch(error => {
@@ -224,27 +239,24 @@ export async function generateConsultationReports(
     );
   }
 
-  // Execute all in parallel
-  const results = await Promise.all(promises);
+  // Execute remaining reports in parallel
+  if (parallelPromises.length > 0) {
+    const results = await Promise.all(parallelPromises);
 
-  // Organize results by type
-  const multiResult: MultiReportResult = { errors };
-
-  results.forEach(({ type, result }) => {
-    if (result) {
-      if (type === "comprehensive") {
-        multiResult.comprehensiveReport = result;
-      } else if (type === "abridged") {
-        multiResult.abridgedNotes = result;
-      } else if (type === "client") {
-        multiResult.clientReport = result;
-      } else if (type === "practitioner") {
-        multiResult.practitionerReport = result;
-      } else if (type === "vet") {
-        multiResult.vetReport = result;
+    results.forEach(({ type, result }) => {
+      if (result) {
+        if (type === "abridged") {
+          multiResult.abridgedNotes = result;
+        } else if (type === "client") {
+          multiResult.clientReport = result;
+        } else if (type === "practitioner") {
+          multiResult.practitionerReport = result;
+        } else if (type === "vet") {
+          multiResult.vetReport = result;
+        }
       }
-    }
-  });
+    });
+  }
 
   return multiResult;
 }

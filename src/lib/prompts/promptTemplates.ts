@@ -266,10 +266,25 @@ This document will be sent to a veterinary clinic under Dr. Tobiansky's name. An
     outputFormat: 'markdown',
     maxTokens: 6000,
     enabled: true,
-    variables: ['clientName', 'petName', 'petSpecies', 'consultationDate', 'transcript', 'questionnaire'],
+    variables: ['clientName', 'petName', 'petSpecies', 'consultationDate', 'transcript', 'questionnaire', 'comprehensiveClinicalReport'],
     systemPrompt: `You are a consultation report generator for Dr. Glenn Tobiansky, a veterinary behaviourist (BVSc, MANZCVS Behaviour, KPA-CTP) at Pet Behaviour Services in Melbourne, Australia.
 
 CORE PRINCIPLE: You are an EXTRACTION TOOL, not an advice generator. Only include information explicitly stated in the consultation transcript. Never invent recommendations.
+
+SOURCE OF TRUTH: When a Comprehensive Clinical Report is provided, it is your PRIMARY SOURCE OF TRUTH. Your job is to translate the clinical report into warm, client-friendly language. The transcript is supplementary context for tone and detail.
+
+DISCREPANCY HANDLING: If you notice ANY discrepancy between the comprehensive clinical report and the transcript (e.g., different timelines, conflicting medication details, different recommendations, mismatched facts), you MUST flag it inline using this exact format:
+
+**[⚠️ REVIEW: {description of discrepancy — e.g., "Transcript mentions '4-6 weeks' but clinical report states '6-8 weeks' — please verify the correct timeline."}]**
+
+Place the flag immediately after the relevant content. Use the clinical report's version in the body text, but always flag the difference so Dr. Tobiansky can verify. Common discrepancies to watch for:
+- Timelines or durations that differ
+- Medication names, dosages, or recommendations that don't match
+- Number of factors, triggers, or recommendations that differ
+- Specific details (ages, weights, dates) that conflict
+- Recommendations present in one source but missing from the other
+
+If the comprehensive clinical report is NOT provided, fall back to using the transcript directly (legacy behaviour).
 
 YOUR TASK: Create a client-facing consultation report that is warm, empathetic, and actionable.
 
@@ -394,12 +409,15 @@ WRITING RULES:
 9. **Medication**: Only mention if Dr. Tobiansky discussed it
 
 EXTRACTION RULES:
+- When comprehensive clinical report is provided: translate its content into client-friendly language. It is the source of truth for all clinical facts, recommendations, and timelines.
+- Use the transcript for tone, context, and any client-specific details (e.g., scheduling preferences, personal anecdotes) not captured in the clinical report.
 - Extract ONLY what Glenn explicitly stated - do NOT invent advice
 - Use client-friendly language (NOT clinical/veterinary terminology)
 - Focus on actionable steps and positive reframing
 - Include specific details: dates, times, costs, protocols mentioned
 - Capture the reasoning Glenn provided for recommendations
 - Note any homework/actions for the client
+- Flag ALL discrepancies between clinical report and transcript with [⚠️ REVIEW: ...] markers
 
 This report is designed to be sent directly to the client as their consultation summary.`
   }
@@ -534,6 +552,7 @@ export async function generateUserPrompt(params: {
   clientAddress?: string;
   clientPhone?: string;
   clientEmail?: string;
+  comprehensiveClinicalReport?: string;
 }): Promise<{ userPrompt: string; processedSystemPrompt: string }> {
   const template = await getPromptTemplate(params.templateId);
 
@@ -582,7 +601,13 @@ export async function generateUserPrompt(params: {
     prompt += '\n';
   }
 
-  prompt += `**Consultation Transcript:**\n${params.transcript}\n\n`;
+  // For client report: include comprehensive clinical report as primary source
+  if (params.comprehensiveClinicalReport && template.id === 'client-report') {
+    prompt += `**Comprehensive Clinical Report (SOURCE OF TRUTH):**\n${params.comprehensiveClinicalReport}\n\n`;
+    prompt += `**Consultation Transcript (supplementary context):**\n${params.transcript}\n\n`;
+  } else {
+    prompt += `**Consultation Transcript:**\n${params.transcript}\n\n`;
+  }
 
   if (params.questionnaire) {
     prompt += `**Client Questionnaire:**\n${params.questionnaire}\n\n`;
@@ -592,6 +617,10 @@ export async function generateUserPrompt(params: {
     prompt += `Create a detailed report in markdown format following the standard structure.`;
   } else if (template.outputFormat === 'html') {
     prompt += `Create concise clinical notes in HTML format for PBS Admin event notes.`;
+  }
+
+  if (params.comprehensiveClinicalReport && template.id === 'client-report') {
+    prompt += `\n\nIMPORTANT: Use the Comprehensive Clinical Report as your primary source. Translate its clinical content into warm, client-friendly language. Flag any discrepancies between the clinical report and transcript with [⚠️ REVIEW: ...] markers.`;
   }
 
   return { userPrompt: prompt, processedSystemPrompt };
