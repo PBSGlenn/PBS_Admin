@@ -160,14 +160,35 @@ export interface AIModelConfig {
 }
 
 const DEFAULT_AI_MODEL_CONFIG: AIModelConfig = {
-  reportModel: "claude-opus-4-6-20260205",
+  reportModel: "claude-opus-4-6",
   taskExtractionModel: "claude-sonnet-4-5-20250929",
+};
+
+// Map of deprecated model IDs to their current replacements
+const DEPRECATED_MODEL_IDS: Record<string, string> = {
+  "claude-opus-4-6-20260205": "claude-opus-4-6",
 };
 
 /** Get current AI model configuration */
 export async function getAIModelConfig(): Promise<AIModelConfig> {
   const raw = await getSettingJson<AIModelConfig>(AI_MODEL_CONFIG_KEY, DEFAULT_AI_MODEL_CONFIG);
-  return safeParse(AIModelConfigSchema, raw, DEFAULT_AI_MODEL_CONFIG, "AI model config");
+  const config = safeParse(AIModelConfigSchema, raw, DEFAULT_AI_MODEL_CONFIG, "AI model config");
+
+  // Auto-fix deprecated model IDs
+  let updated = false;
+  if (DEPRECATED_MODEL_IDS[config.reportModel]) {
+    config.reportModel = DEPRECATED_MODEL_IDS[config.reportModel];
+    updated = true;
+  }
+  if (DEPRECATED_MODEL_IDS[config.taskExtractionModel]) {
+    config.taskExtractionModel = DEPRECATED_MODEL_IDS[config.taskExtractionModel];
+    updated = true;
+  }
+  if (updated) {
+    await setSettingJson(AI_MODEL_CONFIG_KEY, config);
+  }
+
+  return config;
 }
 
 /** Save AI model configuration */
