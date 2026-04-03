@@ -338,16 +338,24 @@ export function ReportSentEventPanel({
           { path: clientFolderPath }
         );
 
-        // Find clinical notes
-        const clinicalNotesFile = entries.find(f =>
+        // Find clinical notes - prefer .md source (readable) over .docx
+        const clinicalNotesMd = entries.find(f =>
+          !f.isDirectory &&
+          f.name.includes(dateStr) &&
+          (f.name.includes("comprehensive-clinical") || f.name.includes("practitioner-report")) &&
+          f.name.endsWith(".md")
+        );
+        const clinicalNotesDocx = entries.find(f =>
           !f.isDirectory &&
           f.name.includes(dateStr) &&
           (f.name.includes("comprehensive-clinical") || f.name.includes("practitioner-report")) &&
           f.name.endsWith(".docx")
         );
 
-        if (clinicalNotesFile) {
-          setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesFile.name}`);
+        if (clinicalNotesMd) {
+          setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesMd.name}`);
+        } else if (clinicalNotesDocx) {
+          setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesDocx.name}`);
         } else {
           setClinicalNotesPath(null);
         }
@@ -399,14 +407,13 @@ export function ReportSentEventPanel({
 
       setIsGenerating(true);
 
-      // Read clinical notes if available
+      // Read clinical notes if available (.md files can be read directly)
       let clinicalNotesContent = "";
-      if (clinicalNotesPath) {
+      if (clinicalNotesPath && clinicalNotesPath.endsWith(".md")) {
         try {
-          // For DOCX, we'll use a simple extraction or pass the path
-          // For now, read the transcript as primary source
-          // TODO: Implement proper DOCX text extraction
-          clinicalNotesContent = `[Clinical notes available at: ${clinicalNotesPath}]`;
+          clinicalNotesContent = await invoke<string>("read_text_file", {
+            filePath: clinicalNotesPath
+          });
         } catch (error) {
           console.warn("Could not read clinical notes:", error);
         }
@@ -425,7 +432,7 @@ export function ReportSentEventPanel({
       }
 
       if (!transcriptContent && !clinicalNotesContent) {
-        throw new Error("No source documents found. Please ensure transcript or clinical notes are available.");
+        throw new Error("No source documents found. Please ensure transcript and/or clinical notes (.md) are available in the client folder.");
       }
 
       // Prepare params with client details for variable injection
@@ -444,14 +451,14 @@ export function ReportSentEventPanel({
         petAge: pet?.dateOfBirth ? calculateAge(pet.dateOfBirth) : undefined,
         petSex: pet?.sex || undefined,
         consultationDate: consultation.formattedDate,
-        // Use transcript as main content source
-        // In future, we'd extract text from clinical notes DOCX and use that as primary
         transcript: transcriptContent || clinicalNotesContent,
         questionnaire: undefined,
         vetClinicName: reportType === "vet" ? vetClinicName : undefined,
         clientAddress: clientAddress || undefined,
         clientPhone: client?.mobile || undefined,
         clientEmail: client?.email || undefined,
+        // Pass comprehensive clinical notes as source of truth for client report
+        comprehensiveClinicalReport: clinicalNotesContent || undefined,
       };
 
       // Generate report
