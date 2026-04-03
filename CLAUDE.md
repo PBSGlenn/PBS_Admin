@@ -68,7 +68,10 @@ git push origin --delete branch-name
 
 **Last Updated**: 2026-02-26
 
-**Recent Changes** (2026-02-26 — v0.3.0):
+**Recent Changes** (2026-04-03):
+- **Client Report Source of Truth**: Client report generation now uses the comprehensive clinical report as its primary source. Comprehensive report is generated first, then passed to the client report generator. Any discrepancies between the clinical report and transcript are flagged inline with `[⚠️ REVIEW: ...]` markers for manual verification. Generation order: comprehensive (sequential) → client + abridged + vet (parallel).
+
+**Previous Changes** (2026-02-26 — v0.3.0):
 - **Dashboard UX Overhaul**: Resizable left/right panes using react-resizable-panels (drag handle between panes). Right pane now uses tabbed layout (Upcoming Bookings, Tasks, Website Bookings, Questionnaires). Sortable columns in ClientsList (click headers to sort by name, email, mobile, city/state, pets, last event).
 - **Window Close Guard**: Windows with unsaved changes now prompt before closing. `WindowContext` uses ref-based close guard registry. `ClientView` registers guard when form has changes. `forceCloseWindow()` available to bypass guard.
 - **Component Factory Pattern**: `WindowContext` supports `componentFactory` for fresh renders on each window paint, preventing stale ReactNode captures.
@@ -1856,17 +1859,25 @@ Templates support dynamic content replacement:
 
 ### Multi-Report Generation Service
 
-**Purpose**: Generate multiple report types in parallel from a single consultation transcript using Claude Sonnet 4.5 API.
+**Purpose**: Generate multiple report types from a single consultation transcript using Claude Opus 4.6 API, with the comprehensive clinical report as the source of truth for the client report.
 
-**Technology**: Anthropic SDK with parallel execution and prompt caching
+**Technology**: Anthropic SDK with sequential-then-parallel execution and prompt caching
 
 **Architecture**:
 ```
-Consultation Transcript
+Consultation Transcript + Questionnaire
         │
-        ├──> Comprehensive Clinical Report (MD)
+        │  Step 1 (sequential)
+        ▼
+Comprehensive Clinical Report (MD) ──── SOURCE OF TRUTH
         │    - Saved to client folder as DOCX
         │    - 3-5 pages, detailed analysis
+        │
+        │  Step 2 (parallel)
+        ├──> Client Report (MD)
+        │    - Based on comprehensive report + transcript
+        │    - Flags discrepancies with [⚠️ REVIEW: ...] markers
+        │    - Warm, client-friendly language
         │
         ├──> Abridged Clinical Notes (HTML)
         │    - Saved to Event.notes field
@@ -1901,34 +1912,28 @@ Consultation Transcript
    - **Output**: `{surname}_{YYYYMMDD}_vet-report.docx`
    - **Use Case**: On-demand generation when vet follow-up required
 
-**Parallel Generation**:
+**Sequential-Then-Parallel Generation**:
 ```typescript
-export async function generateConsultationReports(
-  params: ReportGenerationParams,
-  options: {
-    generateComprehensive?: boolean;
-    generateAbridged?: boolean;
-    generateVet?: boolean;
-  }
-): Promise<MultiReportResult> {
-  const promises = [];
+export async function generateConsultationReports(params, options) {
+  // Step 1: Generate comprehensive report FIRST (source of truth)
+  const comprehensiveResult = await generateComprehensiveClinicalReport(params);
 
-  // Queue all selected reports
-  if (options.generateComprehensive) promises.push(generateComprehensiveClinicalReport(params));
-  if (options.generateAbridged) promises.push(generateAbridgedClinicalNotes(params));
-  if (options.generateVet) promises.push(generateVeterinaryReport(params));
-
-  // Execute in parallel
-  const results = await Promise.all(promises);
-
-  return {
-    comprehensiveReport: /* ... */,
-    abridgedNotes: /* ... */,
-    vetReport: /* ... */,
-    errors: /* ... */
-  };
+  // Step 2: Generate remaining reports in parallel
+  // Client report receives comprehensive content for consistency
+  const clientParams = { ...params, comprehensiveClinicalReport: comprehensiveResult.content };
+  const results = await Promise.all([
+    generateClientReport(clientParams),      // Uses comprehensive as source of truth
+    generateAbridgedClinicalNotes(params),   // Independent
+    generateVeterinaryReport(params),        // Independent (if enabled)
+  ]);
 }
 ```
+
+**Discrepancy Flagging**:
+- Client report flags any conflicts between comprehensive report and transcript
+- Inline markers: `**[⚠️ REVIEW: {description}]**`
+- Comprehensive report's version used in body text; transcript differences flagged
+- Search for `⚠️ REVIEW` before sending to verify all flags resolved
 
 **Prompt Caching**:
 - System prompts cached with `cache_control: { type: "ephemeral" }`
