@@ -6,7 +6,11 @@ import type { Pet, PetInput } from "../types";
 
 /** Whitelist of columns allowed in dynamic UPDATE statements */
 const PET_VALID_FIELDS = new Set([
-  'name', 'species', 'breed', 'sex', 'dateOfBirth', 'notes',
+  'name', 'species', 'breed',
+  'sex', 'desexed', 'desexedDate',
+  'dateOfBirth', 'dateOfBirthIsApproximate',
+  'weightKg', 'reportedAge',
+  'notes',
 ]);
 
 /**
@@ -60,16 +64,25 @@ export async function findPetByNameAndClient(name: string, clientId: number): Pr
 export async function createPet(input: PetInput): Promise<Pet> {
   const result = await execute(`
     INSERT INTO Pet (
-      clientId, name, species, breed, sex, dateOfBirth, notes,
+      clientId, name, species, breed,
+      sex, desexed, desexedDate,
+      dateOfBirth, dateOfBirthIsApproximate,
+      weightKg, reportedAge,
+      notes,
       createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `, [
     input.clientId,
     input.name,
     input.species,
     input.breed || null,
     input.sex || null,
+    input.desexed || null,
+    input.desexedDate || null,
     input.dateOfBirth || null,
+    input.dateOfBirthIsApproximate ?? null,
+    input.weightKg ?? null,
+    input.reportedAge || null,
     input.notes || null,
   ]);
 

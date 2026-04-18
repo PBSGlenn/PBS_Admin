@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { deleteSetting } from '@/lib/services/settingsService';
+import { execute } from '@/lib/db';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
@@ -15,8 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { Download, RefreshCw, CheckCircle2, XCircle, FileText, FileJson, EyeOff } from 'lucide-react';
-import { LoadingSpinner } from '../ui/loading-spinner';
+import { Download, RefreshCw, CheckCircle2, XCircle, AlertTriangle, FileText, FileJson, EyeOff } from 'lucide-react';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import {
   fetchUnprocessedSubmissions,
@@ -24,6 +23,7 @@ import {
   markSubmissionAsProcessed,
   type JotformSubmission,
   type QuestionnaireSyncResult,
+  type PetMatchResult,
 } from '@/lib/services/jotformService';
 
 export function QuestionnaireSync() {
@@ -86,10 +86,12 @@ const [isDismissConfirmOpen, setIsDismissConfirmOpen] = useState(false);
   };
 
   const confirmClearTracking = async () => {
-    await deleteSetting('pbs_admin_processed_jotform_submissions');
+    // Wipe the QuestionnaireLog table so all submissions become eligible
+    // for reprocessing. Development/testing only.
+    await execute('DELETE FROM QuestionnaireLog');
     setSyncResults([]);
     loadSubmissions();
-setIsClearConfirmOpen(false);
+    setIsClearConfirmOpen(false);
   };
 
   const formatDateTime = (dateString: string) => {
@@ -216,45 +218,82 @@ setIsClearConfirmOpen(false);
 
       {/* Sync results */}
       {syncResults.length > 0 && (
-        <div className="space-y-1 p-2 bg-muted/50 rounded-md">
+        <div className="space-y-1.5 p-2 bg-muted/50 rounded-md">
           <h4 className="text-[10px] font-semibold">Sync Results</h4>
-          {syncResults.map((result, idx) => (
-            <div key={idx} className="flex items-start gap-1.5 text-[11px]">
-              {result.success ? (
-                <CheckCircle2 className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
-              ) : (
-                <XCircle className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
-              )}
-              <div className="flex-1">
-                {result.success ? (
-                  <div className="space-y-0.5">
+          {syncResults.map((result, idx) => {
+            const hasUnmatched = result.petResults.some(
+              (p) => p.status === 'unmatched' || p.status === 'ambiguous'
+            );
+            const topIcon = !result.success
+              ? <XCircle className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
+              : hasUnmatched
+                ? <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                : <CheckCircle2 className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />;
+            return (
+              <div key={idx} className="flex items-start gap-1.5 text-[11px]">
+                {topIcon}
+                <div className="flex-1">
+                  {result.success ? (
+                    <div className="space-y-0.5">
+                      <div>
+                        Processed <strong>{result.clientName}</strong>
+                        {result.petResults.length > 1 && (
+                          <span className="text-[10px] text-muted-foreground ml-1">
+                            ({result.petResults.length} pets)
+                          </span>
+                        )}
+                      </div>
+                      {result.petResults.length > 0 && (
+                        <ul className="text-[10px] space-y-0.5 ml-1">
+                          {result.petResults.map((p: PetMatchResult, pi) => (
+                            <li key={pi} className="flex items-center gap-1">
+                              {p.status === 'updated' && <CheckCircle2 className="h-2.5 w-2.5 text-green-500" />}
+                              {p.status === 'no_write_needed' && <CheckCircle2 className="h-2.5 w-2.5 text-muted-foreground" />}
+                              {(p.status === 'unmatched' || p.status === 'ambiguous') && <AlertTriangle className="h-2.5 w-2.5 text-amber-500" />}
+                              <span>
+                                <strong>{p.parsedName}</strong>
+                                {p.status === 'updated' && p.fieldsUpdated.length > 0 && (
+                                  <span className="text-muted-foreground"> — {p.fieldsUpdated.join(', ')}</span>
+                                )}
+                                {p.status === 'no_write_needed' && (
+                                  <span className="text-muted-foreground"> — matched, no new data</span>
+                                )}
+                                {p.status === 'unmatched' && (
+                                  <span className="text-amber-600"> — no match in client's pets (Review)</span>
+                                )}
+                                {p.status === 'ambiguous' && (
+                                  <span className="text-amber-600"> — multiple possible matches (Review)</span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                        {result.filesDownloaded.json && (
+                          <span className="flex items-center gap-0.5">
+                            <FileJson className="h-2.5 w-2.5" /> JSON
+                          </span>
+                        )}
+                        {result.filesDownloaded.pdf && (
+                          <span className="flex items-center gap-0.5">
+                            <FileText className="h-2.5 w-2.5" /> PDF
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
                     <div>
-                      Processed <strong>{result.clientName}</strong> ({result.petName})
-                    </div>
-                    <div className="text-[10px] text-muted-foreground flex items-center gap-2">
-                      {result.filesDownloaded.json && (
-                        <span className="flex items-center gap-0.5">
-                          <FileJson className="h-2.5 w-2.5" /> JSON
-                        </span>
-                      )}
-                      {result.filesDownloaded.pdf && (
-                        <span className="flex items-center gap-0.5">
-                          <FileText className="h-2.5 w-2.5" /> PDF
-                        </span>
+                      <div>Failed: {result.clientName}</div>
+                      {result.error && (
+                        <div className="text-[10px] text-red-500">{result.error}</div>
                       )}
                     </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div>Failed: {result.clientName}</div>
-                    {result.error && (
-                      <div className="text-[10px] text-red-500">{result.error}</div>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

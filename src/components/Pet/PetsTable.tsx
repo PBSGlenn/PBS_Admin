@@ -9,10 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { PetForm } from "./PetForm";
+import { PetSplitDialog } from "./PetSplitDialog";
 import { getPetsByClientId, deletePet } from "@/lib/services/petService";
 import type { Pet } from "@/lib/types";
 import { calculateAge } from "@/lib/utils/ageUtils";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { Plus, Edit, Trash2, Split } from "lucide-react";
 import { toast } from "sonner";
 
 export interface PetsTableProps {
@@ -24,6 +25,7 @@ export const PetsTable = React.memo(function PetsTable({ clientId }: PetsTablePr
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
   const [deletingPet, setDeletingPet] = useState<Pet | null>(null);
+  const [splittingPet, setSplittingPet] = useState<Pet | null>(null);
 
   // Fetch pets for this client
   const { data: pets = [], isLoading } = useQuery({
@@ -113,7 +115,7 @@ export const PetsTable = React.memo(function PetsTable({ clientId }: PetsTablePr
                     <TableHead className="text-[11px] h-8 py-1.5">Breed</TableHead>
                     <TableHead className="text-[11px] h-8 py-1.5">Sex</TableHead>
                     <TableHead className="text-[11px] h-8 py-1.5">Age</TableHead>
-                    <TableHead className="text-[11px] h-8 py-1.5 w-[80px]">Actions</TableHead>
+                    <TableHead className="text-[11px] h-8 py-1.5 w-[110px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -133,6 +135,7 @@ export const PetsTable = React.memo(function PetsTable({ clientId }: PetsTablePr
                             size="sm"
                             onClick={() => handleEdit(pet)}
                             className="h-7 w-7 p-0"
+                            title="Edit pet"
                           >
                             <Edit className="h-3.5 w-3.5" />
                             <span className="sr-only">Edit</span>
@@ -140,9 +143,20 @@ export const PetsTable = React.memo(function PetsTable({ clientId }: PetsTablePr
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => setSplittingPet(pet)}
+                            className="h-7 w-7 p-0"
+                            title="Split pet into multiple records"
+                          >
+                            <Split className="h-3.5 w-3.5" />
+                            <span className="sr-only">Split</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => handleDelete(pet)}
                             className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                             disabled={deleteMutation.isPending}
+                            title="Delete pet"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             <span className="sr-only">Delete</span>
@@ -204,6 +218,15 @@ export const PetsTable = React.memo(function PetsTable({ clientId }: PetsTablePr
         variant="destructive"
         onConfirm={confirmDelete}
       />
+
+      {/* Split Pet Dialog */}
+      {splittingPet && (
+        <PetSplitDialog
+          pet={splittingPet}
+          isOpen={!!splittingPet}
+          onClose={() => setSplittingPet(null)}
+        />
+      )}
     </>
   );
 });

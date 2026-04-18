@@ -66,9 +66,19 @@ git push origin --delete branch-name
 
 **Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage. **Command Palette** (Ctrl+K) for global search and navigation. **Zod runtime validation** at all external API boundaries. **Perplexity Sonar** integration for live medication brand name updates.
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-04-18
 
-**Recent Changes** (2026-04-03):
+**Recent Changes** (2026-04-18 — v0.4.0):
+- **Pet Schema Restructuring**: Split conflated `sex` column into `sex` (`Male|Female|Unknown`) + `desexed` (`Yes|No|Unknown`) + optional `desexedDate`. New columns: `weightKg` (first-class numeric), `reportedAge` (latest owner string), `dateOfBirthIsApproximate` (flag). Runtime migration `applyPendingSchemaChanges_v3` migrates existing rows — "Male Castrated" → `sex=Male, desexed=Yes`, etc.
+- **PetForm UI Rewrite**: Sex + Desexed side-by-side dropdowns; conditional Desexed Date picker when desexed=Yes; numeric Weight (kg) input; Reported Age field (persisted, not just a calculator); DOB + Approximate checkbox.
+- **Jotform Multi-Pet Parser** ([jotformService.ts](src/lib/services/jotformService.ts)): Replaced single-pet `parseSubmission` with `ParsedPet[]` output. `detectFormSchema` switches between multi-pet mode (QID 100 pet-count selector, 10-QID per-pet blocks starting at 101) and legacy-single mode. New helpers: `parseSexAndDesexed` (fixes the old `mapSexValue` bug that returned `"Neutered"`/`"Spayed"` incompatible with dropdown), `parseWeight` (handles kg/lb/grams, rejects multi-number strings). Per-pet fuzzy matching via `scorePetMatch` — auto-matches at ≥80 unambiguous; anything else flagged for manual review.
+- **Atomic Dedup (QuestionnaireLog)**: New SQLite table + [questionnaireLogService.ts](src/lib/services/questionnaireLogService.ts) replaces the previous racy Settings-based Set. `tryClaimSubmission` uses `INSERT OR IGNORE` as a lock — concurrent "Process" clicks can't double-process. Legacy submission IDs automatically backfilled to `QuestionnaireLog` on first app launch.
+- **Visible Match Status in Events**: `QuestionnaireReceived` event notes now include per-pet match outcomes (✓ matched / ⚠ unmatched) plus a machine-readable `<!-- matchState: {...} -->` JSON comment. Dashboard sync results show per-pet status with icons.
+- **Stage B Reconciliation Rewrite** ([QuestionnaireReconciliation.tsx](src/components/Client/QuestionnaireReconciliation.tsx)): One card per parsed pet. Pet-picker dropdown lets user re-route each questionnaire pet to any existing pet (Update) or create a new one. New comparison fields: sex, desexed, desexedDate, weightKg, reportedAge, dateOfBirth. `name` and `species` filtered out of update mode — prevents accidental overwrites of pet names with mashed questionnaire strings (use Split tool instead).
+- **Pet Split Tool** ([PetSplitDialog.tsx](src/components/Pet/PetSplitDialog.tsx)): Cleans up mashed pet records like "Teddy & Bear" that booking sync creates from multi-pet households. Pre-parses on `" & "`, `" and "`, `,`, `/` separators and zips names with breeds when counts match. Sequentially creates new pets then deletes original. Accessed via new Split icon in PetsTable.
+- **Jotform Form Spec**: New [docs/JOTFORM_FORM_SPEC.md](docs/JOTFORM_FORM_SPEC.md) documents the QID contract the parser expects — pet-count selector at QID 100, 10-QID per-pet blocks with fixed offsets for name/species/breed/DOB/age/sex/desexed/desexedDate/weight. Parser detects form version automatically; legacy submissions still work.
+
+**Previous Changes** (2026-04-03):
 - **Client Report Source of Truth**: Client report generation now uses the comprehensive clinical report as its primary source. Comprehensive report is generated first, then passed to the client report generator. Any discrepancies between the clinical report and transcript are flagged inline with `[⚠️ REVIEW: ...]` markers for manual verification. Generation order: comprehensive (sequential) → client + abridged + vet (parallel).
 
 **Previous Changes** (2026-02-26 — v0.3.0):
@@ -321,12 +331,21 @@ Task (parent) ──> Task (children)
 - `petId` (PK, autoincrement)
 - `clientId` (FK → Client, required)
 - `name`, `species` (required)
-- `breed`, `sex`, `dateOfBirth`, `notes` (optional)
+- `breed`, `notes` (optional)
+- `sex` — `Male | Female | Unknown` (biological sex only)
+- `desexed` — `Yes | No | Unknown`
+- `desexedDate` — ISO 8601, only meaningful if `desexed = Yes`
+- `dateOfBirth` — ISO 8601 date string
+- `dateOfBirthIsApproximate` — `0 | 1` flag; set when DOB was derived from a reported age string
+- `weightKg` — numeric, first-class (not a note)
+- `reportedAge` — raw owner-provided age string, overwritten by each new questionnaire for audit
 
 **Relationships**:
 - Belongs to one Client (CASCADE on client delete)
 
 **Indexes**: clientId, name
+
+**Schema migration**: Pet schema restructuring runs at startup via `applyPendingSchemaChanges_v3` in [src/lib/db.ts](src/lib/db.ts). Idempotent (sentinel-gated). Also creates `QuestionnaireLog` table.
 
 ---
 
@@ -2468,6 +2487,8 @@ When a consultation report is sent to the client, PBS Admin updates the booking 
 
 ## Jotform Questionnaire Integration
 
+> **v0.4.0 rewrite** (2026-04-18): the parser is now multi-pet aware (`ParsedPet[]`), sex/desexed are split, weight is parsed to `weightKg`, and dedup is atomic via the `QuestionnaireLog` table. Stage B reconciliation has a pet-picker UI. The legacy single-pet form and new multi-pet form are both supported — see [docs/JOTFORM_FORM_SPEC.md](docs/JOTFORM_FORM_SPEC.md) for the QID contract and [Recent Changes](#recent-changes-2026-04-18--v040) above for the full list.
+
 ### Overview
 
 PBS Admin integrates with Jotform to automatically download submitted questionnaires (both Dog and Cat behaviour questionnaires) and save them to client folders. This integration uses the **Jotform API** to poll for new submissions and downloads both JSON data and PDF files.
@@ -3549,5 +3570,5 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2026-02-26
-**Version**: 3.0.0 (v0.3.0: Native Windows notifications via tauri-plugin-notification; audio transcription >25MB via FFmpeg chunking; Dashboard UX overhaul with resizable panes and tabs; window close guards for unsaved changes; component factory pattern; automation idempotency and transactions; tray icon crash fix; MCP server; database startup migrations; FTS5 client search; Command Palette; Zod v4 validation; Perplexity Sonar; Claude Opus 4.6; gpt-4o-transcribe-diarize transcription)
+**Last Updated**: 2026-04-18
+**Version**: 0.4.0 (Pet schema restructuring — sex split from desexed, first-class weight/reportedAge; Jotform multi-pet parser; atomic QuestionnaireLog dedup; visible per-pet match status; reconciliation UI pet-picker + name/species footgun fix; Pet Split tool; Jotform form spec doc)

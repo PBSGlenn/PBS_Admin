@@ -1,17 +1,37 @@
 /**
- * Questionnaire Reconciliation Service
- * Compares questionnaire data with existing client/pet records and manages updates
+ * Questionnaire Reconciliation Service (Stage B)
+ *
+ * Compares questionnaire data (saved JSON from Stage A) with existing
+ * Client/Pet records and lets the user selectively apply updates.
+ *
+ * Phase 5 rewrite:
+ *  - Multi-pet aware: one reconciliation card per ParsedPet
+ *  - Auto-match via scorePetMatch; user can pick a different target or
+ *    create a new pet when the auto-match fails
+ *  - New field comparisons: sex, desexed, desexedDate, weightKg, reportedAge,
+ *    breed, dateOfBirth (with approximate flag)
  */
 
 import { invoke } from '@tauri-apps/api/core';
 import type { Client, Pet } from '../types';
 import { getClientById, updateClient } from './clientService';
-import { getAllPets, updatePet, createPet } from './petService';
+import { getPetsByClientId, updatePet, createPet } from './petService';
 import { parseAgeToDateOfBirth } from '../utils/ageUtils';
 import { logger } from '../utils/logger';
+import {
+  parseSexAndDesexed,
+  parseWeight,
+  scorePetMatch,
+  type ParsedPet,
+} from './jotformService';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 /**
- * Questionnaire data structure (from saved JSON file)
+ * Shape of the saved questionnaire JSON file.
+ * Supports both legacy (single `pet`) and new (`pets: ParsedPet[]`) formats.
  */
 export interface QuestionnaireData {
   submissionId: string;
@@ -22,9 +42,10 @@ export interface QuestionnaireData {
     lastName: string;
     email: string;
     phone: string;
-    address: string;  // Full address string
+    address: string;
   };
-  pet: {
+  /** Legacy single-pet field — kept for backward compat. */
+  pet?: {
     name: string;
     species: string;
     breed?: string;
@@ -32,12 +53,11 @@ export interface QuestionnaireData {
     sex?: string;
     weight?: string;
   };
-  allAnswers: Record<string, any>;
+  /** New multi-pet array — set when JSON was written by Phase 3+ Stage A. */
+  pets?: ParsedPet[];
+  allAnswers?: Record<string, any>;
 }
 
-/**
- * Parsed address components
- */
 export interface ParsedAddress {
   streetAddress: string;
   city: string;
@@ -45,9 +65,6 @@ export interface ParsedAddress {
   postcode: string;
 }
 
-/**
- * Field comparison result
- */
 export interface FieldComparison {
   field: string;
   label: string;
@@ -56,51 +73,50 @@ export interface FieldComparison {
   status: 'match' | 'missing' | 'different' | 'new';
 }
 
-/**
- * Complete reconciliation result
- */
+/** Per-pet reconciliation state. */
+export interface PerPetReconciliation {
+  parsedPet: ParsedPet;
+  /** Initially auto-matched pet, or null if unmatched/ambiguous. */
+  targetPet: Pet | null;
+  /** Whether Stage A's auto-match succeeded unambiguously. */
+  autoMatched: boolean;
+  comparisons: FieldComparison[];
+  hasChanges: boolean;
+}
+
 export interface ReconciliationResult {
   client: {
     record: Client;
     comparisons: FieldComparison[];
     hasChanges: boolean;
   };
-  pet: {
-    record: Pet | null;
-    comparisons: FieldComparison[];
-    hasChanges: boolean;
-  };
+  /** All client pets — used by the UI pet-picker dropdown. */
+  allClientPets: Pet[];
+  pets: PerPetReconciliation[];
   questionnaireData: QuestionnaireData;
 }
 
-/**
- * Find questionnaire JSON file by submission ID
- * Searches for files matching pattern: questionnaire_{submissionId}_*.json
- */
+// ============================================================================
+// File I/O
+// ============================================================================
+
 export async function findQuestionnaireFile(
   submissionId: string,
   folderPath: string
 ): Promise<string | null> {
   try {
-    // List files in the client folder matching the submission ID pattern
-    const pattern = `questionnaire_${submissionId}`;
     const files = await invoke<string[]>('list_files', {
       directory: folderPath,
-      pattern: pattern
+      pattern: `questionnaire_${submissionId}`,
     });
-
-    // Find .json files (should only be one per submission)
-    const jsonFiles = files.filter(f => f.endsWith('.json'));
-
+    const jsonFiles = files.filter((f) => f.endsWith('.json'));
     if (jsonFiles.length === 0) {
-      logger.warn(`No questionnaire JSON file found for submission ${submissionId} in ${folderPath}`);
+      logger.warn(`No questionnaire JSON for submission ${submissionId}`);
       return null;
     }
-
     if (jsonFiles.length > 1) {
-      logger.warn(`Multiple questionnaire JSON files found for submission ${submissionId}, using first one`);
+      logger.warn(`Multiple JSON files for ${submissionId}; using first`);
     }
-
     return jsonFiles[0];
   } catch (error) {
     logger.error('Failed to find questionnaire file:', error);
@@ -108,415 +124,341 @@ export async function findQuestionnaireFile(
   }
 }
 
-/**
- * Read questionnaire JSON file
- */
 export async function readQuestionnaireFile(filePath: string): Promise<QuestionnaireData> {
-  try {
-    const content = await invoke<string>('read_text_file', { filePath });
-    const rawData = JSON.parse(content);
-
-    // Handle both old and new formats
-    let data = rawData as QuestionnaireData;
-
-    // Migrate old format: address as object → string
-    if (data.client.address && typeof data.client.address === 'object') {
-      const addr = data.client.address as any;
-      data.client.address = `${addr.street || ''}, ${addr.city || ''}, ${addr.state || ''}, ${addr.postcode || ''}`.trim();
-    }
-
-    // Migrate old format: formType lowercase → capitalized
-    if (data.formType === 'dog' as any) {
-      data.formType = 'Dog';
-    } else if (data.formType === 'cat' as any) {
-      data.formType = 'Cat';
-    }
-
-    return data;
-  } catch (error) {
-    logger.error('Failed to read questionnaire file:', error);
-    throw new Error(`Failed to read questionnaire: ${error}`);
-  }
+  const content = await invoke<string>('read_text_file', { filePath });
+  const raw = JSON.parse(content);
+  return normalizeQuestionnaireData(raw);
 }
 
 /**
- * Parse full address string into components
- * Format: "123 Main St, Melbourne, VIC, 3000"
+ * Normalize any JSON shape (legacy or Phase 3+) into a consistent
+ * `QuestionnaireData` with `pets: ParsedPet[]` always populated.
  */
+function normalizeQuestionnaireData(raw: any): QuestionnaireData {
+  const data = { ...raw } as QuestionnaireData;
+
+  // Legacy: address object → string
+  if (data.client?.address && typeof data.client.address === 'object') {
+    const addr: any = data.client.address;
+    data.client.address = `${addr.street || ''}, ${addr.city || ''}, ${addr.state || ''}, ${addr.postcode || ''}`.trim();
+  }
+
+  // Legacy: formType lowercase → capitalized
+  if ((data.formType as any) === 'dog') data.formType = 'Dog';
+  else if ((data.formType as any) === 'cat') data.formType = 'Cat';
+
+  // Build pets[] if missing (legacy single-pet JSON).
+  if (!Array.isArray(data.pets) || data.pets.length === 0) {
+    if (data.pet) {
+      const { sex, desexed } = parseSexAndDesexed(data.pet.sex);
+      data.pets = [{
+        name: data.pet.name,
+        species: data.pet.species || (data.formType === 'Dog' ? 'Dog' : 'Cat'),
+        breed: data.pet.breed || undefined,
+        reportedAge: data.pet.age || undefined,
+        sex,
+        desexed,
+        weightKg: parseWeight(data.pet.weight),
+      }];
+    } else {
+      data.pets = [];
+    }
+  }
+
+  return data;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
 export function parseAddress(addressString: string): ParsedAddress {
-  // Default empty values
-  const result: ParsedAddress = {
-    streetAddress: '',
-    city: '',
-    state: '',
-    postcode: '',
-  };
-
+  const result: ParsedAddress = { streetAddress: '', city: '', state: '', postcode: '' };
   if (!addressString) return result;
-
-  // Split by commas and clean up whitespace
-  const parts = addressString.split(',').map(p => p.trim());
-
+  const parts = addressString.split(',').map((p) => p.trim());
   if (parts.length >= 1) result.streetAddress = parts[0];
   if (parts.length >= 2) result.city = parts[1];
   if (parts.length >= 3) result.state = parts[2];
   if (parts.length >= 4) result.postcode = parts[3];
-
   return result;
 }
 
-/**
- * Normalize phone numbers for comparison (remove spaces, dashes, parentheses)
- */
 function normalizePhone(phone: string | null): string {
   if (!phone) return '';
   return phone.replace(/[\s\-\(\)]/g, '');
 }
 
-/**
- * Normalize strings for comparison (lowercase, trim)
- */
 function normalizeString(str: string | null): string {
   if (!str) return '';
   return str.toLowerCase().trim();
 }
 
-/**
- * Compare two values and determine status
- */
-function compareValues(current: string | null, questionnaire: string | null): 'match' | 'missing' | 'different' | 'new' {
-  const currNorm = normalizeString(current);
-  const questNorm = normalizeString(questionnaire);
-
-  if (!currNorm && !questNorm) return 'match';
-  if (!currNorm && questNorm) return 'new';
-  if (currNorm && !questNorm) return 'missing';
-  if (currNorm === questNorm) return 'match';
+function compareValues(
+  current: string | null,
+  questionnaire: string | null
+): FieldComparison['status'] {
+  const c = normalizeString(current);
+  const q = normalizeString(questionnaire);
+  if (!c && !q) return 'match';
+  if (!c && q) return 'new';
+  if (c && !q) return 'missing';
+  if (c === q) return 'match';
   return 'different';
 }
 
-/**
- * Compare client record with questionnaire data
- */
-function compareClient(client: Client, questionnaireData: QuestionnaireData): FieldComparison[] {
-  const qClient = questionnaireData.client;
-  const parsedAddress = parseAddress(qClient.address);
+// ============================================================================
+// Client comparison (unchanged from Phase 2)
+// ============================================================================
 
-  const comparisons: FieldComparison[] = [
-    {
-      field: 'firstName',
-      label: 'First Name',
-      currentValue: client.firstName,
-      questionnaireValue: qClient.firstName,
-      status: compareValues(client.firstName, qClient.firstName),
-    },
-    {
-      field: 'lastName',
-      label: 'Last Name',
-      currentValue: client.lastName,
-      questionnaireValue: qClient.lastName,
-      status: compareValues(client.lastName, qClient.lastName),
-    },
-    {
-      field: 'email',
-      label: 'Email',
-      currentValue: client.email,
-      questionnaireValue: qClient.email,
-      status: compareValues(client.email, qClient.email),
-    },
-    {
-      field: 'mobile',
-      label: 'Mobile',
-      currentValue: client.mobile,
-      questionnaireValue: qClient.phone,
-      status: compareValues(normalizePhone(client.mobile), normalizePhone(qClient.phone)) as any,
-    },
-    {
-      field: 'streetAddress',
-      label: 'Street Address',
-      currentValue: client.streetAddress || null,
-      questionnaireValue: parsedAddress.streetAddress || null,
-      status: compareValues(client.streetAddress, parsedAddress.streetAddress),
-    },
-    {
-      field: 'city',
-      label: 'City',
-      currentValue: client.city || null,
-      questionnaireValue: parsedAddress.city || null,
-      status: compareValues(client.city, parsedAddress.city),
-    },
-    {
-      field: 'state',
-      label: 'State',
-      currentValue: client.state || null,
-      questionnaireValue: parsedAddress.state || null,
-      status: compareValues(client.state, parsedAddress.state),
-    },
-    {
-      field: 'postcode',
-      label: 'Postcode',
-      currentValue: client.postcode || null,
-      questionnaireValue: parsedAddress.postcode || null,
-      status: compareValues(client.postcode, parsedAddress.postcode),
-    },
+function compareClient(client: Client, data: QuestionnaireData): FieldComparison[] {
+  const q = data.client;
+  const addr = parseAddress(q.address);
+  return [
+    { field: 'firstName', label: 'First Name',
+      currentValue: client.firstName, questionnaireValue: q.firstName,
+      status: compareValues(client.firstName, q.firstName) },
+    { field: 'lastName', label: 'Last Name',
+      currentValue: client.lastName, questionnaireValue: q.lastName,
+      status: compareValues(client.lastName, q.lastName) },
+    { field: 'email', label: 'Email',
+      currentValue: client.email, questionnaireValue: q.email,
+      status: compareValues(client.email, q.email) },
+    { field: 'mobile', label: 'Mobile',
+      currentValue: client.mobile, questionnaireValue: q.phone,
+      status: compareValues(normalizePhone(client.mobile), normalizePhone(q.phone)) },
+    { field: 'streetAddress', label: 'Street Address',
+      currentValue: client.streetAddress || null, questionnaireValue: addr.streetAddress || null,
+      status: compareValues(client.streetAddress, addr.streetAddress) },
+    { field: 'city', label: 'City',
+      currentValue: client.city || null, questionnaireValue: addr.city || null,
+      status: compareValues(client.city, addr.city) },
+    { field: 'state', label: 'State',
+      currentValue: client.state || null, questionnaireValue: addr.state || null,
+      status: compareValues(client.state, addr.state) },
+    { field: 'postcode', label: 'Postcode',
+      currentValue: client.postcode || null, questionnaireValue: addr.postcode || null,
+      status: compareValues(client.postcode, addr.postcode) },
   ];
-
-  return comparisons;
 }
 
-/**
- * Map questionnaire sex values to database format
- */
-function mapSexValue(questionnaireSex: string | undefined): string | null {
-  if (!questionnaireSex) return null;
+// ============================================================================
+// Per-pet comparison (new field set)
+// ============================================================================
 
-  const normalized = questionnaireSex.toLowerCase().trim();
+function comparePet(pet: Pet | null, parsed: ParsedPet): FieldComparison[] {
+  const weightStr = (n: number | null) => (n == null ? null : `${n} kg`);
+  const dob = pet?.dateOfBirth || null;
+  const parsedDob = parsed.dateOfBirth
+    || (parsed.reportedAge ? parseAgeToDateOfBirth(parsed.reportedAge) : null);
 
-  // Questionnaire uses: "Male", "Female", "Male - Neutered", "Female - Spayed"
-  // Database uses: "Male", "Female", "Neutered", "Spayed", "Unknown"
-  if (normalized.includes('neutered')) return 'Neutered';
-  if (normalized.includes('spayed')) return 'Spayed';
-  if (normalized.includes('male')) return 'Male';
-  if (normalized.includes('female')) return 'Female';
-
-  return null;
-}
-
-/**
- * Compare pet record with questionnaire data
- */
-function comparePet(pet: Pet | null, questionnaireData: QuestionnaireData): FieldComparison[] {
-  const qPet = questionnaireData.pet;
-
-  const comparisons: FieldComparison[] = [
-    {
-      field: 'name',
-      label: 'Pet Name',
-      currentValue: pet?.name || null,
-      questionnaireValue: qPet.name,
-      status: compareValues(pet?.name || null, qPet.name),
-    },
-    {
-      field: 'species',
-      label: 'Species',
-      currentValue: pet?.species || null,
-      questionnaireValue: qPet.species,
-      status: compareValues(pet?.species || null, qPet.species),
-    },
-    {
-      field: 'breed',
-      label: 'Breed',
-      currentValue: pet?.breed || null,
-      questionnaireValue: qPet.breed || null,
-      status: compareValues(pet?.breed || null, qPet.breed || null),
-    },
-    {
-      field: 'sex',
-      label: 'Sex',
-      currentValue: pet?.sex || null,
-      questionnaireValue: mapSexValue(qPet.sex),
-      status: compareValues(pet?.sex || null, mapSexValue(qPet.sex)),
-    },
-    {
-      field: 'age',
-      label: 'Age (from questionnaire)',
-      currentValue: pet?.dateOfBirth || null,
-      questionnaireValue: qPet.age || null,
-      status: qPet.age ? 'new' : 'match', // Always show age as reference
-    },
-    {
-      field: 'weight',
-      label: 'Weight',
-      currentValue: null, // Not stored directly in pet record
-      questionnaireValue: qPet.weight || null,
-      status: qPet.weight ? 'new' : 'match',
-    },
+  return [
+    { field: 'name', label: 'Pet Name',
+      currentValue: pet?.name || null, questionnaireValue: parsed.name,
+      status: compareValues(pet?.name || null, parsed.name) },
+    { field: 'species', label: 'Species',
+      currentValue: pet?.species || null, questionnaireValue: parsed.species,
+      status: compareValues(pet?.species || null, parsed.species) },
+    { field: 'breed', label: 'Breed',
+      currentValue: pet?.breed || null, questionnaireValue: parsed.breed || null,
+      status: compareValues(pet?.breed || null, parsed.breed || null) },
+    { field: 'sex', label: 'Sex',
+      currentValue: pet?.sex || null, questionnaireValue: parsed.sex || null,
+      status: compareValues(pet?.sex || null, parsed.sex || null) },
+    { field: 'desexed', label: 'Desexed',
+      currentValue: pet?.desexed || null, questionnaireValue: parsed.desexed || null,
+      status: compareValues(pet?.desexed || null, parsed.desexed || null) },
+    { field: 'desexedDate', label: 'Desexed Date',
+      currentValue: pet?.desexedDate || null, questionnaireValue: parsed.desexedDate || null,
+      status: compareValues(pet?.desexedDate || null, parsed.desexedDate || null) },
+    { field: 'dateOfBirth', label: 'Date of Birth',
+      currentValue: dob, questionnaireValue: parsedDob,
+      status: compareValues(dob, parsedDob) },
+    { field: 'weightKg', label: 'Weight',
+      currentValue: weightStr(pet?.weightKg ?? null),
+      questionnaireValue: weightStr(parsed.weightKg ?? null),
+      status: compareValues(
+        weightStr(pet?.weightKg ?? null),
+        weightStr(parsed.weightKg ?? null)
+      ) },
+    { field: 'reportedAge', label: 'Reported Age',
+      currentValue: pet?.reportedAge || null, questionnaireValue: parsed.reportedAge || null,
+      status: compareValues(pet?.reportedAge || null, parsed.reportedAge || null) },
   ];
-
-  return comparisons;
 }
 
+// ============================================================================
+// Auto-match + top-level reconcile
+// ============================================================================
+
 /**
- * Reconcile questionnaire data with existing records
+ * Score each parsed pet against client's pets. Returns the best match if
+ * score ≥ 80 and no other candidate is within 10 points (unambiguous).
  */
+function autoMatchPet(parsed: ParsedPet, clientPets: Pet[]): Pet | null {
+  if (clientPets.length === 0) return null;
+  const scored = clientPets
+    .map((p) => ({ pet: p, score: scorePetMatch(parsed, p) }))
+    .sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  const second = scored[1];
+  if (best.score < 80) return null;
+  if (second && second.score >= best.score - 10) return null;
+  return best.pet;
+}
+
 export async function reconcileQuestionnaire(
   clientId: number,
   questionnaireFilePath: string
 ): Promise<ReconciliationResult> {
-  // Read questionnaire data
-  const questionnaireData = await readQuestionnaireFile(questionnaireFilePath);
+  const data = await readQuestionnaireFile(questionnaireFilePath);
 
-  // Get current client record
   const client = await getClientById(clientId);
-  if (!client) {
-    throw new Error(`Client not found: ${clientId}`);
-  }
+  if (!client) throw new Error(`Client not found: ${clientId}`);
 
-  // Get pet record (match by name from questionnaire)
-  const allPets = await getAllPets();
-  const clientPets = allPets.filter(p => p.clientId === clientId);
-  const pet = clientPets.find(p =>
-    normalizeString(p.name) === normalizeString(questionnaireData.pet.name)
-  ) || null;
+  const allClientPets = await getPetsByClientId(clientId);
+  const clientComparisons = compareClient(client, data);
 
-  // Compare records
-  const clientComparisons = compareClient(client, questionnaireData);
-  const petComparisons = comparePet(pet, questionnaireData);
-
-  // Check if there are any changes
-  const clientHasChanges = clientComparisons.some(c => c.status === 'new' || c.status === 'different');
-  const petHasChanges = petComparisons.some(c => c.status === 'new' || c.status === 'different');
+  const pets: PerPetReconciliation[] = (data.pets ?? []).map((parsedPet) => {
+    const matched = autoMatchPet(parsedPet, allClientPets);
+    const comparisons = comparePet(matched, parsedPet);
+    const hasChanges = comparisons.some((c) => c.status === 'new' || c.status === 'different');
+    return {
+      parsedPet,
+      targetPet: matched,
+      autoMatched: matched !== null,
+      comparisons,
+      hasChanges,
+    };
+  });
 
   return {
     client: {
       record: client,
       comparisons: clientComparisons,
-      hasChanges: clientHasChanges,
+      hasChanges: clientComparisons.some((c) => c.status === 'new' || c.status === 'different'),
     },
-    pet: {
-      record: pet,
-      comparisons: petComparisons,
-      hasChanges: petHasChanges,
-    },
-    questionnaireData,
+    allClientPets,
+    pets,
+    questionnaireData: data,
   };
 }
 
 /**
- * Apply selected updates to client record
+ * Recompute comparisons after the user picks a different target pet in the UI.
+ * Pure function — no DB reads.
  */
+export function recomputePetReconciliation(
+  parsedPet: ParsedPet,
+  targetPet: Pet | null
+): PerPetReconciliation {
+  const comparisons = comparePet(targetPet, parsedPet);
+  return {
+    parsedPet,
+    targetPet,
+    autoMatched: false,  // user-chosen
+    comparisons,
+    hasChanges: comparisons.some((c) => c.status === 'new' || c.status === 'different'),
+  };
+}
+
+// ============================================================================
+// Apply updates
+// ============================================================================
+
 export async function applyClientUpdates(
   client: Client,
   selectedFields: string[],
-  questionnaireData: QuestionnaireData
+  data: QuestionnaireData
 ): Promise<Client> {
   const updates: Record<string, any> = {};
-  const parsedAddress = parseAddress(questionnaireData.client.address);
-
+  const addr = parseAddress(data.client.address);
   for (const field of selectedFields) {
     switch (field) {
-      case 'firstName':
-        updates.firstName = questionnaireData.client.firstName;
-        break;
-      case 'lastName':
-        updates.lastName = questionnaireData.client.lastName;
-        break;
-      case 'email':
-        updates.email = questionnaireData.client.email;
-        break;
-      case 'mobile':
-        updates.mobile = questionnaireData.client.phone;
-        break;
-      case 'streetAddress':
-        updates.streetAddress = parsedAddress.streetAddress || undefined;
-        break;
-      case 'city':
-        updates.city = parsedAddress.city || undefined;
-        break;
-      case 'state':
-        updates.state = parsedAddress.state || undefined;
-        break;
-      case 'postcode':
-        updates.postcode = parsedAddress.postcode || undefined;
-        break;
+      case 'firstName': updates.firstName = data.client.firstName; break;
+      case 'lastName': updates.lastName = data.client.lastName; break;
+      case 'email': updates.email = data.client.email; break;
+      case 'mobile': updates.mobile = data.client.phone; break;
+      case 'streetAddress': if (addr.streetAddress) updates.streetAddress = addr.streetAddress; break;
+      case 'city': if (addr.city) updates.city = addr.city; break;
+      case 'state': if (addr.state) updates.state = addr.state; break;
+      case 'postcode': if (addr.postcode) updates.postcode = addr.postcode; break;
     }
   }
-
-  return await updateClient(client.clientId, updates);
+  return updateClient(client.clientId, updates);
 }
 
 /**
- * Apply selected updates to pet record
+ * Apply selected fields from `parsed` to an existing pet.
+ * DOB, when selected, uses explicit parsed.dateOfBirth if present, otherwise
+ * derives from reportedAge and flags approximate.
  */
-export async function applyPetUpdates(
+export async function applyPetUpdatesFromParsed(
   pet: Pet,
-  selectedFields: string[],
-  questionnaireData: QuestionnaireData
+  parsed: ParsedPet,
+  selectedFields: string[]
 ): Promise<Pet> {
   const updates: Record<string, any> = {};
-  const qPet = questionnaireData.pet;
-
   for (const field of selectedFields) {
     switch (field) {
-      case 'name':
-        updates.name = qPet.name;
-        break;
-      case 'species':
-        updates.species = qPet.species;
-        break;
-      case 'breed':
-        if (qPet.breed) updates.breed = qPet.breed;
-        break;
-      case 'sex':
-        const mappedSex = mapSexValue(qPet.sex);
-        if (mappedSex) updates.sex = mappedSex;
-        break;
-      case 'weight':
-        // Add weight to notes if provided
-        if (qPet.weight) {
-          const currentNotes = pet.notes || '';
-          const weightNote = `Weight: ${qPet.weight}`;
-          updates.notes = currentNotes ? `${currentNotes}\n${weightNote}` : weightNote;
+      case 'name': updates.name = parsed.name; break;
+      case 'species': updates.species = parsed.species; break;
+      case 'breed': if (parsed.breed) updates.breed = parsed.breed; break;
+      case 'sex': if (parsed.sex) updates.sex = parsed.sex; break;
+      case 'desexed': if (parsed.desexed) updates.desexed = parsed.desexed; break;
+      case 'desexedDate': if (parsed.desexedDate) updates.desexedDate = parsed.desexedDate; break;
+      case 'weightKg': if (parsed.weightKg != null) updates.weightKg = parsed.weightKg; break;
+      case 'reportedAge': if (parsed.reportedAge) updates.reportedAge = parsed.reportedAge; break;
+      case 'dateOfBirth': {
+        if (parsed.dateOfBirth) {
+          updates.dateOfBirth = parsed.dateOfBirth;
+          updates.dateOfBirthIsApproximate = 0;
+        } else if (parsed.reportedAge) {
+          const derived = parseAgeToDateOfBirth(parsed.reportedAge);
+          if (derived) {
+            updates.dateOfBirth = derived;
+            updates.dateOfBirthIsApproximate = 1;
+          }
         }
         break;
+      }
     }
   }
-
-  return await updatePet(pet.petId, updates);
+  return updatePet(pet.petId, updates);
 }
 
-/**
- * Create new pet from questionnaire data
- */
-export async function createPetFromQuestionnaire(
+/** Create a new pet from parsed data + the user's selected fields. */
+export async function createPetFromParsed(
   clientId: number,
-  selectedFields: string[],
-  questionnaireData: QuestionnaireData
+  parsed: ParsedPet,
+  selectedFields: string[]
 ): Promise<Pet> {
-  const qPet = questionnaireData.pet;
-  const petData: any = {
+  const data: any = {
     clientId,
-    name: '', // Will be set below if selected
-    species: '', // Will be set below if selected
+    name: parsed.name,          // always required
+    species: parsed.species,    // always required
   };
-
-  // Build notes from weight if selected
-  const notes: string[] = [];
-
   for (const field of selectedFields) {
     switch (field) {
-      case 'name':
-        petData.name = qPet.name;
-        break;
-      case 'species':
-        petData.species = qPet.species;
-        break;
-      case 'breed':
-        if (qPet.breed) petData.breed = qPet.breed;
-        break;
-      case 'sex':
-        const mappedSex = mapSexValue(qPet.sex);
-        if (mappedSex) petData.sex = mappedSex;
-        break;
-      case 'age':
-        // Convert age string to date of birth
-        if (qPet.age) {
-          const dob = parseAgeToDateOfBirth(qPet.age);
-          if (dob) petData.dateOfBirth = dob;
+      case 'breed': if (parsed.breed) data.breed = parsed.breed; break;
+      case 'sex': if (parsed.sex) data.sex = parsed.sex; break;
+      case 'desexed': if (parsed.desexed) data.desexed = parsed.desexed; break;
+      case 'desexedDate': if (parsed.desexedDate) data.desexedDate = parsed.desexedDate; break;
+      case 'weightKg': if (parsed.weightKg != null) data.weightKg = parsed.weightKg; break;
+      case 'reportedAge': if (parsed.reportedAge) data.reportedAge = parsed.reportedAge; break;
+      case 'dateOfBirth': {
+        if (parsed.dateOfBirth) {
+          data.dateOfBirth = parsed.dateOfBirth;
+          data.dateOfBirthIsApproximate = 0;
+        } else if (parsed.reportedAge) {
+          const derived = parseAgeToDateOfBirth(parsed.reportedAge);
+          if (derived) {
+            data.dateOfBirth = derived;
+            data.dateOfBirthIsApproximate = 1;
+          }
         }
         break;
-      case 'weight':
-        if (qPet.weight) {
-          notes.push(`Weight: ${qPet.weight}`);
-        }
-        break;
+      }
     }
   }
-
-  // Add notes if any
-  if (notes.length > 0) {
-    petData.notes = notes.join('\n');
-  }
-
-  return await createPet(petData);
+  return createPet(data);
 }

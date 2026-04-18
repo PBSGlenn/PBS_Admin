@@ -42,14 +42,19 @@ model Client {
 
 // Pet entity - Animal information linked to clients
 model Pet {
-  petId       Int      @id @default(autoincrement())
-  clientId    Int
-  name        String
-  species     String
-  breed       String?
-  sex         String?
-  dateOfBirth String?  // Stored as ISO 8601 string
-  notes       String?
+  petId                    Int      @id @default(autoincrement())
+  clientId                 Int
+  name                     String
+  species                  String
+  breed                    String?
+  sex                      String?  // "Male" | "Female" | "Unknown"
+  desexed                  String?  // "Yes" | "No" | "Unknown"
+  desexedDate              String?  // ISO 8601 date string
+  dateOfBirth              String?  // Stored as ISO 8601 string
+  dateOfBirthIsApproximate Int?     // 0 | 1 (SQLite has no boolean)
+  weightKg                 Float?
+  reportedAge              String?  // Owner-provided free-text age (latest questionnaire)
+  notes                    String?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -60,6 +65,18 @@ model Pet {
   // Indexes
   @@index([clientId])
   @@index([name])
+}
+
+// QuestionnaireLog - Atomic dedup for Jotform submission processing
+model QuestionnaireLog {
+  submissionId   String   @id
+  formId         String
+  status         String   // "processing" | "done" | "failed"
+  firstAttemptAt String
+  lastAttemptAt  String
+  errorMessage   String?
+
+  @@index([status])
 }
 
 // Event entity - Bookings, consultations, training sessions, etc.

@@ -7,9 +7,10 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
+import { Checkbox } from "../ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { createPet, updatePet } from "@/lib/services/petService";
-import { PET_SPECIES, PET_SEX } from "@/lib/types";
+import { PET_SPECIES, PET_SEX, PET_DESEXED } from "@/lib/types";
 import type { Pet, PetInput } from "@/lib/types";
 import { parseAgeToDateOfBirth, calculateAge } from "@/lib/utils/ageUtils";
 import { toast } from "sonner";
@@ -32,11 +33,15 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
     species: pet?.species || "",
     breed: pet?.breed || "",
     sex: pet?.sex || "",
+    desexed: pet?.desexed || "",
+    desexedDate: pet?.desexedDate || "",
     dateOfBirth: pet?.dateOfBirth || "",
+    dateOfBirthIsApproximate: pet?.dateOfBirthIsApproximate === 1,
+    weightKg: pet?.weightKg != null ? String(pet.weightKg) : "",
+    reportedAge: pet?.reportedAge || "",
     notes: pet?.notes || "",
   });
 
-  const [ageInput, setAgeInput] = useState("");
   const [calculatedDob, setCalculatedDob] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isFormValid, setIsFormValid] = useState(false);
@@ -95,6 +100,9 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
     if (!formData.species.trim()) {
       newErrors.species = "Species is required";
     }
+    if (formData.weightKg && isNaN(parseFloat(formData.weightKg))) {
+      newErrors.weightKg = "Weight must be a number";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -104,13 +112,21 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
+      const weightParsed = formData.weightKg ? parseFloat(formData.weightKg) : undefined;
       const input: PetInput = {
         clientId,
         name: formData.name.trim(),
         species: formData.species.trim(),
         breed: formData.breed.trim() || undefined,
         sex: formData.sex || undefined,
+        desexed: formData.desexed || undefined,
+        desexedDate: formData.desexed === "Yes" && formData.desexedDate ? formData.desexedDate : undefined,
         dateOfBirth: formData.dateOfBirth || undefined,
+        dateOfBirthIsApproximate: formData.dateOfBirth
+          ? (formData.dateOfBirthIsApproximate ? 1 : 0)
+          : undefined,
+        weightKg: weightParsed != null && !isNaN(weightParsed) ? weightParsed : undefined,
+        reportedAge: formData.reportedAge.trim() || undefined,
         notes: formData.notes.trim() || undefined,
       };
 
@@ -123,15 +139,15 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
   };
 
   // Handle field changes with real-time validation
-  const handleChange = (field: string, value: string) => {
+  const handleChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
     // Real-time validation for the field being changed
     let fieldError = "";
 
-    if (field === "name" && !value.trim()) {
+    if (field === "name" && typeof value === "string" && !value.trim()) {
       fieldError = "Pet name is required";
-    } else if (field === "species" && !value.trim()) {
+    } else if (field === "species" && typeof value === "string" && !value.trim()) {
       fieldError = "Species is required";
     }
 
@@ -141,9 +157,9 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
     }));
   };
 
-  // Handle age input and calculate DOB
-  const handleAgeInput = (value: string) => {
-    setAgeInput(value);
+  // Handle reported-age input and calculate DOB as a helper
+  const handleReportedAgeInput = (value: string) => {
+    setFormData(prev => ({ ...prev, reportedAge: value }));
 
     if (!value.trim()) {
       setCalculatedDob(null);
@@ -153,7 +169,10 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
     const dob = parseAgeToDateOfBirth(value);
     if (dob) {
       setCalculatedDob(dob);
-      setFormData(prev => ({ ...prev, dateOfBirth: dob }));
+      // Only auto-fill DOB if not already set — never clobber a user-entered DOB.
+      setFormData(prev => prev.dateOfBirth
+        ? prev
+        : { ...prev, dateOfBirth: dob, dateOfBirthIsApproximate: true });
     } else {
       setCalculatedDob(null);
     }
@@ -207,7 +226,7 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
         </div>
 
         {/* Breed */}
-        <div className="space-y-2">
+        <div className="space-y-2 col-span-2">
           <Label htmlFor="breed" className="text-sm">Breed</Label>
           <Input
             id="breed"
@@ -238,47 +257,120 @@ export function PetForm({ clientId, pet, onClose, onSave }: PetFormProps) {
           </Select>
         </div>
 
-        {/* Age Calculator */}
+        {/* Desexed */}
+        <div className="space-y-2">
+          <Label htmlFor="desexed" className="text-sm">Desexed</Label>
+          <Select
+            value={formData.desexed}
+            onValueChange={(value) => handleChange("desexed", value)}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              {PET_DESEXED.map(d => (
+                <SelectItem key={d} value={d}>
+                  {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Desexed Date — only when desexed=Yes */}
+        {formData.desexed === "Yes" && (
+          <div className="space-y-2 col-span-2">
+            <Label htmlFor="desexedDate" className="text-sm">
+              Desexed Date
+              <span className="text-xs text-muted-foreground ml-2">(optional)</span>
+            </Label>
+            <Input
+              id="desexedDate"
+              type="date"
+              value={formData.desexedDate}
+              onChange={(e) => handleChange("desexedDate", e.target.value)}
+              className="h-9"
+            />
+          </div>
+        )}
+
+        {/* Weight */}
         <div className="space-y-2 col-span-2">
-          <Label htmlFor="ageInput" className="text-sm">
-            Age (from questionnaire)
+          <Label htmlFor="weightKg" className="text-sm">
+            Weight (kg)
+            <span className="text-xs text-muted-foreground ml-2">e.g., 12.5</span>
+          </Label>
+          <Input
+            id="weightKg"
+            type="number"
+            step="0.1"
+            min="0"
+            value={formData.weightKg}
+            onChange={(e) => handleChange("weightKg", e.target.value)}
+            className={`h-9 ${errors.weightKg ? "border-destructive" : ""}`}
+            placeholder="Weight in kilograms"
+          />
+          {errors.weightKg && (
+            <p className="text-xs text-destructive">{errors.weightKg}</p>
+          )}
+        </div>
+
+        {/* Reported Age + DOB helper */}
+        <div className="space-y-2 col-span-2">
+          <Label htmlFor="reportedAge" className="text-sm">
+            Reported Age
             <span className="text-xs text-muted-foreground ml-2">
-              e.g., "2 years", "18 months", "12 weeks"
+              owner's words — e.g. "2 years", "18 months", "12 weeks"
             </span>
           </Label>
           <div className="relative">
             <Input
-              id="ageInput"
-              value={ageInput}
-              onChange={(e) => handleAgeInput(e.target.value)}
+              id="reportedAge"
+              value={formData.reportedAge}
+              onChange={(e) => handleReportedAgeInput(e.target.value)}
               className="h-9 pr-10"
-              placeholder="Enter age as provided by owner..."
+              placeholder="What did the owner report?"
             />
             <Calculator className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           </div>
           {calculatedDob && (
             <p className="text-xs text-muted-foreground">
-              Calculated DOB: {new Date(calculatedDob).toLocaleDateString('en-AU')}
+              Calculated approximate DOB: {new Date(calculatedDob).toLocaleDateString('en-AU')}
               {formData.dateOfBirth && ` (${calculateAge(formData.dateOfBirth)})`}
             </p>
           )}
         </div>
 
-        {/* Date of Birth */}
+        {/* Date of Birth + Approximate flag */}
         <div className="space-y-2 col-span-2">
           <Label htmlFor="dateOfBirth" className="text-sm">
             Date of Birth
             <span className="text-xs text-muted-foreground ml-2">
-              (auto-filled from age, can be manually adjusted)
+              (auto-filled from reported age; can be manually adjusted)
             </span>
           </Label>
-          <Input
-            id="dateOfBirth"
-            type="date"
-            value={formData.dateOfBirth}
-            onChange={(e) => handleChange("dateOfBirth", e.target.value)}
-            className="h-9"
-          />
+          <div className="flex items-center gap-4">
+            <Input
+              id="dateOfBirth"
+              type="date"
+              value={formData.dateOfBirth}
+              onChange={(e) => handleChange("dateOfBirth", e.target.value)}
+              className="h-9 flex-1"
+            />
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="dateOfBirthIsApproximate"
+                checked={formData.dateOfBirthIsApproximate}
+                onCheckedChange={(checked) =>
+                  handleChange("dateOfBirthIsApproximate", checked === true)
+                }
+                disabled={!formData.dateOfBirth}
+              />
+              <Label htmlFor="dateOfBirthIsApproximate" className="text-sm font-normal cursor-pointer">
+                Approximate
+              </Label>
+            </div>
+          </div>
         </div>
 
         {/* Notes */}

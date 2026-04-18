@@ -25,8 +25,13 @@ export interface Pet {
   name: string;
   species: string;
   breed: string | null;
-  sex: string | null;
-  dateOfBirth: string | null;
+  sex: string | null;                    // "Male" | "Female" | "Unknown"
+  desexed: string | null;                // "Yes" | "No" | "Unknown"
+  desexedDate: string | null;            // ISO 8601 date string
+  dateOfBirth: string | null;            // ISO 8601 date string
+  dateOfBirthIsApproximate: number | null; // 0 | 1 (SQLite boolean)
+  weightKg: number | null;
+  reportedAge: string | null;            // Owner-reported free-text age
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -158,9 +163,13 @@ export const PET_SPECIES = ["Dog", "Cat", "Bird", "Rabbit", "Other"] as const;
 
 export type PetSpecies = typeof PET_SPECIES[number];
 
-export const PET_SEX = ["Male", "Male Castrated", "Female", "Female Spayed", "Unknown"] as const;
+export const PET_SEX = ["Male", "Female", "Unknown"] as const;
 
 export type PetSex = typeof PET_SEX[number];
+
+export const PET_DESEXED = ["Yes", "No", "Unknown"] as const;
+
+export type PetDesexed = typeof PET_DESEXED[number];
 
 // Form Input Types
 
@@ -185,7 +194,12 @@ export interface PetInput {
   species: string;
   breed?: string;
   sex?: string;
+  desexed?: string;
+  desexedDate?: string;
   dateOfBirth?: string;
+  dateOfBirthIsApproximate?: number;
+  weightKg?: number;
+  reportedAge?: string;
   notes?: string;
 }
 

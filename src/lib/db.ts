@@ -48,6 +48,7 @@ export async function getDatabase(): Promise<Database> {
       // Apply any pending schema migrations not covered by Prisma (one-time)
       await applyPendingSchemaChanges(db);
       await applyPendingSchemaChanges_v2(db);
+      await applyPendingSchemaChanges_v3(db);
 
       // Upgrade stale custom prompt templates (one-time per version)
       await upgradePromptTemplates();
@@ -371,6 +372,101 @@ async function applyPendingSchemaChanges_v2(database: Database): Promise<void> {
   } catch (error) {
     logger.error("[DB] Schema changes v2 failed (non-fatal, will retry on next startup):", error);
     console.warn("[DB] Schema changes v2 failed:", error);
+  }
+}
+
+/**
+ * Schema changes v3: Structured pet fields (desexed split from sex, weight, reported age)
+ * and QuestionnaireLog table for atomic dedup.
+ *
+ * Sex value migration (rule order matters — most-specific first):
+ *   "Male Castrated"    → sex="Male",    desexed="Yes"
+ *   "Male Neutered"     → sex="Male",    desexed="Yes"
+ *   "Female Spayed"     → sex="Female",  desexed="Yes"
+ *   "Female Neutered"   → sex="Female",  desexed="Yes"
+ *   "Neutered" (legacy) → sex="Unknown", desexed="Yes"
+ *   "Spayed"   (legacy) → sex="Female",  desexed="Yes"
+ *   "Male"              → sex="Male",    desexed="Unknown"
+ *   "Female"            → sex="Female",  desexed="Unknown"
+ *   "Unknown" / null    → sex="Unknown", desexed="Unknown"
+ */
+async function applyPendingSchemaChanges_v3(database: Database): Promise<void> {
+  const SENTINEL = "_migration_schema_changes_v3";
+  const done = await getSetting(SENTINEL);
+  if (done) return;
+
+  logger.info("[DB] Applying pending schema changes v3 (Pet structured fields, QuestionnaireLog)...");
+
+  try {
+    // Pet: add new columns (idempotent via per-column try/catch)
+    const petColumns: Array<[string, string]> = [
+      ["desexed", "TEXT"],
+      ["desexedDate", "TEXT"],
+      ["dateOfBirthIsApproximate", "INTEGER"],
+      ["weightKg", "REAL"],
+      ["reportedAge", "TEXT"],
+    ];
+    for (const [col, type] of petColumns) {
+      try {
+        await database.execute(`ALTER TABLE Pet ADD COLUMN ${col} ${type}`);
+      } catch {
+        // Column already exists
+      }
+    }
+
+    // Data migration: split Pet.sex into sex + desexed
+    // Apply in order so later rules don't re-match earlier-migrated rows.
+    const sexMigrations: Array<{ match: string; sex: string; desexed: string }> = [
+      { match: "Male Castrated", sex: "Male", desexed: "Yes" },
+      { match: "Male Neutered", sex: "Male", desexed: "Yes" },
+      { match: "Female Spayed", sex: "Female", desexed: "Yes" },
+      { match: "Female Neutered", sex: "Female", desexed: "Yes" },
+      { match: "Neutered", sex: "Unknown", desexed: "Yes" },
+      { match: "Spayed", sex: "Female", desexed: "Yes" },
+      { match: "Male", sex: "Male", desexed: "Unknown" },
+      { match: "Female", sex: "Female", desexed: "Unknown" },
+    ];
+
+    let migrated = 0;
+    for (const rule of sexMigrations) {
+      // Only rows whose desexed is still null (haven't been migrated yet)
+      // AND whose sex exactly matches the old value
+      const result = await database.execute(
+        `UPDATE Pet SET sex = ?, desexed = ? WHERE sex = ? AND desexed IS NULL`,
+        [rule.sex, rule.desexed, rule.match]
+      );
+      migrated += result.rowsAffected ?? 0;
+    }
+
+    // Default unset: any remaining Pet with null desexed gets "Unknown"
+    await database.execute(
+      `UPDATE Pet SET desexed = 'Unknown' WHERE desexed IS NULL`
+    );
+    // Default unset: any Pet with null sex gets "Unknown"
+    await database.execute(
+      `UPDATE Pet SET sex = 'Unknown' WHERE sex IS NULL OR sex = ''`
+    );
+
+    // QuestionnaireLog: atomic dedup for Jotform submissions
+    await database.execute(`
+      CREATE TABLE IF NOT EXISTS QuestionnaireLog (
+        submissionId TEXT PRIMARY KEY,
+        formId TEXT NOT NULL,
+        status TEXT NOT NULL,
+        firstAttemptAt TEXT NOT NULL,
+        lastAttemptAt TEXT NOT NULL,
+        errorMessage TEXT
+      )
+    `);
+    await database.execute(
+      `CREATE INDEX IF NOT EXISTS "QuestionnaireLog_status_idx" ON "QuestionnaireLog"("status")`
+    );
+
+    await setSetting(SENTINEL, new Date().toISOString());
+    logger.info(`[DB] Schema changes v3 applied (${migrated} Pet sex rows migrated, QuestionnaireLog created)`);
+  } catch (error) {
+    logger.error("[DB] Schema changes v3 failed (non-fatal, will retry on next startup):", error);
+    console.warn("[DB] Schema changes v3 failed:", error);
   }
 }
 
