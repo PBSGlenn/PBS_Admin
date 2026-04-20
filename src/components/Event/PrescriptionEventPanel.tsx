@@ -2,9 +2,10 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FileText, FileCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +18,27 @@ import { getPetsByClientId } from "@/lib/services/petService";
 import { getClientById } from "@/lib/services/clientService";
 import { format } from "date-fns";
 import { getPrescriptionTemplate, processPrescriptionTemplate } from "@/lib/prescriptionTemplates";
+
+const CUSTOM_MEDICATION_ID = '__custom__';
+
+function buildCustomMedication(genericName: string, scheduleClass: string): Medication {
+  return {
+    id: CUSTOM_MEDICATION_ID,
+    genericName,
+    brandNames: [],
+    category: 'Other',
+    species: ['Both'],
+    doseRange: { min: 0, max: 0, unit: 'mg/kg' },
+    frequencyOptions: FREQUENCY_OPTIONS.map(f => f.label),
+    defaultFrequency: 'Twice daily',
+    description: 'Custom medication entered for this prescription.',
+    indications: [],
+    sideEffects: [],
+    contraindications: [],
+    notes: '',
+    scheduleClass: scheduleClass || undefined,
+  };
+}
 
 interface PrescriptionData {
   petId: string;
@@ -31,6 +53,8 @@ interface PrescriptionData {
   repeats: string; // e.g., "5"
   specialInstructions: string;
   petWeight?: string; // Optional: for dose calculations
+  useCustomDirections: boolean; // When true, use customDirections as free text on prescription
+  customDirections: string; // Free-text dosage & administration directions
 }
 
 export function PrescriptionEventPanel({
@@ -56,9 +80,15 @@ export function PrescriptionEventPanel({
     repeats: '5',
     specialInstructions: '',
     petWeight: '',
+    useCustomDirections: false,
+    customDirections: '',
   });
+  const [customGenericName, setCustomGenericName] = useState<string>('');
+  const [customScheduleClass, setCustomScheduleClass] = useState<string>('');
   const [docxFilePath, setDocxFilePath] = useState<string>('');
   const [pdfFilePath, setPdfFilePath] = useState<string>('');
+
+  const isCustomMedication = prescriptionData.medicationId === CUSTOM_MEDICATION_ID;
   const queryClient = useQueryClient();
 
   // Fetch client data
@@ -88,6 +118,16 @@ export function PrescriptionEventPanel({
 
   // Handle medication selection
   const handleMedicationChange = (medicationId: string) => {
+    if (medicationId === CUSTOM_MEDICATION_ID) {
+      const custom = buildCustomMedication(customGenericName, customScheduleClass);
+      setSelectedMedication(custom);
+      setPrescriptionData(prev => ({
+        ...prev,
+        medicationId: CUSTOM_MEDICATION_ID,
+        frequency: 'twice_daily',
+      }));
+      return;
+    }
     const medication = getMedicationById(medicationId);
     setSelectedMedication(medication || null);
     setPrescriptionData(prev => ({
@@ -95,6 +135,21 @@ export function PrescriptionEventPanel({
       medicationId,
       frequency: medication?.defaultFrequency.toLowerCase().replace(/ /g, '_') || 'twice_daily',
     }));
+  };
+
+  // Keep the synthetic custom medication in sync with the custom input fields
+  const handleCustomGenericNameChange = (value: string) => {
+    setCustomGenericName(value);
+    if (isCustomMedication) {
+      setSelectedMedication(buildCustomMedication(value, customScheduleClass));
+    }
+  };
+
+  const handleCustomScheduleChange = (value: string) => {
+    setCustomScheduleClass(value);
+    if (isCustomMedication) {
+      setSelectedMedication(buildCustomMedication(customGenericName, value));
+    }
   };
 
   // Calculate suggested dose based on weight
@@ -120,6 +175,10 @@ export function PrescriptionEventPanel({
         throw new Error("Missing required data for prescription generation");
       }
 
+      if (!selectedMedication.genericName.trim()) {
+        throw new Error("Please enter a Generic Name for the custom medication");
+      }
+
       // Load prescription template
       const template = await getPrescriptionTemplate();
 
@@ -139,12 +198,30 @@ export function PrescriptionEventPanel({
       // Use two spaces + newline for Pandoc hard line breaks
       const clientAddress = addressLines.join('  \n');
 
-      // Build dosage directions
-      const dosageDirections = `${prescriptionData.doseRate} ${prescriptionData.formulation.toLowerCase()} ${frequencyLabel.toLowerCase()}`;
+      // Build dosage directions (free text when custom, otherwise compose from structured fields)
+      const dosageDirections = prescriptionData.useCustomDirections
+        ? prescriptionData.customDirections.trim()
+        : `${prescriptionData.doseRate} ${prescriptionData.formulation.toLowerCase()} ${frequencyLabel.toLowerCase()}`;
+
+      if (!dosageDirections) {
+        throw new Error("Please enter dosage and administration directions");
+      }
+
+      // Combine dose concentration with formulation type (e.g. "5mg per tablet" + "Tablet" → "5mg tablet")
+      const formulationDisplay = (() => {
+        const conc = prescriptionData.doseConcentration.trim();
+        const formType = prescriptionData.formulation;
+        if (!conc) return formType;
+        // "5mg per tablet" → strip " per tablet" to get just the strength
+        const strength = conc.replace(/\s*per\s+\S+\s*$/i, '').trim();
+        // If the stripped strength already describes the form (e.g. "2mg/ml"), append form type
+        // Otherwise append form type as lowercase (e.g. "5mg" + "Tablet" → "5mg tablet")
+        return `${strength} ${formType.toLowerCase()}`;
+      })();
 
       // Prepare simple prescription summary for Event notes
       const prescriptionSummary = `Drug name: ${selectedMedication.genericName}
-Formulation: ${prescriptionData.formulation}
+Formulation: ${formulationDisplay}
 Dosage and directions: ${dosageDirections}
 FOR ANIMAL TREATMENT ONLY
 Quantity: ${prescriptionData.amountToDispense}
@@ -161,7 +238,7 @@ Number of repeats: ${prescriptionData.repeats}${prescriptionData.specialInstruct
         client_name: clientName,
         client_address: clientAddress,
         medication_name: selectedMedication.genericName,
-        formulation: prescriptionData.formulation,
+        formulation: formulationDisplay,
         dosage_directions: dosageDirections,
         amount_to_dispense: prescriptionData.amountToDispense,
         repeats: prescriptionData.repeats,
@@ -173,7 +250,12 @@ Number of repeats: ${prescriptionData.repeats}${prescriptionData.specialInstruct
 
       // Generate filename
       const consultationDate = format(new Date(formData.date || new Date()), "yyyyMMdd");
-      const docxFileName = `${clientSurname.toLowerCase()}_${consultationDate}_prescription_${selectedMedication.genericName.toLowerCase()}.docx`;
+      const medicationSlug = selectedMedication.genericName
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_-]/g, '');
+      const docxFileName = `${clientSurname.toLowerCase()}_${consultationDate}_prescription_${medicationSlug}.docx`;
       const docxFilePath = `${clientFolderPath}\\${docxFileName}`;
 
       // Call Tauri command to generate DOCX from processed template
@@ -337,6 +419,10 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
               <SelectValue placeholder="Choose medication..." />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={CUSTOM_MEDICATION_ID} className="text-[11px] italic">
+                ✏ Custom medication...
+              </SelectItem>
+              <SelectSeparator />
               {[...BEHAVIOR_MEDICATIONS]
                 .sort((a, b) => a.genericName.localeCompare(b.genericName))
                 .map((med) => (
@@ -351,7 +437,49 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
         {/* Show medication info and prescription controls only after medication is selected */}
         {selectedMedication && (
           <>
-            {/* Medication Information Display */}
+            {/* Custom Medication Editable Card */}
+            {isCustomMedication && (
+              <Card className="p-3 bg-amber-50 border-amber-200 space-y-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-xs">Custom Medication</h4>
+                  <Badge variant="outline" className="text-[10px]">Not in database</Badge>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  The Generic Name below is printed on the prescription. Dose-range guidance and drug info are not available for custom medications — double-check the dose manually.
+                </p>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Generic Name <span className="text-red-600">*</span></Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g., Methadone Hydrochloride"
+                    value={customGenericName}
+                    onChange={(e) => handleCustomGenericNameChange(e.target.value)}
+                    className="h-7 text-[11px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Schedule Class (optional)</Label>
+                  <Select
+                    value={customScheduleClass || 'none'}
+                    onValueChange={(value) => handleCustomScheduleChange(value === 'none' ? '' : value)}
+                  >
+                    <SelectTrigger className="h-7 text-[11px]">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none" className="text-[11px]">None</SelectItem>
+                      <SelectItem value="S2" className="text-[11px]">S2</SelectItem>
+                      <SelectItem value="S3" className="text-[11px]">S3</SelectItem>
+                      <SelectItem value="S4" className="text-[11px]">S4</SelectItem>
+                      <SelectItem value="S8" className="text-[11px]">S8</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </Card>
+            )}
+
+            {/* Medication Information Display (read-only, stock medications only) */}
+            {!isCustomMedication && (
             <Card className="p-3 bg-muted/50 space-y-2">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -399,6 +527,7 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
               </div>
             </div>
           </Card>
+            )}
 
             {/* Formulation Type */}
             <div className="space-y-1">
@@ -451,76 +580,145 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
 
             {/* Prescription Details Form */}
             <div className="space-y-2 pt-2">
-              <div className="grid grid-cols-2 gap-2">
-                {/* Pet Weight */}
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Pet Weight (kg)</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="e.g., 15.5"
-                    value={prescriptionData.petWeight}
-                    onChange={(e) => setPrescriptionData(prev => ({ ...prev, petWeight: e.target.value }))}
-                    className="h-7 text-[11px]"
-                  />
-                  {calculateSuggestedDose() && (
-                    <p className="text-[10px] text-muted-foreground">
-                      Suggested: {calculateSuggestedDose()}
+              {/* Custom dosage directions toggle */}
+              <div className="flex items-center gap-2 pb-1">
+                <Checkbox
+                  id="useCustomDirections"
+                  checked={prescriptionData.useCustomDirections}
+                  onCheckedChange={(checked) =>
+                    setPrescriptionData(prev => ({ ...prev, useCustomDirections: checked === true }))
+                  }
+                />
+                <label htmlFor="useCustomDirections" className="text-[10px] cursor-pointer select-none">
+                  Write custom dosage directions (free text, for tapers / PRN / complex schedules)
+                </label>
+              </div>
+
+              {prescriptionData.useCustomDirections ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Pet Weight */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Pet Weight (kg)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        placeholder="e.g., 15.5"
+                        value={prescriptionData.petWeight}
+                        onChange={(e) => setPrescriptionData(prev => ({ ...prev, petWeight: e.target.value }))}
+                        className="h-7 text-[11px]"
+                      />
+                      {calculateSuggestedDose() && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Suggested: {calculateSuggestedDose()}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Repeats */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Repeats</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="10"
+                        placeholder="e.g., 0"
+                        value={prescriptionData.repeats}
+                        onChange={(e) => setPrescriptionData(prev => ({ ...prev, repeats: e.target.value }))}
+                        className="h-7 text-[11px]"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Custom Dosage Directions */}
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">Dosage &amp; Administration Directions <span className="text-red-600">*</span></Label>
+                    <Textarea
+                      placeholder={`e.g., 5 tablets (25 mg) once daily with food for 7 days, then 3 tablets (15 mg) once daily for 7 days, then 1 tablet (5 mg) once daily for 7 days, then cease.`}
+                      value={prescriptionData.customDirections}
+                      onChange={(e) => setPrescriptionData(prev => ({ ...prev, customDirections: e.target.value }))}
+                      className="min-h-[90px] text-[11px]"
+                    />
+                    <p className="text-[9px] text-muted-foreground">
+                      This text is printed on the prescription exactly as written. Include formulation strength and duration if relevant.
                     </p>
-                  )}
-                </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Pet Weight */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Pet Weight (kg)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        placeholder="e.g., 15.5"
+                        value={prescriptionData.petWeight}
+                        onChange={(e) => setPrescriptionData(prev => ({ ...prev, petWeight: e.target.value }))}
+                        className="h-7 text-[11px]"
+                      />
+                      {calculateSuggestedDose() && (
+                        <p className="text-[10px] text-muted-foreground">
+                          Suggested: {calculateSuggestedDose()}
+                        </p>
+                      )}
+                    </div>
 
-                {/* Dose Rate */}
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Dose Rate</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    placeholder="e.g., 1, 0.5, 5"
-                    value={prescriptionData.doseRate}
-                    onChange={(e) => setPrescriptionData(prev => ({ ...prev, doseRate: e.target.value }))}
-                    className="h-7 text-[11px]"
-                    required
-                  />
-                </div>
-              </div>
+                    {/* Dose Rate */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Dose Rate</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        placeholder="e.g., 1, 0.5, 5"
+                        value={prescriptionData.doseRate}
+                        onChange={(e) => setPrescriptionData(prev => ({ ...prev, doseRate: e.target.value }))}
+                        className="h-7 text-[11px]"
+                        required
+                      />
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {/* Frequency */}
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Frequency</Label>
-                  <Select
-                    value={prescriptionData.frequency}
-                    onValueChange={(value) => setPrescriptionData(prev => ({ ...prev, frequency: value }))}
-                  >
-                    <SelectTrigger className="h-7 text-[11px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FREQUENCY_OPTIONS.map((freq) => (
-                        <SelectItem key={freq.value} value={freq.value} className="text-[11px]">
-                          {freq.label} ({freq.latinAbbr})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Frequency */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Frequency</Label>
+                      <Select
+                        value={prescriptionData.frequency}
+                        onValueChange={(value) => setPrescriptionData(prev => ({ ...prev, frequency: value }))}
+                      >
+                        <SelectTrigger className="h-7 text-[11px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FREQUENCY_OPTIONS.map((freq) => (
+                            <SelectItem key={freq.value} value={freq.value} className="text-[11px]">
+                              {freq.label} ({freq.latinAbbr})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                {/* Repeats */}
-                <div className="space-y-1">
-                  <Label className="text-[10px]">Repeats</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="10"
-                    placeholder="e.g., 5"
-                    value={prescriptionData.repeats}
-                    onChange={(e) => setPrescriptionData(prev => ({ ...prev, repeats: e.target.value }))}
-                    className="h-7 text-[11px]"
-                    required
-                  />
-                </div>
-              </div>
+                    {/* Repeats */}
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Repeats</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="10"
+                        placeholder="e.g., 5"
+                        value={prescriptionData.repeats}
+                        onChange={(e) => setPrescriptionData(prev => ({ ...prev, repeats: e.target.value }))}
+                        className="h-7 text-[11px]"
+                        required
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Special Instructions */}
               <div className="space-y-1">
@@ -538,7 +736,9 @@ ${prescriptionData.specialInstructions ? `<h3>Special Instructions</h3><p>${pres
       </div>
 
       {/* Action Buttons */}
-      {selectedMedication && prescriptionData.doseRate && (
+      {selectedMedication
+        && (prescriptionData.useCustomDirections ? prescriptionData.customDirections.trim() : prescriptionData.doseRate)
+        && (!isCustomMedication || customGenericName.trim()) && (
         <div className="space-y-2 pt-2 border-t">
           <div className="space-y-2">
             {/* Generate DOCX Button */}
