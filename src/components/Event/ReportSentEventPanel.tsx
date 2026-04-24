@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { invoke } from "@tauri-apps/api/core";
 import { calculateAge } from "@/lib/utils/ageUtils";
+import { buildSignalmentBlock } from "@/lib/utils/petSignalmentUtils";
 import type { EventSpecificPanelProps } from "./EventSpecificPanelProps";
 import { getEventsByClientId, updateEvent } from "@/lib/services/eventService";
 import { getPetsByClientId } from "@/lib/services/petService";
@@ -709,6 +710,12 @@ Return ONLY valid JSON array, no other text.`
       ].filter(Boolean);
       const clientAddress = clientAddressParts.join('\n');
 
+      // Authoritative signalment built from the Pet DB record(s).
+      // The client report MUST use this verbatim rather than extracting
+      // breed/sex/age/weight from the transcript or comprehensive clinical
+      // report, which may carry cautious in-room wording.
+      const signalment = pets.length > 0 ? buildSignalmentBlock(pets) : undefined;
+
       const reportParams = {
         clientName: clientName || "Unknown Client",
         petName: pet?.name || "Unknown Pet",
@@ -725,6 +732,7 @@ Return ONLY valid JSON array, no other text.`
         clientEmail: client?.email || undefined,
         // Pass comprehensive clinical notes as source of truth for client report
         comprehensiveClinicalReport: clinicalNotesContent || undefined,
+        signalment,
       };
 
       // Generate report

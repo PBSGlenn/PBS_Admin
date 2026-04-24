@@ -24,6 +24,15 @@ export interface ReportGenerationParams {
   clientPhone?: string;
   clientEmail?: string;
   comprehensiveClinicalReport?: string;
+  /**
+   * Authoritative per-pet signalment block, built from the Pet DB record.
+   * One line per pet, e.g.:
+   *   "Chase — American Staffordshire Terrier, Male Neutered, approximately 6 years old, 30 kg"
+   * When supplied, the client-report generator uses this verbatim for the
+   * header and does NOT extract signalment from the transcript or the
+   * comprehensive clinical report.
+   */
+  signalment?: string;
 }
 
 export interface ReportGenerationResult {
@@ -80,6 +89,7 @@ async function generateSingleReport(
     clientPhone: params.clientPhone,
     clientEmail: params.clientEmail,
     comprehensiveClinicalReport: params.comprehensiveClinicalReport,
+    signalment: params.signalment,
   });
 
   // Call Claude API with processed system prompt (variables injected)

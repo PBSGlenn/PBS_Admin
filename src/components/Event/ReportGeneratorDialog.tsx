@@ -9,6 +9,8 @@ import { Textarea } from "../ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { generateConsultationReports, estimateReportCost } from "@/lib/services/multiReportGenerationService";
 import { getClientById } from "@/lib/services/clientService";
+import { getPetsByClientId } from "@/lib/services/petService";
+import { buildSignalmentBlock } from "@/lib/utils/petSignalmentUtils";
 import { createEvent, getReportCreationEvents, deleteEvent, getReportSentEvents, updateEvent } from "@/lib/services/eventService";
 import { createTask } from "@/lib/services/taskService";
 import { convertReportToDocx, checkTemplateExists } from "@/lib/services/docxConversionService";
@@ -276,6 +278,12 @@ export function ReportGeneratorDialog({
       ].filter(Boolean);
       const clientAddress = clientAddressParts.join('\n');
 
+      // Authoritative per-pet signalment built from the Pet DB record(s).
+      // The client report uses this verbatim instead of extracting
+      // breed/sex/age/weight from the transcript or comprehensive report.
+      const clientPets = await getPetsByClientId(clientId);
+      const signalment = clientPets.length > 0 ? buildSignalmentBlock(clientPets) : undefined;
+
       // Generate all 3 reports in parallel
       const results = await generateConsultationReports(
         {
@@ -288,6 +296,7 @@ export function ReportGeneratorDialog({
           clientAddress: clientAddress || undefined,
           clientPhone: client?.mobile || undefined,
           clientEmail: client?.email || undefined,
+          signalment,
         },
         {
           generateComprehensive: true,

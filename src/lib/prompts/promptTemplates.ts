@@ -294,7 +294,7 @@ DOCUMENT STRUCTURE:
 
 ## 1. Header Block
 Client: [Full names]
-Pet: [Name, Age, Sex/Neuter status, Breed]
+Pet: [One line per pet — when an authoritative **Signalment** block is provided in the user prompt, copy each pet's line VERBATIM. Do NOT extract breed, sex/neuter status, age or weight from the transcript or comprehensive clinical report — the structured Signalment block is the single source of truth. If no Signalment block is provided, fall back to "[Name, Age, Sex/Neuter status, Breed]".]
 Date: [Consultation date]
 Consultation Type: [Zoom/In-home, Duration]
 
@@ -553,6 +553,7 @@ export async function generateUserPrompt(params: {
   clientPhone?: string;
   clientEmail?: string;
   comprehensiveClinicalReport?: string;
+  signalment?: string;
 }): Promise<{ userPrompt: string; processedSystemPrompt: string }> {
   const template = await getPromptTemplate(params.templateId);
 
@@ -579,9 +580,16 @@ export async function generateUserPrompt(params: {
   let prompt = `Generate a ${template.name.toLowerCase()} from the following consultation.\n\n`;
   prompt += `**Client:** ${params.clientName}\n`;
 
-  const petDetails = [params.petSpecies, params.petBreed, params.petAge, params.petSex]
-    .filter(Boolean).join(', ');
-  prompt += `**Pet:** ${params.petName} (${petDetails})\n`;
+  // Prefer the authoritative multi-pet signalment block (built from the Pet DB
+  // record) when present. Falls back to the legacy single-pet summary line
+  // only when no signalment was supplied.
+  if (params.signalment && params.signalment.trim()) {
+    prompt += `**Signalment (authoritative — source of truth for breed, sex/neuter status, age, weight):**\n${params.signalment.trim()}\n`;
+  } else {
+    const petDetails = [params.petSpecies, params.petBreed, params.petAge, params.petSex]
+      .filter(Boolean).join(', ');
+    prompt += `**Pet:** ${params.petName} (${petDetails})\n`;
+  }
   prompt += `**Date:** ${params.consultationDate}\n\n`;
 
   if (params.vetClinicName && template.id === 'vet-report') {
@@ -621,6 +629,10 @@ export async function generateUserPrompt(params: {
 
   if (params.comprehensiveClinicalReport && template.id === 'client-report') {
     prompt += `\n\nIMPORTANT: Use the Comprehensive Clinical Report as your primary source. Translate its clinical content into warm, client-friendly language. Flag any discrepancies between the clinical report and transcript with [⚠️ REVIEW: ...] markers.`;
+  }
+
+  if (params.signalment && template.id === 'client-report') {
+    prompt += `\n\nSIGNALMENT RULE: The Header block's pet line(s) MUST be copied verbatim from the **Signalment (authoritative)** data above. Do NOT extract breed, sex/neuter status, age, or weight from the transcript or comprehensive clinical report — those sources may contain cautious in-room wording ("neuter status not confirmed", "weight not recorded", "suspected breed") that has already been resolved in the structured record. If a field is absent from the signalment block, omit it rather than inventing or inferring. List each pet on its own line in the header exactly as provided.`;
   }
 
   return { userPrompt: prompt, processedSystemPrompt };
