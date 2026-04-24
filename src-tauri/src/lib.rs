@@ -460,6 +460,32 @@ fn get_templates_path() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn pandoc_docx_to_markdown(docx_path: String) -> Result<String, String> {
+    if !docx_path.to_lowercase().ends_with(".docx") {
+        return Err("Input file must be a .docx file".to_string());
+    }
+    if !std::path::Path::new(&docx_path).exists() {
+        return Err(format!("File not found: {}", docx_path));
+    }
+
+    let output = Command::new("pandoc")
+        .arg(&docx_path)
+        .arg("-f").arg("docx")
+        .arg("-t").arg("markdown")
+        .arg("--wrap=none")
+        .output()
+        .map_err(|e| format!("Failed to execute pandoc: {}. Is pandoc installed?", e))?;
+
+    if output.status.success() {
+        String::from_utf8(output.stdout)
+            .map_err(|e| format!("Pandoc returned non-UTF8 output: {}", e))
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Pandoc docx→markdown failed: {}", error_msg))
+    }
+}
+
+#[tauri::command]
 fn run_pandoc(input_path: String, output_path: String, template_path: Option<String>) -> Result<String, String> {
     // Validate input file extension
     let input_lower = input_path.to_lowercase();
@@ -1756,6 +1782,7 @@ pub fn run() {
             list_files,
             run_pandoc,
             run_pandoc_from_stdin,
+            pandoc_docx_to_markdown,
             convert_docx_to_pdf,
             generate_prescription_docx,
             save_temp_audio_file,

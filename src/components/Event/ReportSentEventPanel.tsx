@@ -453,7 +453,11 @@ export function ReportSentEventPanel({
     setExtractedTasks([]);
 
     try {
-      // Read comprehensive clinical report (.md)
+      // Read comprehensive clinical report and client report.
+      // Filename variants: comprehensive uses "comprehensive-clinical" OR "practitioner-report".
+      // Client uses "client-report". Both may be .md (native) or .docx (edited final).
+      // Versioned (_vN) and unversioned (finalised) variants both valid.
+      // Selection preference: unversioned finalised > highest version; .md > .docx.
       let comprehensiveContent = "";
       let clientReportContent = "";
       const dateStr = format(parseISO(consultation.date), "yyyyMMdd");
@@ -462,28 +466,61 @@ export function ReportSentEventPanel({
         { path: clientFolderPath }
       );
 
-      const comprehensiveMd = entries.find(f =>
+      const pickBest = (matches: Array<{ name: string }>) => {
+        if (matches.length === 0) return null;
+        const ranked = matches.map(f => {
+          const versionMatch = f.name.match(/_v(\d+)\.(md|docx)$/i);
+          const version = versionMatch ? parseInt(versionMatch[1], 10) : -1; // -1 = unversioned (finalised) → wins
+          const isMd = f.name.toLowerCase().endsWith(".md");
+          return { name: f.name, version, isMd };
+        });
+        ranked.sort((a, b) => {
+          if (a.version !== b.version) return a.version - b.version; // unversioned (-1) first, then lowest version
+          if (a.isMd !== b.isMd) return a.isMd ? -1 : 1; // .md wins
+          return 0;
+        });
+        // Unversioned (finalised) wins; otherwise pick highest version
+        const unversioned = ranked.find(r => r.version === -1);
+        if (unversioned) return unversioned;
+        return ranked[ranked.length - 1];
+      };
+
+      const readReportFile = async (fileName: string): Promise<string> => {
+        const fullPath = `${clientFolderPath}\\${fileName}`;
+        if (fileName.toLowerCase().endsWith(".md")) {
+          return await invoke<string>("read_text_file", { filePath: fullPath });
+        }
+        return await invoke<string>("pandoc_docx_to_markdown", { docxPath: fullPath });
+      };
+
+      const comprehensiveCandidates = entries.filter(f =>
         !f.isDirectory &&
         f.name.includes(dateStr) &&
-        f.name.includes("comprehensive-clinical") &&
-        f.name.endsWith(".md")
+        (f.name.includes("comprehensive-clinical") || f.name.includes("practitioner-report")) &&
+        (f.name.toLowerCase().endsWith(".md") || f.name.toLowerCase().endsWith(".docx"))
       );
-      if (comprehensiveMd) {
-        comprehensiveContent = await invoke<string>("read_text_file", {
-          filePath: `${clientFolderPath}\\${comprehensiveMd.name}`
-        });
+      const comprehensivePick = pickBest(comprehensiveCandidates);
+      if (comprehensivePick) {
+        try {
+          comprehensiveContent = await readReportFile(comprehensivePick.name);
+        } catch (err) {
+          console.warn(`Failed to read comprehensive report ${comprehensivePick.name}:`, err);
+        }
       }
 
-      const clientReportMd = entries.find(f =>
+      const clientReportCandidates = entries.filter(f =>
         !f.isDirectory &&
         f.name.includes(dateStr) &&
         f.name.includes("client-report") &&
-        f.name.endsWith(".md")
+        (f.name.toLowerCase().endsWith(".md") || f.name.toLowerCase().endsWith(".docx"))
       );
-      if (clientReportMd) {
-        clientReportContent = await invoke<string>("read_text_file", {
-          filePath: `${clientFolderPath}\\${clientReportMd.name}`
-        });
+      const clientReportPick = pickBest(clientReportCandidates);
+      if (clientReportPick) {
+        try {
+          clientReportContent = await readReportFile(clientReportPick.name);
+        } catch (err) {
+          console.warn(`Failed to read client report ${clientReportPick.name}:`, err);
+        }
       }
 
       if (!comprehensiveContent && !clientReportContent) {

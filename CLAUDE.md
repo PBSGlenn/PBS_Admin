@@ -68,7 +68,13 @@ git push origin --delete branch-name
 
 **Last Updated**: 2026-04-24
 
-**Recent Changes** (2026-04-24 — v0.4.2):
+**Recent Changes** (2026-04-24 — v0.4.3):
+- **Bug Fix — "Extract Tasks from Reports" failed on `.docx` reports**: The ReportSent panel's task extractor was narrower than its sibling display code. The display's `detectFiles()` scans for `comprehensive-clinical` OR `practitioner-report` across both `.md` and `.docx`, but the extractor only accepted `comprehensive-clinical` in `.md`. Cases where the practitioner report was named `*_practitioner-report_v1.docx`, or where the client report was finalised as an unversioned `*_client-report.docx` with the `.md` source discarded, tripped the narrow filter and produced a false "No report files found" toast even though the files were listed right above in the UI (repro: Jurcutz, client 46, event 357).
+- **New Rust command** [pandoc_docx_to_markdown](src-tauri/src/lib.rs): runs `pandoc -f docx -t markdown --wrap=none` and returns stdout. Lets the frontend read edited `.docx` reports as text for AI consumption without a temp-file round trip.
+- [ReportSentEventPanel.tsx](src/components/Event/ReportSentEventPanel.tsx) `handleExtractTasksFromReports` rewritten: accepts both comprehensive/practitioner name variants, accepts both `.md` and `.docx`, and picks the authoritative file via `pickBest()` — unversioned finalised beats highest `_vN`; `.md` beats `.docx` at equal version. `.md` files are read directly; `.docx` files go through the new pandoc command.
+- **Scope**: filename-pattern-matching retained rather than introducing a DB `reportType` column. This matches the detection logic the display already uses and avoids a larger refactor; future work may migrate both paths to a DB-backed source of truth.
+
+**Previous Changes** (2026-04-24 — v0.4.2):
 - **Bug Fix — Client Report Pet Signalment**: The client-report generator was extracting breed, sex/neuter status, age, and weight from the practitioner/comprehensive clinical report text rather than reading the Pet DB record directly. Cautious in-room wording (e.g., "suspected working dog cross, neuter status not confirmed") leaked into the client-facing report even when the Pet table held confirmed questionnaire-sourced values. The bug also affected multi-pet clients because only `pets[0]` was passed to the generator.
 - **New utility** [petSignalmentUtils.ts](src/lib/utils/petSignalmentUtils.ts): `formatSexAndDesexed`, `formatPetAge`, `buildPetSignalment`, `buildSignalmentBlock`. Handles both legacy combined sex values (`"Male Neutered"`, `"Female Spayed"`) and the v0.4.0 split schema (`sex` + `desexed`). Prefixes "approximately " when `dateOfBirthIsApproximate = 1`. Appends weight in kg. Produces one line per pet: `"Chase — American Staffordshire Terrier, Male Neutered, approximately 6 years old, 30 kg"`.
 - [multiReportGenerationService.ts](src/lib/services/multiReportGenerationService.ts): added optional `signalment` param to `ReportGenerationParams`; forwarded through `generateSingleReport`.
@@ -3584,4 +3590,4 @@ For technical questions or issues, refer to:
 ---
 
 **Last Updated**: 2026-04-24
-**Version**: 0.4.2 (Bug fix: client-report pet signalment now read from Pet DB record via `buildSignalmentBlock` rather than extracted from practitioner report text; fixes neuter-status and multi-pet leakage)
+**Version**: 0.4.3 (Bug fix: "Extract Tasks from Reports" now recognises `practitioner-report` filenames and reads `.docx` sources via the new `pandoc_docx_to_markdown` Rust command; was failing with a false "No report files found" toast on edited/finalised reports.)
