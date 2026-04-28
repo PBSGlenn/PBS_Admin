@@ -640,6 +640,138 @@ export async function syncAllWebsiteBookings(): Promise<{
 }
 
 /**
+ * Build the expected ISO timestamp from a Supabase booking row.
+ * Mirrors the date construction logic used by importWebsiteBooking so the
+ * drift detector compares apples to apples.
+ */
+function buildExpectedISO(consultationDate: string, consultationTime: string): string {
+  const timeWithSeconds = consultationTime.includes(':')
+    ? (consultationTime.split(':').length === 3 ? consultationTime : `${consultationTime}:00`)
+    : `${consultationTime}:00:00`;
+  const consultationDateTime = `${consultationDate}T${timeWithSeconds}`;
+  const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
+  return formatISO(zonedDate);
+}
+
+/**
+ * One row of detected drift between a Supabase booking and a PBS Admin event.
+ */
+export interface BookingDriftRow {
+  bookingReference: string;
+  bookingId: string;
+  eventId: number;
+  clientId: number;
+  customerName: string;
+  petName: string;
+  pbsAdminDate: string;             // raw ISO from Event.date
+  supabaseDate: string;             // raw ISO built from consultation_date + time
+  pbsAdminDateFormatted: string;    // human-readable
+  supabaseDateFormatted: string;    // human-readable
+  syncedToAdmin: boolean | null;
+  bookingStatus: string;
+}
+
+export interface BookingDriftReport {
+  totalBookingsChecked: number;
+  matchedEventsCount: number;
+  driftRows: BookingDriftRow[];
+  errors: string[];
+  generatedAt: string;
+}
+
+/**
+ * Detect drift between Supabase bookings and PBS Admin events.
+ *
+ * Read-only audit. Walks confirmed and completed bookings from Supabase, looks
+ * each up in the local DB by booking reference, and reports rows where the
+ * stored Event.date differs from the booking's current consultation_date+time.
+ *
+ * Catches: silent reschedules that the first-import-wins receiver missed (the
+ * synced_to_admin flag lies for these). Does not write anything.
+ */
+export async function detectBookingDrift(): Promise<BookingDriftReport> {
+  const errors: string[] = [];
+  const driftRows: BookingDriftRow[] = [];
+  let totalBookingsChecked = 0;
+  let matchedEventsCount = 0;
+
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .in('status', ['confirmed', 'completed'])
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      errors.push(`Supabase fetch failed: ${error.message}`);
+      return {
+        totalBookingsChecked,
+        matchedEventsCount,
+        driftRows,
+        errors,
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
+    const bookings = safeParseArray(
+      WebsiteBookingSchema,
+      data || [],
+      'Drift detection'
+    ) as WebsiteBooking[];
+    totalBookingsChecked = bookings.length;
+
+    for (const booking of bookings) {
+      try {
+        const event = await findEventByBookingReference(booking.booking_reference);
+        if (!event) continue;
+        matchedEventsCount += 1;
+
+        const expectedISO = buildExpectedISO(booking.consultation_date, booking.consultation_time);
+        const expectedTime = new Date(expectedISO).getTime();
+        const actualTime = new Date(event.date).getTime();
+
+        if (Number.isNaN(expectedTime) || Number.isNaN(actualTime)) {
+          errors.push(
+            `${booking.booking_reference}: invalid date(s) — expected=${expectedISO}, actual=${event.date}`
+          );
+          continue;
+        }
+
+        if (expectedTime !== actualTime) {
+          driftRows.push({
+            bookingReference: booking.booking_reference,
+            bookingId: booking.id,
+            eventId: event.eventId,
+            clientId: event.clientId,
+            customerName: booking.customer_name,
+            petName: booking.pet_name,
+            pbsAdminDate: event.date,
+            supabaseDate: expectedISO,
+            pbsAdminDateFormatted: format(new Date(event.date), 'd MMM yyyy HH:mm'),
+            supabaseDateFormatted: format(new Date(expectedISO), 'd MMM yyyy HH:mm'),
+            syncedToAdmin: booking.synced_to_admin,
+            bookingStatus: booking.status,
+          });
+        }
+      } catch (rowError) {
+        const msg = rowError instanceof Error ? rowError.message : String(rowError);
+        errors.push(`${booking.booking_reference}: ${msg}`);
+      }
+    }
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e));
+  }
+
+  return {
+    totalBookingsChecked,
+    matchedEventsCount,
+    driftRows,
+    errors,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Extract booking reference from event notes HTML
  * Looks for pattern: <strong>Booking Reference:</strong> PBS-XXX
  */

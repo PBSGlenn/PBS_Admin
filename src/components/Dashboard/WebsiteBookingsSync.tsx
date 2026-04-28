@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle, Bug, EyeOff } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle2, XCircle, AlertCircle, Bug, EyeOff, GitCompare, AlertTriangle } from 'lucide-react';
 import { LoadingSpinner } from '../ui/loading-spinner';
 import { Checkbox } from '../ui/checkbox';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -23,8 +23,10 @@ import {
   fetchUnsyncedBookings,
   syncAllWebsiteBookings,
   markBookingAsSynced,
+  detectBookingDrift,
   type WebsiteBooking,
   type BookingSyncResult,
+  type BookingDriftReport,
 } from '@/lib/services/bookingSyncService';
 import { diagnoseBookings } from '@/lib/services/diagnosticBookings';
 
@@ -38,6 +40,8 @@ export function WebsiteBookingsSync() {
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDismissConfirmOpen, setIsDismissConfirmOpen] = useState(false);
+  const [driftReport, setDriftReport] = useState<BookingDriftReport | null>(null);
+  const [detectingDrift, setDetectingDrift] = useState(false);
 
   // Fetch unsynced bookings on mount
   useEffect(() => {
@@ -114,6 +118,26 @@ export function WebsiteBookingsSync() {
     console.log('Check the browser console for detailed results');
   };
 
+  const handleDetectDrift = async () => {
+    setDetectingDrift(true);
+    setDriftReport(null);
+    try {
+      const report = await detectBookingDrift();
+      setDriftReport(report);
+    } catch (error) {
+      console.error('Drift detection failed:', error);
+      setDriftReport({
+        totalBookingsChecked: 0,
+        matchedEventsCount: 0,
+        driftRows: [],
+        errors: [error instanceof Error ? error.message : String(error)],
+        generatedAt: new Date().toISOString(),
+      });
+    } finally {
+      setDetectingDrift(false);
+    }
+  };
+
   const toggleSelection = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -183,6 +207,17 @@ export function WebsiteBookingsSync() {
           <Button
             size="sm"
             variant="outline"
+            onClick={handleDetectDrift}
+            disabled={detectingDrift}
+            className="h-7 text-xs"
+            title="Compare PBS Admin event dates against current Supabase consultation dates"
+          >
+            <GitCompare className={`h-3 w-3 mr-1 ${detectingDrift ? 'animate-pulse' : ''}`} />
+            {detectingDrift ? 'Checking...' : 'Detect Drift'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={loadBookings}
             disabled={loading}
             className="h-7 px-2"
@@ -243,6 +278,109 @@ export function WebsiteBookingsSync() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Drift results */}
+      {driftReport && (
+        <div className="space-y-1.5 p-2 bg-muted/50 rounded-md">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[10px] font-semibold flex items-center gap-1">
+              <GitCompare className="h-3 w-3" />
+              Drift Report
+            </h4>
+            <button
+              onClick={() => setDriftReport(null)}
+              className="text-[10px] text-muted-foreground hover:text-foreground"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            Checked {driftReport.totalBookingsChecked} bookings ·
+            matched {driftReport.matchedEventsCount} local events ·
+            <strong className={driftReport.driftRows.length > 0 ? 'text-amber-600 ml-1' : 'text-green-600 ml-1'}>
+              {driftReport.driftRows.length} drifted
+            </strong>
+            {driftReport.errors.length > 0 && (
+              <span className="text-red-600 ml-1">· {driftReport.errors.length} error(s)</span>
+            )}
+          </div>
+
+          {driftReport.driftRows.length === 0 && driftReport.errors.length === 0 && (
+            <div className="flex items-center gap-1.5 text-[11px] text-green-600">
+              <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+              No drift detected. PBS Admin event dates match Supabase consultation dates.
+            </div>
+          )}
+
+          {driftReport.driftRows.length > 0 && (
+            <div className="border rounded-md bg-background">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="h-7 text-[10px] py-1">Booking</TableHead>
+                    <TableHead className="h-7 text-[10px] py-1">Client / Pet</TableHead>
+                    <TableHead className="h-7 text-[10px] py-1">PBS Admin</TableHead>
+                    <TableHead className="h-7 text-[10px] py-1">Supabase</TableHead>
+                    <TableHead className="h-7 text-[10px] py-1">Flag</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {driftReport.driftRows.map((row) => (
+                    <TableRow key={row.eventId} className="h-9">
+                      <TableCell className="py-1 text-[10px]">
+                        <div className="font-mono">{row.bookingReference}</div>
+                        <div className="text-muted-foreground">
+                          event {row.eventId} · {row.bookingStatus}
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-1 text-[10px]">
+                        <div>{row.customerName}</div>
+                        <div className="text-muted-foreground">{row.petName}</div>
+                      </TableCell>
+                      <TableCell className="py-1 text-[10px] text-amber-700">
+                        {row.pbsAdminDateFormatted}
+                      </TableCell>
+                      <TableCell className="py-1 text-[10px] text-green-700">
+                        {row.supabaseDateFormatted}
+                      </TableCell>
+                      <TableCell className="py-1">
+                        {row.syncedToAdmin === true ? (
+                          <Badge variant="destructive" className="text-[9px] h-4 px-1" title="Lying flag — claims synced but data is stale">
+                            <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+                            true
+                          </Badge>
+                        ) : row.syncedToAdmin === false ? (
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1">
+                            false
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[9px] h-4 px-1">
+                            null
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {driftReport.errors.length > 0 && (
+            <details className="text-[10px]">
+              <summary className="cursor-pointer text-red-600 font-semibold">
+                Errors ({driftReport.errors.length})
+              </summary>
+              <ul className="mt-1 ml-4 list-disc text-red-700">
+                {driftReport.errors.map((err, idx) => (
+                  <li key={idx} className="leading-tight">{err}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 
