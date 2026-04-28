@@ -182,11 +182,21 @@ export function EventForm({
       // Convert datetime-local format to ISO 8601
       const dateISO = new Date(formData.date).toISOString();
 
+      // ReportSentEventPanel requires the event to exist before its delivery UI
+      // becomes operational, so users routinely click Create with empty notes to
+      // unlock the right panel. If the workflow is then abandoned, a notes=NULL
+      // placeholder is left behind. Write a visible "pending" stub for new
+      // ReportSent events so the orphan is never invisible in the events table.
+      const trimmedNotes = formData.notes.trim();
+      const isCreatingReportSent = !isEditing && formData.eventType.trim() === "ReportSent";
+      const notesValue = trimmedNotes
+        || (isCreatingReportSent ? "<p><em>Pending report delivery — awaiting send action</em></p>" : undefined);
+
       const input: EventInput = {
         clientId,
         eventType: formData.eventType.trim() as any,
         date: dateISO,
-        notes: formData.notes.trim() || undefined,
+        notes: notesValue,
       };
 
       if (isEditing) {
