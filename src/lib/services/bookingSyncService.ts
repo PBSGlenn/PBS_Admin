@@ -20,8 +20,8 @@ import {
 } from './eventService';
 import { onEventCreated } from '../automation/engine';
 import type { Client, Pet } from '../types';
-import { formatISO, format } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { format } from 'date-fns';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import { invoke } from '@tauri-apps/api/core';
 import { WebsiteBookingSchema, safeParseArray } from '../schemas';
 
@@ -374,15 +374,7 @@ export async function importWebsiteBooking(
   // Step 4: Create Booking/TrainingSession event
   let bookingEventId: number | undefined;
   try {
-    const timeWithSeconds = booking.consultation_time.includes(':')
-      ? (booking.consultation_time.split(':').length === 3
-          ? booking.consultation_time
-          : `${booking.consultation_time}:00`)
-      : `${booking.consultation_time}:00:00`;
-
-    const consultationDateTime = `${booking.consultation_date}T${timeWithSeconds}`;
-    const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
-    const isoDate = formatISO(zonedDate);
+    const isoDate = buildExpectedISO(booking.consultation_date, booking.consultation_time);
 
     // For package sessions, show per-session rate instead of $0
     const isPackageSession = !!booking.training_package_id;
@@ -640,17 +632,29 @@ export async function syncAllWebsiteBookings(): Promise<{
 }
 
 /**
- * Build the expected ISO timestamp from a Supabase booking row.
- * Mirrors the date construction logic used by importWebsiteBooking so the
- * drift detector compares apples to apples.
+ * Build a Melbourne-anchored ISO timestamp from a Supabase booking's
+ * naive `consultation_date` + `consultation_time`.
+ *
+ * `fromZonedTime` parses the naive string as Melbourne wall-clock (so
+ * `new Date()` runtime-locale interpretation does not leak in) and
+ * `formatInTimeZone` writes the output with a Melbourne offset
+ * regardless of where the process runs. This replaced an earlier
+ * `formatISO(toZonedTime(new Date(...)))` chain that produced an
+ * `Asia/Tokyo` (+09:00) offset on Event 251 (Goss/Dusty PBS-HWWVOMY2)
+ * when the import ran on a non-Melbourne runtime — see meeting-room
+ * thread b8f13540.
+ *
+ * Used by both `importWebsiteBooking` (writes Event.date) and
+ * `detectBookingDrift` (compares Event.date against the booking) so
+ * both sides agree on the canonical instant, locale-independent.
  */
 function buildExpectedISO(consultationDate: string, consultationTime: string): string {
   const timeWithSeconds = consultationTime.includes(':')
     ? (consultationTime.split(':').length === 3 ? consultationTime : `${consultationTime}:00`)
     : `${consultationTime}:00:00`;
   const consultationDateTime = `${consultationDate}T${timeWithSeconds}`;
-  const zonedDate = toZonedTime(new Date(consultationDateTime), TIMEZONE);
-  return formatISO(zonedDate);
+  const utcInstant = fromZonedTime(consultationDateTime, TIMEZONE);
+  return formatInTimeZone(utcInstant, TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX");
 }
 
 /**
