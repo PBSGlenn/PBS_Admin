@@ -92,7 +92,9 @@
       "Read(//c/Users/grubb/AppData/Local/PBS Admin/**)",
       "Read(//c/Program Files/**)",
       "Read(//c/Program Files \\(x86\\)/**)",
-      "Bash(python -m json.tool)"
+      "Bash(python -m json.tool)",
+      "Bash(grep '\"\"version\"\"' src-tauri/tauri.conf.json)",
+      "Bash(gh release:*)"
     ],
     "deny": [],
     "ask": [],

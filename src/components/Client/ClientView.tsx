@@ -17,9 +17,10 @@ import { EventsTable } from "../Event/EventsTable";
 import { TasksTable } from "../Task/TasksTable";
 import { FolderCreationDialog } from "./FolderCreationDialog";
 import { FolderSuccessDialog } from "./FolderSuccessDialog";
+import { ClientHistoryDialog } from "./ClientHistoryDialog";
 import { formatAustralianMobile, getRawPhoneNumber } from "@/lib/utils/phoneUtils";
 import { AUSTRALIAN_STATES } from "@/lib/constants";
-import { ArrowLeft, Save, Folder, FolderOpen, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Save, Folder, FolderOpen, CheckCircle2, ClipboardList } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useUnsavedChanges } from "@/hooks/useUnsavedChanges";
@@ -101,6 +102,9 @@ export function ClientView({ client, onClose, windowId }: ClientViewProps) {
   const [createdFolderPath, setCreatedFolderPath] = useState<string>("");
   const [defaultBasePath, setDefaultBasePath] = useState<string>("");
   const [currentFolderPath, setCurrentFolderPath] = useState<string>(client?.folderPath || "");
+
+  // History export dialog
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
 
   // Load default folder path on mount
   useEffect(() => {
@@ -457,25 +461,38 @@ export function ClientView({ client, onClose, windowId }: ClientViewProps) {
 
             {/* Form Actions */}
             <div className="flex justify-between gap-2 pt-1.5">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleFolderButtonClick}
-                size="sm"
-                className="h-7 text-[11px]"
-              >
-                {currentFolderPath ? (
-                  <>
-                    <FolderOpen className="h-3 w-3 mr-1" />
-                    Open Folder
-                  </>
-                ) : (
-                  <>
-                    <Folder className="h-3 w-3 mr-1" />
-                    Create or Change Client Folder
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleFolderButtonClick}
+                  size="sm"
+                  className="h-7 text-[11px]"
+                >
+                  {currentFolderPath ? (
+                    <>
+                      <FolderOpen className="h-3 w-3 mr-1" />
+                      Open Folder
+                    </>
+                  ) : (
+                    <>
+                      <Folder className="h-3 w-3 mr-1" />
+                      Create or Change Client Folder
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowHistoryDialog(true)}
+                  size="sm"
+                  className="h-7 text-[11px]"
+                  title="Export patient history to send to client, vet, or other party"
+                >
+                  <ClipboardList className="h-3 w-3 mr-1" />
+                  Generate History
+                </Button>
+              </div>
               <Button
                 type="submit"
                 disabled={!hasChanges || saveMutation.isPending || showSaveSuccess}
@@ -533,6 +550,14 @@ export function ClientView({ client, onClose, windowId }: ClientViewProps) {
         open={showSuccessDialog}
         folderPath={createdFolderPath}
         onClose={handleSuccessClose}
+      />
+
+      {/* Patient History Export Dialog */}
+      <ClientHistoryDialog
+        open={showHistoryDialog}
+        onClose={() => setShowHistoryDialog(false)}
+        client={client}
+        clientFolderPath={currentFolderPath}
       />
 
       {/* Unsaved Changes Dialog */}
