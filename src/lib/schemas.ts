@@ -45,6 +45,13 @@ export const WebsiteBookingSchema = z.object({
   updated_at: z.string(),
   synced_to_admin: z.boolean().nullable(),
   training_package_id: z.string().nullable().optional(),
+  // Reschedule tracking — populated by the website's reschedule code path.
+  // rescheduled_count > 0 is the authoritative signal that Supabase has the canonical
+  // booking time. Receiver-side reconciliation (Ship B) gates on this to avoid
+  // overwriting PBS Admin manual edits when no website-side reschedule has occurred.
+  rescheduled_count: z.number().int().nullable().optional(),
+  original_consultation_date: z.string().nullable().optional(),
+  original_consultation_time: z.string().nullable().optional(),
 });
 
 export type WebsiteBookingValidated = z.infer<typeof WebsiteBookingSchema>;

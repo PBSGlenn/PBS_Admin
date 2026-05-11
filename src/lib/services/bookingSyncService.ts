@@ -17,6 +17,8 @@ import {
 import {
   createEvent,
   findEventByBookingReference,
+  findOrphanEventByClientAndDate,
+  updateEvent,
 } from './eventService';
 import { onEventCreated } from '../automation/engine';
 import type { Client, Pet } from '../types';
@@ -65,6 +67,12 @@ export interface WebsiteBooking {
   updated_at: string;
   synced_to_admin: boolean | null; // Flag to track if synced
   training_package_id: string | null; // UUID linking to training_packages table
+  // Reschedule tracking. Authoritative signal: rescheduled_count > 0 means the website's
+  // reschedule code path has run and Supabase holds the canonical time. Used by Ship B
+  // reconciliation to gate which drifted rows are safe to write back to PBS Admin.
+  rescheduled_count?: number | null;
+  original_consultation_date?: string | null;
+  original_consultation_time?: string | null;
 }
 
 /**
@@ -277,6 +285,30 @@ export async function importWebsiteBooking(
     booking.customer_phone
   );
   const isNewClient = !existingClient;
+
+  // Orphan-bookingRef fallback (Ship B): if the client already exists and has an Event
+  // around this consultation time with NULL bookingReference, adopt it by writing the
+  // bookingRef back rather than creating a duplicate. Catches the Mushin PBS-G7QQ1VOS
+  // pattern: pre-bookingRef-propagation event entered manually, then a website booking
+  // for the same consult arrives later.
+  if (existingClient) {
+    const expectedISO = buildExpectedISO(booking.consultation_date, booking.consultation_time);
+    const orphan = await findOrphanEventByClientAndDate(existingClient.clientId, expectedISO, 1);
+    if (orphan) {
+      logger.info(`[BookingSync] ADOPT: Orphan event ${orphan.eventId} (NULL bookingRef) matched ${booking.booking_reference} for client ${existingClient.clientId}; writing bookingRef back`);
+      await updateEvent(orphan.eventId, { bookingReference: booking.booking_reference });
+      return {
+        success: true,
+        bookingId: booking.id,
+        bookingReference: booking.booking_reference,
+        clientName: booking.customer_name,
+        petName: booking.pet_name,
+        isNewClient: false,
+        bookingEventId: orphan.eventId,
+        clientId: existingClient.clientId,
+      };
+    }
+  }
 
   // Step 1: Create or update client
   let client: Client;
@@ -673,6 +705,7 @@ export interface BookingDriftRow {
   supabaseDateFormatted: string;    // human-readable
   syncedToAdmin: boolean | null;
   bookingStatus: string;
+  rescheduledCount: number;         // Authoritative reconcile gate — see WebsiteBooking
 }
 
 export interface BookingDriftReport {
@@ -755,6 +788,7 @@ export async function detectBookingDrift(): Promise<BookingDriftReport> {
             supabaseDateFormatted: format(new Date(expectedISO), 'd MMM yyyy HH:mm'),
             syncedToAdmin: booking.synced_to_admin,
             bookingStatus: booking.status,
+            rescheduledCount: booking.rescheduled_count ?? 0,
           });
         }
       } catch (rowError) {
@@ -872,4 +906,122 @@ export async function markConsultationComplete(
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+/**
+ * Outcome of attempting to reconcile a single drifted booking back onto its PBS Admin event.
+ *
+ * `status` values:
+ * - `reconciled` — Event.date was updated to match Supabase, audit Note written
+ * - `skipped-no-reschedule` — rescheduled_count was 0; PBS Admin value preserved (Captain's
+ *   manual edit, or an importer-side bug like the Event 251 +09 JST leak, neither of which
+ *   the receiver should silently overwrite)
+ * - `error` — update failed; original date intact
+ */
+export interface ReconciliationResult {
+  bookingReference: string;
+  eventId: number;
+  clientId: number;
+  customerName: string;
+  beforeDate: string;
+  afterDate: string;
+  beforeDateFormatted: string;
+  afterDateFormatted: string;
+  rescheduledCount: number;
+  status: 'reconciled' | 'skipped-no-reschedule' | 'error';
+  error?: string;
+  auditNoteEventId?: number;
+}
+
+/**
+ * Reconcile a single drifted booking: update Event.date to match Supabase, and write an
+ * audit-trail Note event linked to the same client. Ship B's main write path.
+ *
+ * Gates on `rescheduled_count > 0` unless `options.force === true`. This is the defensive
+ * choice against the "lying flag" failure mode: `rescheduled_count` is incremented by the
+ * website's reschedule code path, so >0 is a positive signal that Supabase holds the
+ * canonical time. =0 with drift means something else moved the dates apart — Captain
+ * editing in PBS Admin, an importer bug, etc. — and B should not stomp it. Force is
+ * provided as an escape hatch for explicit operator remediation.
+ *
+ * Bypasses automation engine on purpose. `updateEvent` writes directly to SQLite and
+ * does not call `onEventUpdated`, so booking-questionnaire tasks etc. aren't re-fired
+ * by a date change. The audit Note is created via `createEvent` and DOES fire
+ * `event.created` automation rules, but none of them condition on eventType='Note' so
+ * the net effect is a no-op trigger (cheap; not worth a separate skip path).
+ */
+export async function reconcileBookingDate(
+  row: BookingDriftRow,
+  options: { force?: boolean } = {}
+): Promise<ReconciliationResult> {
+  const base = {
+    bookingReference: row.bookingReference,
+    eventId: row.eventId,
+    clientId: row.clientId,
+    customerName: row.customerName,
+    beforeDate: row.pbsAdminDate,
+    afterDate: row.supabaseDate,
+    beforeDateFormatted: row.pbsAdminDateFormatted,
+    afterDateFormatted: row.supabaseDateFormatted,
+    rescheduledCount: row.rescheduledCount,
+  };
+
+  if (!options.force && row.rescheduledCount === 0) {
+    logger.info(`[Reconcile] SKIP ${row.bookingReference} (rescheduled_count=0, no force)`);
+    return { ...base, status: 'skipped-no-reschedule' };
+  }
+
+  try {
+    await updateEvent(row.eventId, { date: row.supabaseDate });
+
+    const auditNote = await createEvent({
+      clientId: row.clientId,
+      eventType: 'Note',
+      date: new Date().toISOString(),
+      notes: `<p><strong>Booking rescheduled via website — auto-reconciled by Ship B.</strong></p>\n<ul>\n  <li><strong>Booking ref:</strong> ${row.bookingReference}</li>\n  <li><strong>Event:</strong> ${row.eventId}</li>\n  <li><strong>Before:</strong> ${row.pbsAdminDateFormatted}</li>\n  <li><strong>After:</strong> ${row.supabaseDateFormatted}</li>\n  <li><strong>Reschedule count (Supabase):</strong> ${row.rescheduledCount}</li>\n  ${options.force ? '<li><em>Force-applied (rescheduled_count gate bypassed)</em></li>' : ''}\n</ul>`,
+      calendlyEventUri: undefined,
+      calendlyStatus: undefined,
+      invoiceFilePath: undefined,
+      hostedInvoiceUrl: undefined,
+      parentEventId: undefined,
+    });
+
+    logger.info(`[Reconcile] OK ${row.bookingReference}: event ${row.eventId} ${row.pbsAdminDateFormatted} → ${row.supabaseDateFormatted}; audit note ${auditNote.eventId}`);
+    return { ...base, status: 'reconciled', auditNoteEventId: auditNote.eventId };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.error(`[Reconcile] FAIL ${row.bookingReference}: ${msg}`);
+    return { ...base, status: 'error', error: msg };
+  }
+}
+
+/**
+ * Reconcile a batch of drift rows. Iterates sequentially (sub-second per row at our
+ * scale; not worth parallelising). Returns a summary plus per-row results so the UI
+ * can show what landed.
+ */
+export async function reconcileAllDrift(
+  driftRows: BookingDriftRow[],
+  options: { force?: boolean } = {}
+): Promise<{
+  total: number;
+  reconciled: number;
+  skipped: number;
+  errors: number;
+  results: ReconciliationResult[];
+}> {
+  const results: ReconciliationResult[] = [];
+  let reconciled = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const row of driftRows) {
+    const result = await reconcileBookingDate(row, options);
+    results.push(result);
+    if (result.status === 'reconciled') reconciled++;
+    else if (result.status === 'error') errors++;
+    else skipped++;
+  }
+
+  return { total: driftRows.length, reconciled, skipped, errors, results };
 }

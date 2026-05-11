@@ -209,6 +209,52 @@ export async function findEventByBookingReference(bookingReference: string): Pro
 }
 
 /**
+ * Find an existing event with NULL bookingReference whose date is within ±toleranceDays
+ * of `isoTimestamp`. Used as the orphan-bookingRef fallback in `importWebsiteBooking`:
+ * some early-production events were created manually before booking-ref propagation
+ * was wired, so a booking that maps to a real consult in PBS Admin can't be found by
+ * `findEventByBookingReference`. Matching by (clientId, date proximity, NULL bookingRef)
+ * lets the importer adopt those orphans by writing the bookingRef back, rather than
+ * creating a duplicate Event.
+ *
+ * Known case from the 28 Apr audit: Mushin PBS-G7QQ1VOS → Event 194 (Consultation, NULL
+ * bookingRef, off by ~20h from the booking time — retroactive manual entry).
+ *
+ * Only considers Booking / TrainingSession / Consultation events — Notes and Email events
+ * shouldn't ever be confused with a booking. Returns the temporally closest match if
+ * multiple candidates fall in the window, or null.
+ */
+export async function findOrphanEventByClientAndDate(
+  clientId: number,
+  isoTimestamp: string,
+  toleranceDays = 1
+): Promise<Event | null> {
+  const target = new Date(isoTimestamp);
+  if (Number.isNaN(target.getTime())) return null;
+
+  const ms = toleranceDays * 24 * 60 * 60 * 1000;
+  const windowStart = new Date(target.getTime() - ms).toISOString();
+  const windowEnd = new Date(target.getTime() + ms).toISOString();
+
+  const candidates = await query<Event>(`
+    SELECT * FROM Event
+    WHERE clientId = ?
+      AND bookingReference IS NULL
+      AND eventType IN ('Booking', 'TrainingSession', 'Consultation')
+      AND date >= ?
+      AND date <= ?
+  `, [clientId, windowStart, windowEnd]);
+
+  if (candidates.length === 0) return null;
+  candidates.sort(
+    (a, b) =>
+      Math.abs(new Date(a.date).getTime() - target.getTime()) -
+      Math.abs(new Date(b.date).getTime() - target.getTime())
+  );
+  return candidates[0];
+}
+
+/**
  * Get report creation events for consolidation
  * Finds intermediate report events (Generated, Converted to DOCX, Converted to PDF)
  */
