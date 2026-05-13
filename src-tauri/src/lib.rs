@@ -460,6 +460,28 @@ fn get_templates_path() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn pdf_to_text(pdf_path: String) -> Result<String, String> {
+    if !pdf_path.to_lowercase().ends_with(".pdf") {
+        return Err("Input file must be a .pdf file".to_string());
+    }
+    if !std::path::Path::new(&pdf_path).exists() {
+        return Err(format!("File not found: {}", pdf_path));
+    }
+
+    let bytes = fs::read(&pdf_path)
+        .map_err(|e| format!("Failed to read PDF: {}", e))?;
+
+    let text = pdf_extract::extract_text_from_mem(&bytes)
+        .map_err(|e| format!("Failed to extract text from PDF: {}", e))?;
+
+    if text.trim().is_empty() {
+        return Err("PDF contained no extractable text (it may be scanned/image-based)".to_string());
+    }
+
+    Ok(text)
+}
+
+#[tauri::command]
 fn pandoc_docx_to_markdown(docx_path: String) -> Result<String, String> {
     if !docx_path.to_lowercase().ends_with(".docx") {
         return Err("Input file must be a .docx file".to_string());
@@ -1783,6 +1805,7 @@ pub fn run() {
             run_pandoc,
             run_pandoc_from_stdin,
             pandoc_docx_to_markdown,
+            pdf_to_text,
             convert_docx_to_pdf,
             generate_prescription_docx,
             save_temp_audio_file,

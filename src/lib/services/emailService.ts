@@ -16,7 +16,7 @@ const EMAIL_SIGNATURE = `
     <a href="https://petbehaviourservices.com.au" style="color: #0066cc; text-decoration: none;">petbehaviourservices.com.au</a>
   </p>
   <p style="margin: 0 0 15px 0;">
-    <a href="tel:0413387833" style="color: #333; text-decoration: none;">0413 387833</a>
+    <a href="tel:0413387833" style="color: #333; text-decoration: none;">0413 387 833</a>
   </p>
   <img src="https://petbehaviourservices.com.au/images/pbs-logo-transparent.png" alt="Pet Behaviour Services" width="120" style="display: block; margin-top: 10px;" />
 </div>

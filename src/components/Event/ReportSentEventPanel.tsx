@@ -102,6 +102,17 @@ export function ReportSentEventPanel({
   const [existingReports, setExistingReports] = useState<ExistingReport[]>([]);
   const [fileRefreshKey, setFileRefreshKey] = useState(0); // Used to force file re-detection
 
+  // Candidate files surfaced for the user-pickable Source Files dropdowns.
+  // Auto-detection pre-fills clinicalNotesPath / transcriptPath but the user
+  // can override or set to none.
+  const [transcriptCandidates, setTranscriptCandidates] = useState<string[]>([]);
+  const [clinicalNotesCandidates, setClinicalNotesCandidates] = useState<string[]>([]);
+  // Override flag — set when the user explicitly chooses clinical notes,
+  // suppresses auto-detection from overwriting their choice on subsequent
+  // detectFiles runs (transcript is naturally sticky via Event.transcriptFilePath
+  // so it doesn't need a flag). Reset when selectedConsultationId changes.
+  const [clinicalNotesOverridden, setClinicalNotesOverridden] = useState(false);
+
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDocxPath, setGeneratedDocxPath] = useState<string | null>(null);
@@ -377,16 +388,52 @@ export function ReportSentEventPanel({
           f.name.endsWith(".docx")
         );
 
-        if (clinicalNotesMd) {
-          setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesMd.name}`);
-        } else if (clinicalNotesDocx) {
-          setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesDocx.name}`);
-        } else {
-          setClinicalNotesPath(null);
+        // Auto-detect clinical notes only if the user hasn't made an explicit
+        // choice for this consultation — otherwise re-runs would clobber it.
+        if (!clinicalNotesOverridden) {
+          if (clinicalNotesMd) {
+            setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesMd.name}`);
+          } else if (clinicalNotesDocx) {
+            setClinicalNotesPath(`${clientFolderPath}\\${clinicalNotesDocx.name}`);
+          } else {
+            setClinicalNotesPath(null);
+          }
         }
 
-        // Set transcript path from event
+        // Transcript reflects DB; user choices already persist there via
+        // the Source Files dropdown, so this stays in sync naturally.
         setTranscriptPath(consultation.transcriptPath);
+
+        // Build fallback candidate lists for legacy / externally-processed
+        // consultations. Filename-pattern detection above only finds files
+        // following the in-app convention; these dropdowns give the user a
+        // way to point the report generator at arbitrary files in the folder.
+        const isOutputFile = (name: string) => {
+          const lower = name.toLowerCase();
+          return (
+            lower.includes("prescription") ||
+            lower.includes("client-report") ||
+            lower.includes("vet-report") ||
+            lower.includes("consultation-report") ||
+            lower.includes("invoice") ||
+            lower.includes("referral") ||
+            lower.includes("history_") // patient-history exports (v0.5.0)
+          );
+        };
+
+        const txtCandidates = entries
+          .filter(f => !f.isDirectory && f.name.toLowerCase().endsWith(".txt") && !isOutputFile(f.name))
+          .map(f => `${clientFolderPath}\\${f.name}`);
+        setTranscriptCandidates(txtCandidates);
+
+        const noteCandidates = entries
+          .filter(f => {
+            if (f.isDirectory || isOutputFile(f.name)) return false;
+            const lower = f.name.toLowerCase();
+            return lower.endsWith(".md") || lower.endsWith(".docx") || lower.endsWith(".pdf");
+          })
+          .map(f => `${clientFolderPath}\\${f.name}`);
+        setClinicalNotesCandidates(noteCandidates);
 
         // Find existing reports for this consultation
         const reports: ExistingReport[] = [];
@@ -416,7 +463,13 @@ export function ReportSentEventPanel({
     };
 
     detectFiles();
-  }, [selectedConsultationId, clientFolderPath, consultations, fileRefreshKey]);
+  }, [selectedConsultationId, clientFolderPath, consultations, fileRefreshKey, clinicalNotesOverridden]);
+
+  // Reset clinical-notes override whenever the user picks a different
+  // consultation so auto-detection runs fresh for that consultation.
+  useEffect(() => {
+    setClinicalNotesOverridden(false);
+  }, [selectedConsultationId]);
 
   // Load existing tasks for the selected consultation
   useEffect(() => {
@@ -711,15 +764,32 @@ Return ONLY valid JSON array, no other text.`
 
       setIsGenerating(true);
 
-      // Read clinical notes if available (.md files can be read directly)
+      // Read clinical notes if available. .md files read directly; .docx
+      // files (finalised / hand-edited reports) are converted via pandoc; .pdf
+      // files have their text extracted via pdf-extract. Whatever the source,
+      // the AI sees text/markdown.
       let clinicalNotesContent = "";
-      if (clinicalNotesPath && clinicalNotesPath.endsWith(".md")) {
+      if (clinicalNotesPath) {
+        const lower = clinicalNotesPath.toLowerCase();
         try {
-          clinicalNotesContent = await invoke<string>("read_text_file", {
-            filePath: clinicalNotesPath
-          });
+          if (lower.endsWith(".md")) {
+            clinicalNotesContent = await invoke<string>("read_text_file", {
+              filePath: clinicalNotesPath
+            });
+          } else if (lower.endsWith(".docx")) {
+            clinicalNotesContent = await invoke<string>("pandoc_docx_to_markdown", {
+              docxPath: clinicalNotesPath
+            });
+          } else if (lower.endsWith(".pdf")) {
+            clinicalNotesContent = await invoke<string>("pdf_to_text", {
+              pdfPath: clinicalNotesPath
+            });
+          }
         } catch (error) {
           console.warn("Could not read clinical notes:", error);
+          toast.warning("Could not read clinical notes", {
+            description: error instanceof Error ? error.message : String(error)
+          });
         }
       }
 
@@ -994,17 +1064,125 @@ Return ONLY valid JSON array, no other text.`
               </SelectContent>
             </Select>
 
-            {/* Source Status */}
+            {/* Source Files — explicit user selection of which files feed the AI.
+                Auto-detection (strict filename pattern) pre-fills the values, but
+                the user can always override or set to "(none)". This handles
+                legacy / externally-processed consultations cleanly. */}
             {selectedConsultation && (
-              <div className="flex gap-3 text-[10px]">
-                <span className={clinicalNotesPath ? "text-green-600" : "text-muted-foreground"}>
-                  {clinicalNotesPath ? <CheckCircle2 className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
-                  Clinical Notes
-                </span>
-                <span className={transcriptPath ? "text-green-600" : "text-muted-foreground"}>
-                  {transcriptPath ? <CheckCircle2 className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
-                  Transcript
-                </span>
+              <div className="space-y-2 pt-1">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Source Files
+                </p>
+
+                {/* Transcript */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    {transcriptPath ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                    <Label className="text-[10px] font-medium">Transcript</Label>
+                  </div>
+                  <Select
+                    value={transcriptPath ?? "__none__"}
+                    onValueChange={async (value) => {
+                      const newPath = value === "__none__" ? null : value;
+                      setTranscriptPath(newPath);
+                      // Persist to Event.transcriptFilePath so the choice
+                      // sticks across sessions.
+                      if (selectedConsultationId) {
+                        try {
+                          await updateEvent(selectedConsultationId, {
+                            transcriptFilePath: newPath ?? undefined
+                          });
+                          queryClient.invalidateQueries({ queryKey: ["consultations", clientId] });
+                          queryClient.invalidateQueries({ queryKey: ["events", clientId] });
+                        } catch (err) {
+                          console.error("Failed to persist transcript path:", err);
+                          toast.error("Updated for this session but failed to save link to consultation");
+                        }
+                      }
+                    }}
+                    disabled={!clientFolderPath}
+                  >
+                    <SelectTrigger className="h-7 text-[11px]">
+                      <SelectValue placeholder={
+                        transcriptCandidates.length === 0
+                          ? "No .txt files in client folder"
+                          : "Choose transcript file..."
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="text-[11px] italic">
+                        (none — skip transcript)
+                      </SelectItem>
+                      {/* Ensure current value is always selectable, even if it's
+                          outside the candidate list (e.g., file moved or in an
+                          unexpected format). */}
+                      {transcriptPath && !transcriptCandidates.includes(transcriptPath) && (
+                        <SelectItem value={transcriptPath} className="text-[11px]">
+                          {transcriptPath.split("\\").pop()}
+                        </SelectItem>
+                      )}
+                      {transcriptCandidates.map((path) => (
+                        <SelectItem key={path} value={path} className="text-[11px]">
+                          {path.split("\\").pop()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Clinical Notes */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    {clinicalNotesPath ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                    <Label className="text-[10px] font-medium">Clinical Notes</Label>
+                  </div>
+                  <Select
+                    value={clinicalNotesPath ?? "__none__"}
+                    onValueChange={(value) => {
+                      setClinicalNotesPath(value === "__none__" ? null : value);
+                      setClinicalNotesOverridden(true);
+                    }}
+                    disabled={!clientFolderPath}
+                  >
+                    <SelectTrigger className="h-7 text-[11px]">
+                      <SelectValue placeholder={
+                        clinicalNotesCandidates.length === 0
+                          ? "No .md / .docx / .pdf files in client folder"
+                          : "Choose clinical notes file..."
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="text-[11px] italic">
+                        (none — skip clinical notes)
+                      </SelectItem>
+                      {clinicalNotesPath && !clinicalNotesCandidates.includes(clinicalNotesPath) && (
+                        <SelectItem value={clinicalNotesPath} className="text-[11px]">
+                          {clinicalNotesPath.split("\\").pop()}
+                        </SelectItem>
+                      )}
+                      {clinicalNotesCandidates.map((path) => (
+                        <SelectItem key={path} value={path} className="text-[11px]">
+                          {path.split("\\").pop()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {!transcriptPath && !clinicalNotesPath && (
+                  <p className="text-[10px] text-amber-600">
+                    <AlertCircle className="h-3 w-3 inline mr-1" />
+                    At least one source file is required to generate a report
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1170,6 +1348,38 @@ Return ONLY valid JSON array, no other text.`
                           size="sm"
                           onClick={async () => {
                             setEmailingReportPath(report.path);
+
+                            // Resolve recipient at click time — the vet-report case
+                            // is the load-bearing one here: the panel-level
+                            // recipientEmail effect clears to "" whenever
+                            // reportType=vet and no clinic is selected, so the
+                            // dialog would otherwise open with an empty To.
+                            // Preference order: previously-emailed recipient
+                            // from the report log > selected clinic > primary-
+                            // care-vet directory fuzzy match > client.email for
+                            // client reports.
+                            let resolvedEmail = recipientEmail;
+                            if (logEntry?.emailedTo) {
+                              resolvedEmail = logEntry.emailedTo;
+                            } else if (report.type === "vet") {
+                              const selectedClinic = vetClinics.find(vc => vc.id === selectedVetClinicId);
+                              if (selectedClinic) {
+                                resolvedEmail = selectedClinic.email;
+                              } else if (client?.primaryCareVet) {
+                                const matched = vetClinics.find(vc =>
+                                  vc.name.toLowerCase().includes(client.primaryCareVet!.toLowerCase()) ||
+                                  client.primaryCareVet!.toLowerCase().includes(vc.name.toLowerCase())
+                                );
+                                if (matched) resolvedEmail = matched.email;
+                              }
+                            } else if (report.type === "client" && client?.email) {
+                              resolvedEmail = client.email;
+                            }
+
+                            if (resolvedEmail !== recipientEmail) {
+                              setRecipientEmail(resolvedEmail);
+                            }
+
                             const content = await getEmailContent();
                             setEmailContent(content);
                             setShowEmailDialog(true);

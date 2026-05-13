@@ -1,6 +1,6 @@
 [package]
 name = "pbs-admin"
-version = "0.5.1"
+version = "0.5.2"
 description = "PBS Admin - Pet Behaviour Services Administration System"
 authors = ["Pet Behaviour Services"]
 edition = "2021"
@@ -34,4 +34,5 @@ chrono = "0.4"
 dotenvy = "0.15"
 image = "0.25"
 sha2 = "0.10"
+pdf-extract = "0.7"
 
