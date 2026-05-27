@@ -25,6 +25,7 @@ interface EmailInputProps {
   clientFirstName?: string;
   clientLastName?: string;
   clientFolderPath?: string;
+  clientId?: number | null;        // For SentEmail audit log; nullable for the new-client form
 }
 
 interface FolderFile {
@@ -41,7 +42,8 @@ export function EmailInput({
   placeholder,
   clientFirstName = "",
   clientLastName = "",
-  clientFolderPath = ""
+  clientFolderPath = "",
+  clientId = null
 }: EmailInputProps) {
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [selectedAttachments, setSelectedAttachments] = useState<EmailAttachment[]>([]);
@@ -275,6 +277,8 @@ export function EmailInput({
         initialBody={processedBody}
         clientName={`${clientFirstName} ${clientLastName}`.trim()}
         attachments={selectedAttachments}
+        clientId={clientId}
+        emailType="correspondence"
       />
     </>
   );

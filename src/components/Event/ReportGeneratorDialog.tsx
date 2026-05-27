@@ -966,6 +966,9 @@ ${timeline}
         initialBody={emailContent.body}
         clientName={clientName}
         attachmentReminder={`${pdfFileName}\n\nLocation: ${clientFolderPath}`}
+        clientId={clientId}
+        eventId={eventId}
+        emailType="report"
       />
     </Dialog>
   );

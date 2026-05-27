@@ -385,6 +385,9 @@ export function TasksOverview() {
         initialSubject={emailDraft.subject}
         initialBody={emailDraft.body}
         clientName={selectedClientName}
+        clientId={selectedTask?.clientId ?? null}
+        eventId={selectedTask?.eventId ?? null}
+        emailType="questionnaire"
       />
 
       {/* Delete Confirmation Dialog */}

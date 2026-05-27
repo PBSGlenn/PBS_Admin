@@ -5,6 +5,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getResendApiKey as getResendKey } from "./apiKeysService";
+import { logSentEmailSafe } from "./sentEmailService";
+import type { SentEmailType } from "../types";
 
 // Email signature HTML with logo
 const EMAIL_SIGNATURE = `
@@ -28,6 +30,10 @@ export interface EmailOptions {
   body: string; // Plain text or HTML body content (signature will be appended)
   attachments?: string[]; // Array of file paths to attach
   includeSignature?: boolean; // Default: true
+  // Audit-log context (recorded to SentEmail table on successful send; all optional)
+  clientId?: number | null;
+  eventId?: number | null;
+  emailType?: SentEmailType | string | null;
 }
 
 export interface EmailResult {
@@ -102,7 +108,7 @@ function buildHtmlBody(content: string, includeSignature: boolean = true): strin
  * Send an email via Resend API
  */
 export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
-  const { to, subject, body, attachments, includeSignature = true } = options;
+  const { to, subject, body, attachments, includeSignature = true, clientId, eventId, emailType } = options;
 
   try {
     // Try to get API key from settings; pass null to let backend use env var fallback
@@ -131,6 +137,21 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
       attachmentPaths: attachments || null,
     });
 
+    // Log to SentEmail audit table — never fails the send (email already went out).
+    if (result.success && result.id) {
+      await logSentEmailSafe({
+        emailId: result.id,
+        clientId: clientId ?? null,
+        eventId: eventId ?? null,
+        fromAddress: from,
+        toAddress: to,
+        subject,
+        emailType: emailType ?? null,
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
+    }
+
     return {
       success: result.success,
       id: result.id,
@@ -155,7 +176,8 @@ export async function sendConsultationReport(
   petName: string,
   consultationDate: string,
   pdfPath: string,
-  customBody?: string
+  customBody?: string,
+  context?: { clientId?: number | null; eventId?: number | null }
 ): Promise<EmailResult> {
   const defaultBody = `Dear ${clientFirstName},
 
@@ -173,6 +195,9 @@ Kind regards,`;
     body: customBody || defaultBody,
     attachments: [pdfPath],
     includeSignature: true,
+    clientId: context?.clientId ?? null,
+    eventId: context?.eventId ?? null,
+    emailType: "report",
   });
 }
 
@@ -186,7 +211,8 @@ export async function sendVetReport(
   petName: string,
   consultationDate: string,
   pdfPath: string,
-  customBody?: string
+  customBody?: string,
+  context?: { clientId?: number | null; eventId?: number | null }
 ): Promise<EmailResult> {
   const defaultBody = `Dear Colleagues at ${vetClinicName},
 
@@ -202,6 +228,9 @@ Kind regards,`;
     body: customBody || defaultBody,
     attachments: [pdfPath],
     includeSignature: true,
+    clientId: context?.clientId ?? null,
+    eventId: context?.eventId ?? null,
+    emailType: "report",
   });
 }
 
@@ -214,7 +243,8 @@ export async function sendQuestionnaireReminder(
   petName: string,
   petSpecies: "dog" | "cat",
   consultationDate: string,
-  formUrl: string
+  formUrl: string,
+  context?: { clientId?: number | null; eventId?: number | null }
 ): Promise<EmailResult> {
   const body = `Dear ${clientFirstName},
 
@@ -235,6 +265,9 @@ Kind regards,`;
     subject: `Reminder: Please complete the questionnaire for ${petName}`,
     body,
     includeSignature: true,
+    clientId: context?.clientId ?? null,
+    eventId: context?.eventId ?? null,
+    emailType: "questionnaire",
   });
 }
 

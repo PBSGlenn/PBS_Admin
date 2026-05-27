@@ -329,6 +329,7 @@ export function ClientView({ client, onClose, windowId }: ClientViewProps) {
                     clientFirstName={formData.firstName}
                     clientLastName={formData.lastName}
                     clientFolderPath={currentFolderPath}
+                    clientId={client.clientId}
                   />
                   {errors.email && (
                     <p className="text-[10px] text-destructive">{errors.email}</p>

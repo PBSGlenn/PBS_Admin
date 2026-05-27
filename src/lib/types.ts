@@ -311,3 +311,52 @@ export interface TaskSearchParams {
   sortBy?: "dueDate" | "priority" | "status";
   sortDirection?: "asc" | "desc";
 }
+
+// SentEmail — audit log of outgoing emails sent via Resend
+export type SentEmailType =
+  | "check-in"
+  | "report"
+  | "questionnaire"
+  | "follow-up"
+  | "correspondence"
+  | "history"
+  | "other";
+
+export type SentEmailStatus =
+  | "sent"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "failed";
+
+export interface SentEmail {
+  emailId: string;          // Resend re_xxx ID
+  clientId: number | null;
+  eventId: number | null;
+  fromAddress: string;
+  toAddress: string;        // JSON array string e.g. '["a@b.com"]'
+  subject: string;
+  emailType: string | null;
+  status: string;           // default "sent"
+  sentAt: string;           // ISO 8601
+  deliveredAt: string | null;
+  bouncedAt: string | null;
+  errorMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SentEmailInput {
+  emailId: string;
+  clientId?: number | null;
+  eventId?: number | null;
+  fromAddress: string;
+  toAddress: string | string[];     // single, comma-separated, or array — service normalises to JSON
+  subject: string;
+  emailType?: SentEmailType | string | null;
+  status?: SentEmailStatus | string;
+  sentAt?: string;                  // defaults to now
+  deliveredAt?: string | null;
+  bouncedAt?: string | null;
+  errorMessage?: string | null;
+}

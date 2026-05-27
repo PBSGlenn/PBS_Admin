@@ -738,6 +738,8 @@ export function ClientHistoryDialog({
             initialBody={emailBody}
             clientName={`${client.firstName} ${client.lastName}`}
             attachments={[{ path: pdfFilePath, name: pdfFileName }]}
+            clientId={client.clientId}
+            emailType="history"
           />
         )}
       </DialogContent>

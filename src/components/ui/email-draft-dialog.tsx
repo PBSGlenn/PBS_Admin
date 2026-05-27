@@ -48,6 +48,10 @@ export interface EmailDraftDialogProps {
   clientName?: string;
   attachmentReminder?: string; // Optional reminder about file attachment (legacy)
   attachments?: EmailAttachment[]; // Actual file attachments to send
+  // Audit-log context — forwarded to SentEmail table on successful send
+  clientId?: number | null;
+  eventId?: number | null;
+  emailType?: string | null;
 }
 
 export function EmailDraftDialog({
@@ -61,7 +65,10 @@ export function EmailDraftDialog({
   initialBody,
   clientName,
   attachmentReminder,
-  attachments: initialAttachments = []
+  attachments: initialAttachments = [],
+  clientId,
+  eventId,
+  emailType
 }: EmailDraftDialogProps) {
   const [to, setTo] = useState(initialTo);
   const [subject, setSubject] = useState(initialSubject);
@@ -99,6 +106,9 @@ export function EmailDraftDialog({
         body,
         attachments: attachments.length > 0 ? attachments.map(a => a.path) : undefined,
         includeSignature: true,
+        clientId: clientId ?? null,
+        eventId: eventId ?? null,
+        emailType: emailType ?? null,
       });
 
       if (result.success) {

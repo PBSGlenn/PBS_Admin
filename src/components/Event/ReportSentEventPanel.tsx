@@ -1739,6 +1739,9 @@ Return ONLY valid JSON array, no other text.`
           return [];
         })()}
         attachmentReminder={`${(emailingReportPath || generatedPdfPath || generatedDocxPath || existingReportsForType[0]?.path)?.split("\\").pop() || "Report"}\n\nLocation: ${clientFolderPath}`}
+        clientId={clientId}
+        eventId={selectedConsultationId ?? null}
+        emailType="report"
       />
     </div>
   );
