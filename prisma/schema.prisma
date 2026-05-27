@@ -34,6 +34,8 @@ model Client {
   events           Event[]
   tasks            Task[]
 
+  sentEmails       SentEmail[]
+
   // Indexes for performance (email has @unique above, which implies index)
   @@index([mobile])
   @@index([lastName, firstName])
@@ -107,6 +109,7 @@ model Event {
   parentEventId     Int?
   parentEvent       Event?   @relation("EventHierarchy", fields: [parentEventId], references: [eventId], onDelete: SetNull)
   childEvents       Event[]  @relation("EventHierarchy")
+  sentEmails        SentEmail[]
 
   // Indexes
   @@index([clientId])
@@ -150,4 +153,35 @@ model Task {
   @@index([priority])
   @@index([automatedAction])
   @@index([parentTaskId])
+}
+
+// SentEmail - Log of outgoing emails sent via Resend
+// Populated by syncing with the Resend API; used for morning briefing and audit trail
+model SentEmail {
+  emailId       String    @id                   // Resend email ID (re_xxx)
+  clientId      Int?                             // Linked PBS client (if identifiable)
+  eventId       Int?                             // Linked event/consultation (if applicable)
+  fromAddress   String                           // Sender address
+  toAddress     String                           // Recipient(s) — JSON array string e.g. '["a@b.com"]'
+  subject       String                           // Email subject line
+  emailType     String?                          // "check-in" | "report" | "questionnaire" | "follow-up" | "correspondence" | "other"
+  status        String    @default("sent")       // "sent" | "delivered" | "bounced" | "complained" | "failed"
+  sentAt        String                           // ISO 8601 timestamp from Resend
+  deliveredAt   String?                          // Null until delivery confirmed
+  bouncedAt     String?                          // Null unless bounced
+  errorMessage  String?                          // Bounce/failure reason from Resend
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  client        Client?   @relation(fields: [clientId], references: [clientId], onDelete: SetNull)
+  event         Event?    @relation(fields: [eventId], references: [eventId], onDelete: SetNull)
+
+  // Indexes
+  @@index([clientId])
+  @@index([eventId])
+  @@index([status])
+  @@index([sentAt])
+  @@index([emailType])
 }

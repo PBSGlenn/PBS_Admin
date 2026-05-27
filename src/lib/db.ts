@@ -49,6 +49,7 @@ export async function getDatabase(): Promise<Database> {
       await applyPendingSchemaChanges(db);
       await applyPendingSchemaChanges_v2(db);
       await applyPendingSchemaChanges_v3(db);
+      await applyPendingSchemaChanges_v4(db);
 
       // Upgrade stale custom prompt templates (one-time per version)
       await upgradePromptTemplates();
@@ -467,6 +468,54 @@ async function applyPendingSchemaChanges_v3(database: Database): Promise<void> {
   } catch (error) {
     logger.error("[DB] Schema changes v3 failed (non-fatal, will retry on next startup):", error);
     console.warn("[DB] Schema changes v3 failed:", error);
+  }
+}
+
+/**
+ * Schema changes v4: SentEmail table — log of outgoing emails sent via Resend.
+ * Mirrors prisma/migrations/20260526231714_add_sent_email_log/migration.sql.
+ * Populated by Resend API sync; powers morning-briefing email visibility.
+ */
+async function applyPendingSchemaChanges_v4(database: Database): Promise<void> {
+  const SENTINEL = "_migration_schema_changes_v4";
+  const done = await getSetting(SENTINEL);
+  if (done) return;
+
+  logger.info("[DB] Applying pending schema changes v4 (SentEmail table)...");
+
+  try {
+    await database.execute(`
+      CREATE TABLE IF NOT EXISTS "SentEmail" (
+        "emailId" TEXT NOT NULL PRIMARY KEY,
+        "clientId" INTEGER,
+        "eventId" INTEGER,
+        "fromAddress" TEXT NOT NULL,
+        "toAddress" TEXT NOT NULL,
+        "subject" TEXT NOT NULL,
+        "emailType" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'sent',
+        "sentAt" TEXT NOT NULL,
+        "deliveredAt" TEXT,
+        "bouncedAt" TEXT,
+        "errorMessage" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "SentEmail_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client" ("clientId") ON DELETE SET NULL ON UPDATE CASCADE,
+        CONSTRAINT "SentEmail_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event" ("eventId") ON DELETE SET NULL ON UPDATE CASCADE
+      )
+    `);
+
+    await database.execute(`CREATE INDEX IF NOT EXISTS "SentEmail_clientId_idx" ON "SentEmail"("clientId")`);
+    await database.execute(`CREATE INDEX IF NOT EXISTS "SentEmail_eventId_idx" ON "SentEmail"("eventId")`);
+    await database.execute(`CREATE INDEX IF NOT EXISTS "SentEmail_status_idx" ON "SentEmail"("status")`);
+    await database.execute(`CREATE INDEX IF NOT EXISTS "SentEmail_sentAt_idx" ON "SentEmail"("sentAt")`);
+    await database.execute(`CREATE INDEX IF NOT EXISTS "SentEmail_emailType_idx" ON "SentEmail"("emailType")`);
+
+    await setSetting(SENTINEL, new Date().toISOString());
+    logger.info("[DB] Schema changes v4 applied (SentEmail table + 5 indexes)");
+  } catch (error) {
+    logger.error("[DB] Schema changes v4 failed (non-fatal, will retry on next startup):", error);
+    console.warn("[DB] Schema changes v4 failed:", error);
   }
 }
 
