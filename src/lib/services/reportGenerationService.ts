@@ -65,7 +65,7 @@ export function estimateTokenCost(transcriptLength: number): {
   const estimatedInputTokens = transcriptLength / 4 + 1000; // +1000 for system prompt
   const estimatedOutputTokens = 2000; // Average report length
 
-  // Claude Opus 4.6 pricing (February 2026)
+  // Claude Opus 4.8 pricing (rates unchanged across Opus 4.x)
   const inputCostPer1M = 15.0; // $15 per million input tokens
   const outputCostPer1M = 75.0; // $75 per million output tokens
 

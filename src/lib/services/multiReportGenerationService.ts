@@ -315,7 +315,7 @@ export async function estimateReportCost(
     }
   }
 
-  // Claude Opus 4.6 pricing (February 2026)
+  // Claude Opus 4.8 pricing (rates unchanged across Opus 4.x)
   const inputCostPer1M = 15.0;
   const outputCostPer1M = 75.0;
 

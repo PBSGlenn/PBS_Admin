@@ -301,7 +301,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
       setPerplexityKey("");
       setShowPerplexityKey(false);
       toast.success("Perplexity API key verified and saved", {
-        description: "Medication brand name updates are now available",
+        description: "Note: medication updates now use the Anthropic (Claude) key",
       });
     } catch (error) {
       toast.error("Failed to save API key");
@@ -349,7 +349,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Required for AI report generation (Claude API). Get your key from{" "}
+              Required for AI report generation and medication brand name updates (Claude API). Get your key from{" "}
               <a
                 href="https://console.anthropic.com/settings/keys"
                 target="_blank"
@@ -547,7 +547,7 @@ export function ApiKeysSettingsDialog({ isOpen, onClose }: ApiKeysSettingsDialog
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Required for medication brand name updates (Sonar search). Get your key from{" "}
+              Optional / legacy — no longer used. Medication brand name updates now run on the Anthropic (Claude) key above. Get a key from{" "}
               <a
                 href="https://www.perplexity.ai/settings/api"
                 target="_blank"

@@ -64,11 +64,16 @@ git push origin --delete branch-name
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage. **Command Palette** (Ctrl+K) for global search and navigation. **Zod runtime validation** at all external API boundaries. **Perplexity Sonar** integration for live medication brand name updates.
+**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.8) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage. **Command Palette** (Ctrl+K) for global search and navigation. **Zod runtime validation** at all external API boundaries. **Claude web search** integration for live medication brand name updates.
 
-**Last Updated**: 2026-05-27
+**Last Updated**: 2026-05-30
 
-**Recent Changes** (2026-05-27 — v0.5.3):
+**Recent Changes** (2026-05-30 — v0.5.4):
+- **Medication updater moved from Perplexity → Claude web search**: The medication brand-name update function ([medicationUpdateService.ts](src/lib/services/medicationUpdateService.ts)) was failing whenever no Perplexity (`pplx-`) key was configured. Per Glenn's request it now runs on **Claude with the built-in `web_search` tool**. New Tauri command `generate_ai_report_with_search` ([lib.rs](src-tauri/src/lib.rs)) calls the Anthropic Messages API with the `web_search_20250305` tool, localised to AU (`user_location.country = "AU"`), so brand lookups stay grounded in live Australian pharmacy/PBS sources. It returns the model text **plus the source URLs** consulted (parsed from `web_search_tool_result` blocks + inline citations), so the "Sources" links in the updater UI keep working. New `generateAIReportWithSearch()` wrapper in [aiService.ts](src/lib/services/aiService.ts) routes through the backend (API key never reaches the browser) and shares the existing rate limiter. `queryPerplexityForBrands` → `queryClaudeForBrands`; batch size 10 → 5 so each call's 5 searches cover its batch thoroughly.
+- **API Keys dialog copy** ([ApiKeysSettingsDialog.tsx](src/components/Settings/ApiKeysSettingsDialog.tsx)): Anthropic key now reads "report generation **and medication brand name updates**"; the Perplexity field is relabelled "optional / legacy — no longer used." Perplexity infrastructure (key storage, schema) is retained but has no remaining consumer.
+- **Claude model IDs refreshed to current** ([apiKeysService.ts](src/lib/services/apiKeysService.ts), [lib.rs](src-tauri/src/lib.rs)): report model Opus 4.6 → **Opus 4.8** (`claude-opus-4-8`), task-extraction model Sonnet 4.5 → **Sonnet 4.6** (`claude-sonnet-4-6`). Both Rust command defaults updated. The `DEPRECATED_MODEL_IDS` map now migrates persisted SQLite model configs forward automatically on load (`claude-opus-4-6`/`-20260205`/`-4-5` → `4-8`; `claude-sonnet-4-5*` → `4-6`). Fixed a stale "Claude Sonnet 4.5" footer on generated reports (reports run on the Opus model).
+
+**Previous Changes** (2026-05-27 — v0.5.3):
 - **SentEmail audit table — schema + send-time logging**: New `SentEmail` model in [prisma/schema.prisma](prisma/schema.prisma) with `emailId` (Resend `re_xxx`) as PK, optional `clientId`/`eventId` FKs (both `onDelete: SetNull`), `fromAddress`, `toAddress` (JSON array string), `subject`, `emailType`, `status` (default `"sent"`), `sentAt`, `deliveredAt`, `bouncedAt`, `errorMessage`. Five indexes: clientId, eventId, status, sentAt, emailType. Back-relations added to `Client` and `Event` models. Powers pbs-admin's morning-briefing email visibility.
 - **Startup migration (v4)** ([db.ts](src/lib/db.ts)): `applyPendingSchemaChanges_v4` creates the table + 5 indexes idempotently, sentinel-gated as `_migration_schema_changes_v4`. Wired into `getDatabase()` alongside v1/v2/v3. Self-deploying: no out-of-band script, no WAL-lock contention with the running app. Matches the existing pattern used for `bookingReference`, `Pet.desexed`, and `QuestionnaireLog`.
 - **Send-time logging — sentEmailService.ts**: New service ([sentEmailService.ts](src/lib/services/sentEmailService.ts)) with `createSentEmail()` (`INSERT OR REPLACE` on `emailId` PK so webhook upserts are safe), `updateSentEmailStatus()` (delivered/bounced — Path B hook, not wired yet), `logSentEmailSafe()` (never-throws wrapper — a logging failure never fails the send because the email's already gone out), plus reads: `getSentEmailById`, `getSentEmailsForClient`, `getSentEmailsForEvent`, `parseToAddress`. Recipient strings normalised to JSON array (`'["a@b.com","c@d.com"]'`) for storage. `updatedAt` set to `CURRENT_TIMESTAMP` explicitly — Prisma `@updatedAt` doesn't fire on raw-SQL writes.
@@ -215,7 +220,7 @@ git push origin --delete branch-name
 | **Email Sending** | Resend API | Direct email delivery with attachments |
 | **Email Receiving** | ImprovMX | Email forwarding to personal inbox |
 | **Prescription Templates** | SQLite Settings + Pandoc | Template-based prescription generation |
-| **AI Services** | Anthropic Claude Opus 4.6 | Report generation, task extraction |
+| **AI Services** | Anthropic Claude Opus 4.8 | Report generation, task extraction |
 | **Audio Transcription** | OpenAI gpt-4o-transcribe-diarize | Transcription with native speaker diarization |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
 | **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
@@ -1507,7 +1512,7 @@ interface Action {
 7. **External AI Processing** (optional, outside PBS Admin):
    - User manually processes transcript + questionnaire through preferred AI:
      - ChatGPT 5.1
-     - Claude Opus 4.6
+     - Claude Opus 4.8
      - Gemini 3 Pro
      - (Chooses best-performing AI at the time)
    - Uses custom prompts for:
@@ -1653,7 +1658,7 @@ Standardized prompt for extracting practitioner tasks from consultation transcri
 
 ### AI Report Generation
 
-**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Opus 4.6 API.
+**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Opus 4.8 API.
 
 **Technology**: Anthropic SDK with prompt caching for cost efficiency
 
@@ -1728,8 +1733,8 @@ Creates "Note" event after successful save:
 - **Cache duration**: 5 minutes (Anthropic default)
 - **Cache benefit**: Subsequent reports within 5 minutes use cached prompt (90% cost reduction on input tokens)
 - **Token estimation**: Shows estimated cost before generation
-- **Model**: Claude Opus 4.6 (`claude-opus-4-6-20260205`)
-- **Pricing**: ~$15/million input tokens, ~$75/million output tokens (as of February 2026)
+- **Model**: Claude Opus 4.8 (`claude-opus-4-8`)
+- **Pricing**: ~$15/million input tokens, ~$75/million output tokens
 
 **Configuration** (`.env`):
 ```bash
@@ -1932,7 +1937,7 @@ Templates support dynamic content replacement:
 
 ### Multi-Report Generation Service
 
-**Purpose**: Generate multiple report types from a single consultation transcript using Claude Opus 4.6 API, with the comprehensive clinical report as the source of truth for the client report.
+**Purpose**: Generate multiple report types from a single consultation transcript using Claude Opus 4.8 API, with the comprehensive clinical report as the source of truth for the client report.
 
 **Technology**: Anthropic SDK with sequential-then-parallel execution and prompt caching
 
@@ -2032,7 +2037,7 @@ interface ReportGenerationResult {
 **Cost Estimation**:
 - `estimateReportCost(transcriptLength, questionnaireLength, reportTypes)` function
 - Shows estimated tokens and USD cost before generation
-- Pricing (as of February 2026, Claude Opus 4.6):
+- Pricing (Claude Opus 4.8, rates unchanged across Opus 4.x):
   - Input: ~$15/million tokens
   - Output: ~$75/million tokens
 
@@ -2051,7 +2056,7 @@ interface ReportGenerationResult {
 VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
-**Model**: `claude-opus-4-6-20260205` (Claude Opus 4.6)
+**Model**: `claude-opus-4-8` (Claude Opus 4.8)
 
 ---
 
@@ -3624,5 +3629,7 @@ For technical questions or issues, refer to:
 
 ---
 
-**Last Updated**: 2026-05-27
-**Version**: 0.5.3 (Adds the `SentEmail` audit table and send-time logging — every outgoing email via Resend writes a row with the `re_xxx` ID, recipient (JSON array), subject, optional clientId/eventId, and `emailType` tag (`report` / `history` / `questionnaire` / `correspondence` / `follow-up` / `check-in`). Deployed via startup-migration v4 in [db.ts](src/lib/db.ts) — sentinel-gated, idempotent, sidesteps the WAL-lock issue that blocks `prisma migrate deploy` while the app is running. New `sentEmailService.ts` exposes safe-logging helpers + reads. All five existing `EmailDraftDialog` call sites tagged. Path B (delivered/bounced status reconciliation from Resend) intentionally parked — `updateSentEmailStatus()` is the hook, awaiting jurisdiction decision.)
+**Last Updated**: 2026-05-30
+**Version**: 0.5.4 (Medication brand-name updater moved off Perplexity onto **Claude with web search** — new `generate_ai_report_with_search` Tauri command uses the Anthropic `web_search_20250305` tool, AU-localised, returning live brand names + source URLs; fixes the "not working" failure when no `pplx-` key was set. All Claude model IDs refreshed to current — Opus 4.8 (`claude-opus-4-8`) and Sonnet 4.6 (`claude-sonnet-4-6`) — with a `DEPRECATED_MODEL_IDS` map that migrates persisted configs forward automatically. Requires the Anthropic key in Settings → API Keys.)
+
+**Previous Version**: 0.5.3 (Adds the `SentEmail` audit table and send-time logging — every outgoing email via Resend writes a row with the `re_xxx` ID, recipient (JSON array), subject, optional clientId/eventId, and `emailType` tag (`report` / `history` / `questionnaire` / `correspondence` / `follow-up` / `check-in`). Deployed via startup-migration v4 in [db.ts](src/lib/db.ts) — sentinel-gated, idempotent, sidesteps the WAL-lock issue that blocks `prisma migrate deploy` while the app is running. New `sentEmailService.ts` exposes safe-logging helpers + reads. All five existing `EmailDraftDialog` call sites tagged. Path B (delivered/bounced status reconciliation from Resend) intentionally parked — `updateSentEmailStatus()` is the hook, awaiting jurisdiction decision.)
