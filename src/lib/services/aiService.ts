@@ -17,6 +17,11 @@ export interface AIGenerationResult {
   error?: string;
 }
 
+export interface AISearchGenerationResult extends AIGenerationResult {
+  /** Source URLs Claude consulted via the web_search tool */
+  sources: string[];
+}
+
 // Rate limiting state
 let lastRequestTime = 0;
 let requestsInLastMinute = 0;
@@ -122,6 +127,78 @@ export async function generateAIReport(
     return {
       success: false,
       content: "",
+      usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+      error: errorMessage,
+    };
+  }
+}
+
+/**
+ * Generate AI content using Claude with the built-in web_search tool enabled.
+ *
+ * Use this when the answer needs live grounding (e.g. current Australian
+ * medication brand names). Returns the model's final text plus the list of
+ * source URLs it consulted, for citation display.
+ *
+ * Routes through the secure Tauri backend command `generate_ai_report_with_search`
+ * so the API key is never exposed to the browser. Shares the same rate limiter
+ * as `generateAIReport`.
+ */
+export async function generateAIReportWithSearch(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number = 2000,
+  maxSearches: number = 5
+): Promise<AISearchGenerationResult> {
+  // Check rate limit before making request
+  const rateLimitError = checkRateLimit();
+  if (rateLimitError) {
+    return {
+      success: false,
+      content: "",
+      sources: [],
+      usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+      error: rateLimitError,
+    };
+  }
+
+  try {
+    const apiKey = await getAnthropicApiKey();
+    const modelConfig = await getAIModelConfig();
+
+    const result = await invoke<{
+      success: boolean;
+      content: string;
+      sources: string[];
+      usage: {
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+      };
+    }>("generate_ai_report_with_search", {
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+      apiKey,
+      model: modelConfig.reportModel,
+      maxSearches,
+    });
+
+    recordRequest();
+
+    return {
+      success: true,
+      content: result.content,
+      sources: result.sources ?? [],
+      usage: result.usage,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("AI web-search generation failed:", errorMessage);
+    return {
+      success: false,
+      content: "",
+      sources: [],
       usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
       error: errorMessage,
     };

@@ -1621,7 +1621,7 @@ async fn generate_ai_report(
             .map_err(|_| "Anthropic API key not configured. Please add your API key in Settings > API Keys.".to_string())?
     };
 
-    let model = model.unwrap_or_else(|| "claude-opus-4-6-20260205".to_string());
+    let model = model.unwrap_or_else(|| "claude-opus-4-8".to_string());
 
     println!("Generating AI report with model: {}", model);
     println!("System prompt length: {} chars", system_prompt.len());
@@ -1699,6 +1699,184 @@ async fn generate_ai_report(
             "input_tokens": api_response.usage.input_tokens,
             "output_tokens": api_response.usage.output_tokens,
             "total_tokens": api_response.usage.input_tokens + api_response.usage.output_tokens
+        }
+    }))
+}
+
+/// Generate AI content with Claude's built-in web_search tool enabled.
+///
+/// Used for tasks that need live grounding — e.g. looking up current Australian
+/// medication brand names. Returns the model's final text plus the list of
+/// source URLs it consulted (from web_search_tool_result blocks and inline
+/// citations), so callers can surface citations the way the Perplexity-backed
+/// flow used to.
+#[tauri::command]
+async fn generate_ai_report_with_search(
+    system_prompt: String,
+    user_prompt: String,
+    max_tokens: u32,
+    api_key: Option<String>,
+    model: Option<String>,
+    max_searches: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    // Light backstop only — the frontend aiService rate limiter does the real
+    // throttling. A long cooldown here would break the batched medication flow.
+    check_rate_limit("ai_report_search", Duration::from_secs(2))?;
+
+    // Use provided API key, or fall back to environment variable
+    let api_key = if let Some(key) = api_key {
+        if key.is_empty() {
+            return Err("API key cannot be empty".to_string());
+        }
+        key
+    } else {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+        if let Some(dir) = exe_dir {
+            let _ = dotenvy::from_path(dir.join(".env"));
+            let _ = dotenvy::from_path(dir.join("../.env"));
+            let _ = dotenvy::from_path(dir.join("../../.env"));
+        }
+        let _ = dotenvy::dotenv();
+
+        std::env::var("VITE_ANTHROPIC_API_KEY")
+            .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+            .map_err(|_| "Anthropic API key not configured. Please add your API key in Settings > API Keys.".to_string())?
+    };
+
+    let model = model.unwrap_or_else(|| "claude-opus-4-8".to_string());
+    let max_searches = max_searches.unwrap_or(5);
+
+    println!("Generating AI report (web search) with model: {}", model);
+    println!("System prompt length: {} chars", system_prompt.len());
+    println!("User prompt length: {} chars", user_prompt.len());
+    println!("Max tokens: {}, Max searches: {}", max_tokens, max_searches);
+
+    // Build request with the web_search server tool, localised to Australia so
+    // pharmacy/PBS results are AU-relevant.
+    let request_body = serde_json::json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": [{
+            "type": "text",
+            "text": system_prompt,
+        }],
+        "messages": [{
+            "role": "user",
+            "content": user_prompt,
+        }],
+        "tools": [{
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": max_searches,
+            "user_location": {
+                "type": "approximate",
+                "country": "AU"
+            }
+        }]
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", &api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send request to Anthropic API: {}", e))?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| "Unknown error".to_string());
+
+    if !status.is_success() {
+        println!("Anthropic API error ({}): {}", status, response_text);
+        return Err(format!("Anthropic API error ({}): {}", status, response_text));
+    }
+
+    // Parse loosely as Value — web-search responses interleave text blocks,
+    // server_tool_use blocks, and web_search_tool_result blocks.
+    let api_response: serde_json::Value = serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse Anthropic response: {}. Response: {}", e, response_text))?;
+
+    let empty: Vec<serde_json::Value> = Vec::new();
+    let content_blocks = api_response
+        .get("content")
+        .and_then(|c| c.as_array())
+        .unwrap_or(&empty);
+
+    let mut text_parts: Vec<String> = Vec::new();
+    let mut sources: Vec<String> = Vec::new();
+
+    for block in content_blocks {
+        let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        if block_type == "text" {
+            if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                text_parts.push(t.to_string());
+            }
+            // Inline citations attached to the text block
+            if let Some(cites) = block.get("citations").and_then(|c| c.as_array()) {
+                for cite in cites {
+                    if let Some(url) = cite.get("url").and_then(|u| u.as_str()) {
+                        sources.push(url.to_string());
+                    }
+                }
+            }
+        } else if block_type == "web_search_tool_result" {
+            // The `content` field is an array of search results, each with a url
+            if let Some(results) = block.get("content").and_then(|c| c.as_array()) {
+                for r in results {
+                    if let Some(url) = r.get("url").and_then(|u| u.as_str()) {
+                        sources.push(url.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Dedupe sources while preserving first-seen order
+    let mut seen = std::collections::HashSet::new();
+    sources.retain(|url| seen.insert(url.clone()));
+
+    let content = text_parts.join("\n");
+
+    if content.is_empty() {
+        return Err("No text content in Anthropic API response".to_string());
+    }
+
+    let usage = api_response.get("usage");
+    let input_tokens = usage
+        .and_then(|u| u.get("input_tokens"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let output_tokens = usage
+        .and_then(|u| u.get("output_tokens"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    println!("AI report (web search) generated successfully!");
+    println!(
+        "Input tokens: {}, Output tokens: {}, Sources: {}",
+        input_tokens,
+        output_tokens,
+        sources.len()
+    );
+
+    Ok(serde_json::json!({
+        "success": true,
+        "content": content,
+        "sources": sources,
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens
         }
     }))
 }
@@ -1822,6 +2000,7 @@ pub fn run() {
             verify_backup_integrity,
             send_email,
             generate_ai_report,
+            generate_ai_report_with_search,
             download_and_run_update
         ])
         .run(tauri::generate_context!())

@@ -1,9 +1,11 @@
 // Medication Update Service
-// Uses Perplexity Sonar API to search for current Australian medication brand names
+// Uses Claude with the built-in web_search tool to find current Australian
+// medication brand names (replaces the previous Perplexity Sonar integration).
 
 import { BEHAVIOR_MEDICATIONS, Medication } from '../medications';
 import { getSetting, setSetting, getSettingJson, setSettingJson, deleteSetting } from './settingsService';
-import { getPerplexityApiKey } from './apiKeysService';
+import { getAnthropicApiKey } from './apiKeysService';
+import { generateAIReportWithSearch } from './aiService';
 import { logger } from '../utils/logger';
 
 export interface MedicationUpdate {
@@ -88,67 +90,50 @@ export async function addToUpdateHistory(entry: UpdateHistory): Promise<void> {
 }
 
 /**
- * Query Perplexity Sonar API for current Australian brand names of a batch of medications.
+ * Query Claude (with the web_search tool) for current Australian brand names of
+ * a batch of medications.
  *
- * Uses a single API call with a structured prompt to get brand names for multiple
- * medications at once, reducing cost and latency vs. individual queries.
+ * Claude searches Australian pharmacy / PBS sources live and returns brand
+ * names plus the source URLs it consulted. A single call covers multiple
+ * medications to reduce cost and latency vs. individual queries.
  */
-async function queryPerplexityForBrands(
+async function queryClaudeForBrands(
   medications: { genericName: string; category: string }[]
 ): Promise<{ results: Record<string, string[]>; sources: string[] }> {
-  const apiKey = await getPerplexityApiKey();
+  // Upfront key check so an unconfigured key aborts the whole run cleanly
+  // (the batch loop keys off the "API key" substring to stop early).
+  const apiKey = await getAnthropicApiKey();
   if (!apiKey) {
-    throw new Error("Perplexity API key not configured. Set it in Settings > API Keys.");
+    throw new Error("Anthropic API key not configured. Set it in Settings > API Keys.");
   }
 
   const medList = medications
     .map((m, i) => `${i + 1}. ${m.genericName} (${m.category})`)
     .join("\n");
 
-  const response = await fetch("https://api.perplexity.ai/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "sonar",
-      messages: [
-        {
-          role: "system",
-          content: "You are a pharmaceutical research assistant. Return ONLY valid JSON with no markdown formatting, no code fences, and no explanation text. The JSON must be parseable by JSON.parse().",
-        },
-        {
-          role: "user",
-          content: `List the current brand names available in Australia for each of these medications. Include only brands currently sold in Australian pharmacies (e.g., Chemist Warehouse, Priceline Pharmacy, PBS-listed brands). Do not include discontinued brands.
+  const systemPrompt =
+    "You are a pharmaceutical research assistant for an Australian veterinary behaviour practice. " +
+    "Use the web_search tool to find brand names currently sold in Australia. " +
+    "Your final message must be ONLY valid JSON — no markdown, no code fences, no commentary — parseable by JSON.parse().";
+
+  const userPrompt = `Search current Australian pharmacy and PBS sources (e.g. Chemist Warehouse, Priceline Pharmacy, pbs.gov.au, healthdirect.gov.au) to list the brand names available in Australia for each medication below. Include only brands currently sold in Australia. Do not include discontinued brands.
 
 Medications:
 ${medList}
 
-Return a JSON object where each key is the generic drug name (exactly as listed above) and the value is an array of Australian brand name strings. Example format:
+After searching, return a JSON object where each key is the generic drug name (exactly as listed above) and the value is an array of Australian brand name strings. Example format:
 {"Fluoxetine": ["Lovan", "Prozac", "Auscap"], "Sertraline": ["Zoloft", "Sertra"]}
 
-If a medication is only available as a generic/compounded formulation with no specific brand names in Australia, use an empty array [].`,
-        },
-      ],
-      max_tokens: 2000,
-      temperature: 0.1,
-    }),
-  });
+If a medication is only available as a generic/compounded formulation with no specific brand names in Australia, use an empty array []. Return only the JSON object as your final message.`;
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("Perplexity API key is invalid or expired. Check Settings > API Keys.");
-    }
-    throw new Error(`Perplexity API error (${response.status}): ${errorText}`);
+  const result = await generateAIReportWithSearch(systemPrompt, userPrompt, 2000, 5);
+
+  if (!result.success) {
+    throw new Error(result.error || "Claude web-search request failed");
   }
 
-  const data = await response.json();
-  const content: string = data.choices?.[0]?.message?.content || "";
-
-  // Extract citations/sources if available
-  const sources: string[] = data.citations || [];
+  const content = result.content || "";
+  const sources: string[] = result.sources || [];
 
   // Parse JSON from the response (handle potential markdown code fences)
   let parsed: Record<string, string[]>;
@@ -167,7 +152,7 @@ If a medication is only available as a generic/compounded formulation with no sp
       if (start !== -1 && end > start) {
         parsed = JSON.parse(content.substring(start, end + 1));
       } else {
-        logger.error("Failed to parse Perplexity response:", content);
+        logger.error("Failed to parse Claude response:", content);
         throw new Error("Could not parse medication brands from API response");
       }
     }
@@ -202,7 +187,7 @@ export function compareBrands(
 }
 
 /**
- * Check for updates to all medications using Perplexity Sonar API.
+ * Check for updates to all medications using Claude with web search.
  *
  * Batches medications into groups to minimize API calls while staying
  * within response size limits.
@@ -234,8 +219,10 @@ export async function checkForMedicationUpdates(
     }
   }
 
-  // Batch searchable medications into groups of 10
-  const BATCH_SIZE = 10;
+  // Batch searchable medications into small groups so each call's web searches
+  // (capped at 5) can cover the batch thoroughly. Sequential calls stay well
+  // under the frontend rate limit (10/min) since each web-search call is slow.
+  const BATCH_SIZE = 5;
   const batches: typeof searchable[] = [];
   for (let i = 0; i < searchable.length; i += BATCH_SIZE) {
     batches.push(searchable.slice(i, i + BATCH_SIZE));
@@ -250,7 +237,7 @@ export async function checkForMedicationUpdates(
     }
 
     try {
-      const { results, sources } = await queryPerplexityForBrands(
+      const { results, sources } = await queryClaudeForBrands(
         batch.map((m) => ({ genericName: m.genericName, category: m.category }))
       );
 
@@ -269,7 +256,7 @@ export async function checkForMedicationUpdates(
           )?.[1] ||
           [];
 
-        // If Perplexity returned empty, keep current brands (avoid false removals)
+        // If Claude returned empty, keep current brands (avoid false removals)
         if (proposedBrands.length === 0) {
           updates.push({
             medicationId: medication.id,
@@ -305,7 +292,7 @@ export async function checkForMedicationUpdates(
         });
       }
     } catch (error) {
-      logger.error("Perplexity batch query failed:", error);
+      logger.error("Claude batch query failed:", error);
 
       // Add all medications in the failed batch with no changes
       for (const medication of batch) {

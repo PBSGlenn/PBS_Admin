@@ -160,13 +160,19 @@ export interface AIModelConfig {
 }
 
 const DEFAULT_AI_MODEL_CONFIG: AIModelConfig = {
-  reportModel: "claude-opus-4-6",
-  taskExtractionModel: "claude-sonnet-4-5-20250929",
+  reportModel: "claude-opus-4-8",
+  taskExtractionModel: "claude-sonnet-4-6",
 };
 
-// Map of deprecated model IDs to their current replacements
+// Map of deprecated model IDs to their current replacements.
+// Applied automatically on load so existing users whose config is persisted in
+// SQLite are migrated forward without manual intervention.
 const DEPRECATED_MODEL_IDS: Record<string, string> = {
-  "claude-opus-4-6-20260205": "claude-opus-4-6",
+  "claude-opus-4-6-20260205": "claude-opus-4-8",
+  "claude-opus-4-6": "claude-opus-4-8",
+  "claude-opus-4-5": "claude-opus-4-8",
+  "claude-sonnet-4-5-20250929": "claude-sonnet-4-6",
+  "claude-sonnet-4-5": "claude-sonnet-4-6",
 };
 
 /** Get current AI model configuration */

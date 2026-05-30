@@ -64,7 +64,7 @@ git push origin --delete branch-name
 
 **Purpose**: Local, privacy-preserving record-keeping and client management system that streamlines day-to-day operations, automates repetitive tasks, and provides at-a-glance visibility into upcoming bookings and tasks.
 
-**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.6) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage. **Command Palette** (Ctrl+K) for global search and navigation. **Zod runtime validation** at all external API boundaries. **Perplexity Sonar** integration for live medication brand name updates.
+**Status**: ✅ MVP Complete + Advanced AI Integration + Email System - Full CRUD operations for Clients, Pets, Events, and Tasks. Automation rules engine implemented and working. Application is production-ready with five active automation workflows. Task templates for quick creation, in-app notifications for due/overdue tasks, Dashboard task management with email reminder integration. Comprehensive email template system with in-app manager, draft preview, variable substitution. **Direct email sending via Resend API** with file attachments, automatic signature with logo, and context menu integration for quick sending from client email fields. Client folder management, rich text notes, age calculator, website booking integration, Jotform questionnaire sync with automatic file downloads. **AI-powered bulk task importer and consultation report generator with complete DOCX/PDF export workflow and email delivery system**. **AI Prompt Management System with customizable templates, Multi-Report Generation Service for 4 report types (Clinical Notes HTML, Client Report, Practitioner Report, Veterinary Report), and transcript file management for on-demand report generation**. **Context menu enhancements on email and address fields** with quick actions (paste/copy/compose email/send with attachment/Google Maps). Fully compacted client forms with optimized spacing and font sizes. **Prescription Generation System** with template-based DOCX generation using Pandoc, customizable templates with variable substitution, letterhead integration, and automatic Event notes updates. **Simplified Consultation Workflow** with manual transcript save feature - paste transcript text from MS Word processing, save to client folder with automatic naming, replace functionality with confirmation. **AI Model Info Display** in Prompt Template Manager showing current model (Claude Opus 4.8) with update check button. **Transcript file dropdown** with auto-refresh after saving. **Comprehensive Clinical Notes (DOCX)** generation with success notification and Open Document button. **Post-Consultation Task Generation** with standard tasks (opt-out model) and AI-extracted case-specific tasks from transcript/clinical notes. **Consultation Processing Log** - automatic audit trail in Event notes tracking all processing steps (transcript saved, clinical notes generated, comprehensive report, tasks created) with timestamps. **ReportSent Event Panel** with report delivery log tracking - email buttons on existing reports, persistent email status tracking in Event notes with machine-readable JSON storage. **Command Palette** (Ctrl+K) for global search and navigation. **Zod runtime validation** at all external API boundaries. **Claude web search** integration for live medication brand name updates.
 
 **Last Updated**: 2026-05-27
 
@@ -215,7 +215,7 @@ git push origin --delete branch-name
 | **Email Sending** | Resend API | Direct email delivery with attachments |
 | **Email Receiving** | ImprovMX | Email forwarding to personal inbox |
 | **Prescription Templates** | SQLite Settings + Pandoc | Template-based prescription generation |
-| **AI Services** | Anthropic Claude Opus 4.6 | Report generation, task extraction |
+| **AI Services** | Anthropic Claude Opus 4.8 | Report generation, task extraction |
 | **Audio Transcription** | OpenAI gpt-4o-transcribe-diarize | Transcription with native speaker diarization |
 | **Markdown Processing** | marked | Markdown to HTML conversion for Clinical Notes |
 | **Document Conversion** | Pandoc 3.8+ | Markdown to DOCX conversion with letterhead |
@@ -1507,7 +1507,7 @@ interface Action {
 7. **External AI Processing** (optional, outside PBS Admin):
    - User manually processes transcript + questionnaire through preferred AI:
      - ChatGPT 5.1
-     - Claude Opus 4.6
+     - Claude Opus 4.8
      - Gemini 3 Pro
      - (Chooses best-performing AI at the time)
    - Uses custom prompts for:
@@ -1653,7 +1653,7 @@ Standardized prompt for extracting practitioner tasks from consultation transcri
 
 ### AI Report Generation
 
-**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Opus 4.6 API.
+**Purpose**: Generate professional consultation reports and follow-up emails from consultation transcripts using Claude Opus 4.8 API.
 
 **Technology**: Anthropic SDK with prompt caching for cost efficiency
 
@@ -1728,8 +1728,8 @@ Creates "Note" event after successful save:
 - **Cache duration**: 5 minutes (Anthropic default)
 - **Cache benefit**: Subsequent reports within 5 minutes use cached prompt (90% cost reduction on input tokens)
 - **Token estimation**: Shows estimated cost before generation
-- **Model**: Claude Opus 4.6 (`claude-opus-4-6-20260205`)
-- **Pricing**: ~$15/million input tokens, ~$75/million output tokens (as of February 2026)
+- **Model**: Claude Opus 4.8 (`claude-opus-4-8`)
+- **Pricing**: ~$15/million input tokens, ~$75/million output tokens
 
 **Configuration** (`.env`):
 ```bash
@@ -1932,7 +1932,7 @@ Templates support dynamic content replacement:
 
 ### Multi-Report Generation Service
 
-**Purpose**: Generate multiple report types from a single consultation transcript using Claude Opus 4.6 API, with the comprehensive clinical report as the source of truth for the client report.
+**Purpose**: Generate multiple report types from a single consultation transcript using Claude Opus 4.8 API, with the comprehensive clinical report as the source of truth for the client report.
 
 **Technology**: Anthropic SDK with sequential-then-parallel execution and prompt caching
 
@@ -2032,7 +2032,7 @@ interface ReportGenerationResult {
 **Cost Estimation**:
 - `estimateReportCost(transcriptLength, questionnaireLength, reportTypes)` function
 - Shows estimated tokens and USD cost before generation
-- Pricing (as of February 2026, Claude Opus 4.6):
+- Pricing (Claude Opus 4.8, rates unchanged across Opus 4.x):
   - Input: ~$15/million tokens
   - Output: ~$75/million tokens
 
@@ -2051,7 +2051,7 @@ interface ReportGenerationResult {
 VITE_ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
-**Model**: `claude-opus-4-6-20260205` (Claude Opus 4.6)
+**Model**: `claude-opus-4-8` (Claude Opus 4.8)
 
 ---
 

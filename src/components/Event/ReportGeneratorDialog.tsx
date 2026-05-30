@@ -384,7 +384,7 @@ ${results.comprehensiveReport ? `<li>Comprehensive: ${results.comprehensiveRepor
 ${results.abridgedNotes ? `<li>Abridged: ${results.abridgedNotes.tokensUsed.total.toLocaleString()} tokens</li>` : ''}
 ${results.clientReport ? `<li>Client Report: ${results.clientReport.tokensUsed.total.toLocaleString()} tokens</li>` : ''}
 </ul>
-<p>Reports generated using Claude Sonnet 4.5 AI.</p>`,
+<p>Reports generated using Claude Opus 4.8 AI.</p>`,
       });
 
       // Auto-create review task for client report (due 24 hours from now)
